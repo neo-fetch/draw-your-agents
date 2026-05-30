@@ -51,25 +51,6 @@ test("rejects a graph with no START edge", () => {
   assert.throws(() => compileEdges(ir), EdgesCompilerError);
 });
 
-test("rejects parallel fan-out (a node with multiple out-edges)", () => {
-  const ir: GraphIR = {
-    irVersion: "0.1.0",
-    name: "fan_out",
-    schemas: [],
-    nodes: [
-      { id: "a", type: "function", name: "a", config: { inputType: "str", outputType: "str" } },
-      { id: "b", type: "function", name: "b", config: { inputType: "str", outputType: "str" } },
-      { id: "c", type: "function", name: "c", config: { inputType: "str", outputType: "str" } },
-    ],
-    edges: [
-      { from: "START", to: "a" },
-      { from: "a", to: "b" },
-      { from: "a", to: "c" },
-    ],
-  };
-  assert.throws(() => compileEdges(ir), /fans out/);
-});
-
 test("routing: router collapses to an entry chain + a route-map row", () => {
   const ir = loadIR("packages/ir/fixtures/routing.ir.json");
   const rendered = renderEdgeRows(compileEdges(ir));
@@ -116,13 +97,47 @@ test("rejects a branch continuation (a non-terminal router target) loud", () => 
   assert.throws(() => compileEdges(ir), /branch continuation/);
 });
 
-test("rejects a join (fan-in) as out of slice", () => {
+// -- parallel fan-out + join tests (ADR-0015) --
+
+test("parallel: fan-out rows + join continuation matches golden", () => {
+  const ir = loadIR("packages/ir/fixtures/parallel.ir.json");
+  const rendered = renderEdgeRows(compileEdges(ir));
+  assert.equal(rendered, loadGolden("parallel.edges.txt"));
+});
+
+test("parallel: produces N fan-out rows + 1 continuation row", () => {
+  const rows = compileEdges(loadIR("packages/ir/fixtures/parallel.ir.json"));
+  assert.equal(rows.length, 4, "expected 3 fan-out rows + 1 continuation row");
+  // Fan-out rows: ("START", branch, join)
+  assert.deepEqual(rows[0], [
+    { kind: "start" },
+    { kind: "node", name: "task_a" },
+    { kind: "node", name: "my_join_node" },
+  ]);
+  assert.deepEqual(rows[1], [
+    { kind: "start" },
+    { kind: "node", name: "task_b" },
+    { kind: "node", name: "my_join_node" },
+  ]);
+  assert.deepEqual(rows[2], [
+    { kind: "start" },
+    { kind: "node", name: "task_c" },
+    { kind: "node", name: "my_join_node" },
+  ]);
+  // Continuation row: (join, final)
+  assert.deepEqual(rows[3], [
+    { kind: "node", name: "my_join_node" },
+    { kind: "node", name: "final_task_d" },
+  ]);
+});
+
+test("rejects humanInput as out of slice", () => {
   const ir: GraphIR = {
     irVersion: "0.1.0",
-    name: "has_join",
+    name: "has_human",
     schemas: [],
-    nodes: [{ id: "j", type: "join", name: "collect", config: {} }],
-    edges: [{ from: "START", to: "j" }],
+    nodes: [{ id: "h", type: "humanInput", name: "ask", config: { message: "?" } }],
+    edges: [{ from: "START", to: "h" }],
   };
-  assert.throws(() => compileEdges(ir), /join/);
+  assert.throws(() => compileEdges(ir), /humanInput/);
 });

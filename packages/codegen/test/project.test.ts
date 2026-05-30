@@ -43,6 +43,7 @@ const EXPECTED_FILES = [
 const PROJECTS = [
   { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json" },
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
+  { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json" },
 ];
 
 for (const { name, fixture } of PROJECTS) {
@@ -75,7 +76,7 @@ for (const { name, fixture } of PROJECTS) {
 
 test("rejects an out-of-slice node type via the assembler's own guard", () => {
   // A `tool` node passes the edges compiler (it linearizes fine) but is not an
-  // agent/function, so generateProject rejects it with CodegenError.
+  // agent/function/router/join, so generateProject rejects it with CodegenError.
   const ir = {
     irVersion: "0.1.0",
     name: "has_tool",

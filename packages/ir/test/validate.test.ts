@@ -42,3 +42,21 @@ test("findings carry nodeId for node-scoped problems", () => {
   const orphan = r.errors.find((f) => f.code === ValidationCode.UNREACHABLE_NODE);
   assert.equal(orphan?.nodeId, "n_orphan");
 });
+
+test("parallel fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/parallel.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("join-missing-failsafe fixture produces the warning, no errors", () => {
+  const r = validate(loadIR("../fixtures/invalid/join-missing-failsafe.ir.json"));
+  assert.equal(r.ok, true, "should have no errors (ok = true)");
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.warnings.length, 1, `expected exactly 1 warning, got ${r.warnings.length}`);
+  const w = r.warnings[0];
+  assert.equal(w.code, ValidationCode.JOIN_MISSING_FAILSAFE);
+  assert.equal(w.nodeId, "n_risky_fn");
+  assert.equal(w.severity, "warning");
+});

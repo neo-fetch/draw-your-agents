@@ -14,6 +14,7 @@ import type {
   AgentNode,
   FunctionNode,
   GraphIR,
+  JoinNode,
   RouterNode,
   SchemaDef,
 } from "@graphical-agents/ir";
@@ -22,6 +23,7 @@ import {
   indexSchemas,
   renderAgent,
   renderFunction,
+  renderJoin,
   renderRouter,
   renderSchema,
   type Fragment,
@@ -43,12 +45,12 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const rows = compileEdges(ir);
   const schemas = indexSchemas(ir);
 
-  // Reject out-of-slice node types loud — agent + function + router this slice.
+  // Reject out-of-slice node types loud — agent + function + router + join this slice.
   for (const node of ir.nodes) {
-    if (node.type !== "agent" && node.type !== "function" && node.type !== "router") {
+    if (node.type !== "agent" && node.type !== "function" && node.type !== "router" && node.type !== "join") {
       throw new CodegenError(
         `node "${node.name}" of type "${node.type}" is not handled by the ` +
-          "agent+function+router slice",
+          "agent+function+router+join slice",
       );
     }
   }
@@ -56,12 +58,13 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const agents = ir.nodes.filter((n): n is AgentNode => n.type === "agent");
   const functions = ir.nodes.filter((n): n is FunctionNode => n.type === "function");
   const routers = ir.nodes.filter((n): n is RouterNode => n.type === "router");
+  const joins = ir.nodes.filter((n): n is JoinNode => n.type === "join");
 
   const files: GeneratedProject = new Map();
   files.set("schemas.py", schemasModule(ir, ir.schemas, schemas));
   files.set("functions.py", functionsModule(ir, functions, routers, schemas));
   files.set("agents.py", agentsModule(ir, agents, schemas));
-  files.set("workflow.py", workflowModule(ir, rows, agents, functions, routers));
+  files.set("workflow.py", workflowModule(ir, rows, agents, functions, routers, joins));
   files.set("requirements.txt", REQUIREMENTS);
   files.set(".env.example", ENV_EXAMPLE);
   files.set("README.md", readme(ir));
@@ -143,6 +146,7 @@ function workflowModule(
   agents: readonly AgentNode[],
   functions: readonly FunctionNode[],
   routers: readonly RouterNode[],
+  joins: readonly JoinNode[],
 ): string {
   const head = header("Workflow graph (entry module)", ir);
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Workflow"] }];
@@ -151,9 +155,16 @@ function workflowModule(
   const fnNames = [...functions.map((f) => f.name), ...routers.map((r) => r.name)];
   if (fnNames.length > 0) imports.push({ module: "functions", names: fnNames });
 
+  // JoinNode declarations are rendered inline in workflow.py.
+  const joinFrags: Fragment[] = joins.map((j) => renderJoin(j));
+  for (const frag of joinFrags) imports.push(...frag.imports);
+
   const kwargs = `name=${pyStr(ir.name)},\n${renderEdgeRows(rows)},`;
-  const body = `root_agent = Workflow(\n${indent(kwargs)}\n)\n`;
-  return joinModule(head, imports, [body], "stmt");
+  const workflowBody = `root_agent = Workflow(\n${indent(kwargs)}\n)\n`;
+
+  // Join declarations come before the Workflow so the symbol is available.
+  const bodies = [...joinFrags.map((f) => f.code), workflowBody];
+  return joinModule(head, imports, bodies, "stmt");
 }
 
 function readme(ir: GraphIR): string {

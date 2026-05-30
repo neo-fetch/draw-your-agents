@@ -11,6 +11,7 @@ import type {
   FunctionNode,
   GraphIR,
   InstructionTemplate,
+  JoinNode,
   ModelParams,
   RouterNode,
   ScalarType,
@@ -144,6 +145,13 @@ export function renderRouter(
   }
 
   return { imports, code: `${header.join("\n")}\n${body}\n` };
+}
+
+/** workflow.py: one `JoinNode(name=...)` per join node (ADR-0015). */
+export function renderJoin(node: JoinNode): Fragment {
+  const imports: ImportReq[] = [{ module: "google.adk.workflow", names: ["JoinNode"] }];
+  const body = `${node.name} = JoinNode(\n${indent(`name=${pyStr(node.name)},`)}\n)\n`;
+  return { imports, code: body };
 }
 
 /** Render an Agent instruction template as one source-bound string (ADR-0008). */

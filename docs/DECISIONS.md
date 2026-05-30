@@ -180,3 +180,41 @@ separate payload) is not yet modelled — branches here take whatever ADK forwar
 **Consequences:** The compiler emits multi-row `edges` for the first time; goldens
 (`test/golden/routing.edges.txt`, `test/golden/routing/`) pin the row form and the generated project,
 and the py_compile trust gate now covers the routing fixture too.
+
+## ADR-0015 — Parallel fan-out + JoinNode: row form, import surface, failsafe warning
+**Context:** Parallel fan-out (repeated START) and `JoinNode` (fan-in) are the second non-linear
+construct ([ADR-0009](DECISIONS.md)), completing the parallel path. The edges compiler and assembler
+previously rejected them loud ([ADR-0010](DECISIONS.md), [ADR-0012](DECISIONS.md)); this slice
+generates them end to end. The IR fixture `packages/ir/fixtures/parallel.ir.json` (START →
+{task_a, task_b, task_c} → my_join_node → final_task_d) exercises the full path.
+**Decision:**
+- **Fan-out row form.** Each parallel branch gets its own START row: `("START", branch_node, ...,
+  join_node)`. The join node terminates every branch row (it is the last member). A separate
+  **continuation row** `(join_node, final_node, ...)` begins at the join and chains forward. Multi-hop
+  branches (START → A → B → join) are supported — the chain walker walks until it reaches the join.
+  The `RowMember` model from [ADR-0010](DECISIONS.md) is unchanged — fan-out rows use existing
+  `{kind:"start"}` and `{kind:"node"}` members.
+- **JoinNode import surface.** `JoinNode(name=...)` from `google.adk.workflow` (not `google.adk`).
+  The join declaration is rendered **inline in `workflow.py`** before the `Workflow(...)` call, since
+  JoinNode is a workflow building block, not an agent or function. No cross-module import needed.
+- **`JOIN_MISSING_FAILSAFE` warning (ARCHITECTURE.md §7).** The validator's reserved warning code
+  is now implemented. It fires on two conditions: (1) an agent node with `null`/missing
+  `outputSchemaRef` feeding a join, and (2) a function node with `emits: "message"` feeding a join
+  (the `message` channel does not produce output that JoinNode waits for). Function nodes emitting
+  `"output"` and router nodes are inherently safe. `parallel.ir.json` is warning-free by
+  construction; `fixtures/invalid/join-missing-failsafe.ir.json` trips exactly one warning.
+- **Edges compiler.** `rejectUnsupported` no longer blocks `join` nodes. `humanInput` remains
+  rejected. The compiler detects `startTargets.length > 1` and delegates to `compileParallel`, which
+  walks each branch to the join. Single-entry linear and router paths are unchanged.
+- **Codegen.** `generateProject` now allows `agent`/`function`/`router`/`join`;
+  `tool`/`humanInput`/`workflow` still raise `CodegenError`. A new `renderJoin` fragment emits
+  `JoinNode(name=...)`. The project assembler (`workflowModule`) renders join declarations before the
+  `Workflow(...)` call and dedupes the `google.adk.workflow` import.
+**ADK assumptions to revisit with the fidelity service ([ADR-0004](DECISIONS.md)):** that
+`JoinNode` is importable from `google.adk.workflow`; that the fan-out row form `("START", branch,
+join)` repeated per branch is the correct ADK `edges` encoding; that `JoinNode(name=...)` is the
+minimal constructor call.
+**Consequences:** The compiler handles all three row forms (linear chain, route map, parallel
+fan-out + join); goldens (`test/golden/parallel.edges.txt`, `test/golden/parallel/`) pin the
+row form and the generated project, and the py_compile trust gate now covers the parallel fixture.
+The warning channel is no longer stubbed — callers can surface `JOIN_MISSING_FAILSAFE` findings.

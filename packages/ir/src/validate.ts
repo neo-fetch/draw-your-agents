@@ -384,18 +384,60 @@ export function validate(ir: GraphIR): ValidationResult {
     if (color.get(nid) === WHITE) dfs(nid);
   }
 
-  // -- reserved warning pass (ARCHITECTURE.md §7) --
-  // Join-failsafe and incompatible-integration warnings land with their Phase-3
-  // constructs (join/parallel, external integrations). Stubbed: emits nothing
-  // yet, but the warning severity + codes exist so callers can rely on the shape.
-  checkReservedWarnings();
+  // -- warning pass (ARCHITECTURE.md §7) --
+  checkJoinFailsafe(findings, nodesById, edgeList);
 
   return result(findings);
 }
 
-/** Phase-3 warning rules (join failsafe, incompatible integrations). No-op today. */
-function checkReservedWarnings(): void {
-  // Reserved: ValidationCode.JOIN_MISSING_FAILSAFE, ValidationCode.INCOMPATIBLE_INTEGRATION.
+/**
+ * JOIN_MISSING_FAILSAFE — every upstream of a join should produce output on the
+ * `output` channel, or ADK's JoinNode may hang. Flagged cases:
+ *  - Agent nodes with null/missing outputSchemaRef (may not produce output).
+ *  - Function nodes with `emits: "message"` (emit to the user channel, not
+ *    the output channel that JoinNode waits on).
+ * Function nodes emitting "output" and router nodes are inherently safe.
+ */
+function checkJoinFailsafe(
+  findings: Finding[],
+  nodesById: ReadonlyMap<string, Loose>,
+  edgeList: readonly Loose[],
+): void {
+  const warn = (code: string, message: string, nodeId?: string): void => {
+    findings.push(nodeId === undefined ? { severity: "warning", code, message } : { severity: "warning", code, message, nodeId });
+  };
+
+  for (const [joinId, joinNode] of nodesById) {
+    if (joinNode.type !== "join") continue;
+    // Find all upstream nodes feeding this join.
+    for (const e of edgeList) {
+      if (e?.to !== joinId) continue;
+      const fromId = e?.from;
+      if (fromId === START || !nodesById.has(fromId)) continue;
+      const upstream = nodesById.get(fromId)!;
+      const cfg = (upstream.config ?? {}) as Loose;
+
+      let flagged = false;
+      if (upstream.type === "agent") {
+        if (cfg.outputSchemaRef === null || cfg.outputSchemaRef === undefined) {
+          flagged = true;
+        }
+      } else if (upstream.type === "function") {
+        if (cfg.emits === "message") {
+          flagged = true;
+        }
+      }
+
+      if (flagged) {
+        warn(
+          ValidationCode.JOIN_MISSING_FAILSAFE,
+          `node "${upstream.name}" feeds join "${joinNode.name}" but may not produce output on the ` +
+            `output channel — JoinNode waits for output from every upstream`,
+          fromId,
+        );
+      }
+    }
+  }
 }
 
 function result(findings: Finding[]): ValidationResult {

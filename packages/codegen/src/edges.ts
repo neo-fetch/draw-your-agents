@@ -6,12 +6,15 @@
  * list: a row is a *sequence chain* (`("START", a, b, c)` ≡ START→a→b→c). This
  * module linearizes the graph into those rows.
  *
- * It covers **linear-chain collapse** and **routers**: a single entry threads
- * through nodes with one in-edge and one out-edge each; a router terminates the
- * entry chain and emits a second row `(router, {route: target})` (the ADK route
- * map). Parallel fan-out (repeated START / non-router multi-out) and joins/merges
- * (fan-in) are rejected with a clear error so later slices fail loud rather than
- * emit wrong code.
+ * Supported constructs:
+ * - **Linear chains**: a single START entry threaded through nodes.
+ * - **Routers**: a router terminates the entry chain and emits a route-map row.
+ * - **Parallel fan-out + join**: repeated START edges fan out to branches that
+ *   converge on a join node. Each branch is its own START row ending at the join;
+ *   a continuation row begins at the join (ADR-0015).
+ *
+ * `humanInput` and `workflow`/`tool` node types are rejected with a clear error
+ * so later slices fail loud rather than emit wrong code.
  */
 import type { Edge, GraphIR, GraphNode } from "@graphical-agents/ir";
 
@@ -68,11 +71,6 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
   if (startTargets.length === 0) {
     throw new EdgesCompilerError("no START edge: the graph has no entry point");
   }
-  if (startTargets.length > 1) {
-    throw new EdgesCompilerError(
-      "multiple START edges: parallel fan-out is not handled by the linear-chain slice",
-    );
-  }
 
   const nodeOf = (id: string): GraphNode => {
     const node = nodeById.get(id);
@@ -80,8 +78,14 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
     return node;
   };
 
-  // Walk the linear successor chain from the single START target. A router
-  // terminates the entry chain and contributes a second row (its route map).
+  // Parallel fan-out: multiple START targets.
+  if (startTargets.length > 1) {
+    return compileParallel(startTargets, outEdges, inDegree, nodeOf);
+  }
+
+  // Single-entry: walk the linear successor chain from the single START target.
+  // A router terminates the entry chain and contributes a second row (its route
+  // map).
   const rows: EdgeRow[] = [];
   const members: RowMember[] = [{ kind: "start" }];
   let cur = startTargets[0];
@@ -111,6 +115,97 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
   }
 
   rows.unshift(members);
+  return rows;
+}
+
+/**
+ * Compile a parallel fan-out graph: repeated START → branches → join → continuation.
+ *
+ * Each branch becomes its own START row ending at the join node. The chain walks
+ * from each START target until it reaches a join node (fan-in), collecting all
+ * intermediate nodes. A final continuation row begins at the join and chains
+ * forward.
+ *
+ * Row form (ADR-0015):
+ *   ("START", task_a, my_join_node)
+ *   ("START", task_b, my_join_node)
+ *   ("START", task_c, my_join_node)
+ *   (my_join_node, final_task_d)
+ */
+function compileParallel(
+  startTargets: readonly string[],
+  outEdges: ReadonlyMap<string, Edge[]>,
+  inDegree: ReadonlyMap<string, number>,
+  nodeOf: (id: string) => GraphNode,
+): EdgeRow[] {
+  const rows: EdgeRow[] = [];
+  let joinNodeId: string | undefined;
+
+  // Build one fan-out row per START target.
+  for (const target of startTargets) {
+    const members: RowMember[] = [{ kind: "start" }];
+    let cur = target;
+    for (;;) {
+      const node = nodeOf(cur);
+      members.push({ kind: "node", name: node.name });
+      if (node.type === "join") {
+        // This branch terminates at the join.
+        if (joinNodeId === undefined) {
+          joinNodeId = cur;
+        } else if (joinNodeId !== cur) {
+          throw new EdgesCompilerError(
+            `parallel branches converge on different join nodes ("${nodeOf(joinNodeId).name}" and "${node.name}"); ` +
+              "this slice supports a single join node",
+          );
+        }
+        break;
+      }
+      const outs = outEdges.get(cur) ?? [];
+      if (outs.length === 0) {
+        throw new EdgesCompilerError(
+          `parallel branch ending at "${node.name}" does not reach a join node`,
+        );
+      }
+      if (outs.length > 1) {
+        throw new EdgesCompilerError(
+          `node "${node.name}" in a parallel branch fans out to ${outs.length} edges; ` +
+            "nested fan-out is not handled by this slice",
+        );
+      }
+      cur = outs[0].to;
+    }
+    rows.push(members);
+  }
+
+  // Continuation from the join node forward.
+  if (joinNodeId !== undefined) {
+    const joinOuts = outEdges.get(joinNodeId) ?? [];
+    if (joinOuts.length > 0) {
+      if (joinOuts.length > 1) {
+        throw new EdgesCompilerError(
+          `join node "${nodeOf(joinNodeId).name}" fans out to ${joinOuts.length} edges; ` +
+            "multi-out after join is not handled by this slice",
+        );
+      }
+      const contMembers: RowMember[] = [{ kind: "node", name: nodeOf(joinNodeId).name }];
+      let cur = joinOuts[0].to;
+      for (;;) {
+        const node = nodeOf(cur);
+        contMembers.push({ kind: "node", name: node.name });
+        const outs = outEdges.get(cur) ?? [];
+        if (outs.length === 0) break;
+        if (outs.length > 1) {
+          throw new EdgesCompilerError(
+            `node "${node.name}" after join fans out to ${outs.length} edges; ` +
+              "this slice handles a single continuation chain",
+          );
+        }
+        cur = outs[0].to;
+      }
+      rows.push(contMembers);
+    }
+  }
+
   return rows;
 }
 
@@ -170,7 +265,7 @@ export function renderEdgeRows(rows: readonly EdgeRow[]): string {
 /** Reject constructs this slice cannot linearize, with an actionable message. */
 function rejectUnsupported(ir: GraphIR): void {
   for (const node of ir.nodes) {
-    if (node.type === "join" || node.type === "humanInput") {
+    if (node.type === "humanInput") {
       throw new EdgesCompilerError(
         `node "${node.name}" of type "${node.type}" is not handled by this slice`,
       );

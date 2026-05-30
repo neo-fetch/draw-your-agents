@@ -1,0 +1,63 @@
+{
+  "irVersion": "0.1.0",
+  "name": "join_missing_failsafe_test",
+  "description": "Parallel fan-out where one upstream function emits 'message' instead of 'output' — triggers JOIN_MISSING_FAILSAFE warning because JoinNode waits for output.",
+  "schemas": [],
+  "nodes": [
+    {
+      "id": "n_safe_fn",
+      "type": "function",
+      "name": "safe_function",
+      "ui": { "x": 260, "y": -60 },
+      "config": {
+        "description": "A function node that emits output — safe for a join.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_risky_fn",
+      "type": "function",
+      "name": "risky_function",
+      "ui": { "x": 260, "y": 60 },
+      "config": {
+        "description": "A function node that emits message instead of output — the join will never see its result.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "message",
+        "body": null
+      }
+    },
+    {
+      "id": "n_join",
+      "type": "join",
+      "name": "collect",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "description": "Wait for both branches."
+      }
+    },
+    {
+      "id": "n_done",
+      "type": "function",
+      "name": "finish",
+      "ui": { "x": 780, "y": 0 },
+      "config": {
+        "description": "Final step.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_safe_fn" },
+    { "from": "START", "to": "n_risky_fn" },
+    { "from": "n_safe_fn", "to": "n_join" },
+    { "from": "n_risky_fn", "to": "n_join" },
+    { "from": "n_join", "to": "n_done" }
+  ]
+}
