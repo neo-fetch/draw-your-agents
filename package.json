@@ -2,6 +2,7 @@
   "name": "graphical-agents",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "description": "Visual builder that compiles a drag-and-drop agent graph into runnable Google ADK graph-workflow projects.",
   "workspaces": [
     "packages/*",
