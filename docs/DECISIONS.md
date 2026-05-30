@@ -117,3 +117,32 @@ a separate trust check shells out to `python3 -m py_compile` on every generated 
 **Consequences:** New node types/constructs are added one fragment + one golden at a time. The
 edges compiler stays the single linearizer feeding `workflow.py`. The py_compile gate is the
 headless precursor to the full Python fidelity service (ADR-0004).
+
+## ADR-0013 — Authoritative TypeScript validator supersedes the Python stand-in
+**Context:** ADR-0001 names the validator as the IR spec, but it only existed as a Phase-0
+stand-in (`scripts/check_ir.py`) written before Node was installed. Node is now available (v26,
+runs `.ts` natively — ADR-0011), so the spec belongs in TypeScript inside `packages/ir`, the
+keystone every package depends on.
+**Decision:**
+- `validate(ir: GraphIR): ValidationResult` in `packages/ir/src/validate.ts` is the **authoritative**
+  IR validator. It ports every invariant from `check_ir.py` and docs/IR-SCHEMA.md §Invariants and
+  returns **structured findings** (`{ severity, code, message, nodeId? }`) — not thrown strings —
+  keyed by stable `ValidationCode`s. `scripts/check_ir.py` is **superseded**: kept on disk for
+  reference, removed from the gate, banner added. New invariants go in `validate.ts`.
+- `npm run check:ir` runs the TS validator over `packages/ir/fixtures/*.ir.json` via
+  `scripts/check-ir.ts` (native TS, no install). `npm test` = `check:ir` + `test:ir`
+  (validator spec tests) + `test:codegen` (golden tests).
+- Codegen gains `compile(ir)` (`packages/codegen/src/compile.ts`) = **validate → throw
+  `ValidationError` on errors → `generateProject`**. `generateProject` stays **pure** and does not
+  re-validate (reaffirms ADR-0010/ADR-0001 — the validator owns the spec, codegen trusts a clean IR).
+- `severity: "warning"` is **reserved** for the join-failsafe and incompatible-integration rules
+  (ARCHITECTURE.md §7). Those constructs are Phase 3, so the warning pass is **stubbed** (codes
+  exist, emits nothing yet).
+**Extends ADR-0011:** to stay green from a cold checkout with no `npm install`, `compile.ts`
+imports `validate` at runtime via a **relative `.ts` specifier** (`../../ir/src/validate.ts`), not
+the `@graphical-agents/ir` package specifier (whose `main` points at an unbuilt `dist/`). The
+`import type { GraphIR }` from the package specifier still erases. So ADR-0011 broadens from
+"codegen imports IR type-only" to "codegen may import IR *source* at runtime via a relative `.ts` path."
+**Consequences:** One typed, golden-testable IR spec; the visual builder and draw.io importer can
+surface located findings; codegen refuses to generate from an invalid IR. The Python script is a
+historical reference, not a second source of truth.

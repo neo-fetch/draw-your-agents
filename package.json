@@ -8,9 +8,10 @@
     "apps/*"
   ],
   "scripts": {
-    "check:ir": "python3 scripts/check_ir.py packages/ir/fixtures/*.ir.json",
+    "check:ir": "node scripts/check-ir.ts packages/ir/fixtures/*.ir.json",
     "build": "tsc -b",
+    "test:ir": "node --test \"packages/ir/test/**/*.test.ts\"",
     "test:codegen": "node --test \"packages/codegen/test/**/*.test.ts\"",
-    "test": "npm run check:ir && npm run test:codegen"
+    "test": "npm run check:ir && npm run test:ir && npm run test:codegen"
   }
 }

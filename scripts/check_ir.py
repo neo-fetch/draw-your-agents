@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Dependency-free conformance smoke test for Graph IR fixtures.
 
-Phase-0 stand-in for the authoritative TypeScript validator in packages/ir
-(which needs Node, not yet installed). It checks the invariants documented in
-docs/IR-SCHEMA.md so a fixture can be proven well-formed today, using only the
-Python standard library.
+SUPERSEDED (ADR-0013): the authoritative IR validator now lives in TypeScript at
+packages/ir/src/validate.ts, and the gate runs it via scripts/check-ir.ts
+(`npm run check:ir`). This file is kept for reference only — it is no longer part
+of `npm test`. Port any new invariant to validate.ts, not here.
+
+Originally the Phase-0 stand-in for the TypeScript validator (written when Node
+was not yet installed). It checks the invariants documented in docs/IR-SCHEMA.md
+so a fixture can be proven well-formed using only the Python standard library.
 
 Usage:
     python3 scripts/check_ir.py <fixture.ir.json> [more.ir.json ...]

@@ -42,8 +42,11 @@ A session works in **one** package. Load `packages/ir` types + that package; not
   prior chat, the artifact is too thin. Fix the artifact, don't lengthen the conversation.
 
 ## Verify
-- **Phase 0 (no Node yet):** `python3 scripts/check_ir.py packages/ir/fixtures/city-time.ir.json`
-- **Once Node ≥18 is installed:** `npm install && npm test`
+- **IR conformance:** `npm run check:ir` — the authoritative TS validator (`packages/ir/src/validate.ts`)
+  over the fixtures (ADR-0013).
+- **Full gate:** `npm test` — `check:ir` + validator spec tests + codegen golden tests. Runs on
+  Node ≥23 native TypeScript; **no `npm install` / build step needed**.
+- `scripts/check_ir.py` is **superseded** (ADR-0013): kept for reference, not in the gate.
 
 ## Key ADK facts the generator relies on
 - `Workflow(edges=[...])` where a row is a sequence chain; `("START", ...)` begins a graph;
