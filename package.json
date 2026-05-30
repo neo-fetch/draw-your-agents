@@ -10,6 +10,7 @@
   "scripts": {
     "check:ir": "python3 scripts/check_ir.py packages/ir/fixtures/*.ir.json",
     "build": "tsc -b",
-    "test": "npm run check:ir"
+    "test:codegen": "node --test \"packages/codegen/test/**/*.test.ts\"",
+    "test": "npm run check:ir && npm run test:codegen"
   }
 }

@@ -1,0 +1,14 @@
+{
+  "name": "@graphical-agents/codegen",
+  "version": "0.1.0",
+  "description": "IR → ADK project. Edges compiler + per-node templates + golden tests.",
+  "type": "module",
+  "main": "src/index.ts",
+  "files": ["src"],
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@graphical-agents/ir": "0.1.0"
+  }
+}

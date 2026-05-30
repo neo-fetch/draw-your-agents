@@ -61,3 +61,29 @@ edge list.
 literal `"START"`). A dedicated **edges compiler** in `packages/codegen` collapses linear chains,
 expands routers into route maps, and handles join/parallel into ADK `edges=[...]` rows.
 **Consequences:** The edges compiler is the highest-risk module; it gets golden-file tests.
+
+## ADR-0010 — Edges compiler output: structured rows + a thin renderer; black owns final formatting
+**Context:** The edges compiler must be golden-testable and feed the assembler, but ADK's `edges`
+rows ultimately become Python text that the pipeline runs through `black` ([ADR-0003](DECISIONS.md)).
+**Decision:** `compileEdges(ir)` returns a structured `EdgeRow[]` (each row a list of `RowMember`s:
+`{kind:"start"}` or `{kind:"node",name}`), and a separate `renderEdgeRows` emits a **compact**
+canonical fragment `edges=[(...)]`. The renderer does not pretty-print — line wrapping/trailing
+commas are left to `black` in the post-process step. Slice 1 implements **linear-chain collapse**
+only: a single START entry threaded through nodes that each have one in-edge and one out-edge.
+Routers (route edges), parallel fan-out (repeated START / multi-out), and joins (fan-in) are
+**rejected with `EdgesCompilerError`** rather than mis-compiled, so later slices fail loud.
+**Consequences:** Golden files assert the rendered fragment (the spec); the structured form stays
+available for the assembler and future router/join/parallel slices. The compiler does not
+re-validate IR invariants (reachability, DAG) — that is the validator's job ([ADR-0001](DECISIONS.md)).
+
+## ADR-0011 — `packages/codegen` runs on Node's native TypeScript (explicit `.ts` specifiers)
+**Context:** Node ≥23 (here v26) executes `.ts` directly via type-stripping, but requires the real
+on-disk extension in relative imports and does **not** rewrite `.js`→`.ts`. IR types are consumed
+type-only, so they erase at runtime.
+**Decision:** codegen source and tests use explicit `.ts` import specifiers and import IR types via
+`import type { … } from "@graphical-agents/ir"` (erased at runtime — no install needed to run tests).
+Tests use the built-in `node:test` runner; `npm test` runs `python3 check_ir.py` + `node --test`.
+**Consequences:** Golden tests are green from a cold checkout with zero `npm install` / build step.
+Bundling for `apps/web` (Vite) and any `tsc` typecheck resolve `.ts`/workspace types normally; this
+diverges from `packages/ir`'s tsc-emit `.js` specifiers, which is fine since codegen never imports
+IR at runtime.
