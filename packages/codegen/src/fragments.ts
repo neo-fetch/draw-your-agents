@@ -12,6 +12,7 @@ import type {
   GraphIR,
   InstructionTemplate,
   ModelParams,
+  RouterNode,
   ScalarType,
   SchemaDef,
   TypeRef,
@@ -107,6 +108,37 @@ export function renderFunction(
         `# TODO: implement ${node.name} — body not yet provided in the IR.`,
         `${channelVar}: ${output.py} = ...`,
         `return Event(${channelVar}=${channelVar})`,
+      ].join("\n"),
+    );
+  }
+
+  return { imports, code: `${header.join("\n")}\n${body}\n` };
+}
+
+/** functions.py: one `def` per router — returns `Event(route=...)`, or a TODO stub. */
+export function renderRouter(
+  node: RouterNode,
+  schemas: ReadonlyMap<string, SchemaDef>,
+): Fragment {
+  const cfg = node.config;
+  const imports: ImportReq[] = [{ module: "google.adk", names: ["Event"] }];
+
+  const input = resolveRef(cfg.inputType ?? "str", schemas);
+  imports.push(...input.imports);
+
+  const header: string[] = [`def ${node.name}(node_input: ${input.py}) -> Event:`];
+  if (cfg.description) header.push(indent(`"""${cfg.description}"""`));
+
+  let body: string;
+  if (cfg.body != null) {
+    body = indent(cfg.body);
+  } else {
+    // null body → a stub that returns one of the declared routes.
+    body = indent(
+      [
+        `# TODO: implement ${node.name} — return Event(route=...) with one of: ${cfg.routes.join(", ")}.`,
+        `route: str = ...`,
+        `return Event(route=route)`,
       ].join("\n"),
     );
   }

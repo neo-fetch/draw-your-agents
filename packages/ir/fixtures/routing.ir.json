@@ -1,0 +1,95 @@
+{
+  "irVersion": "0.1.0",
+  "name": "support_router_workflow",
+  "description": "Triage an incoming support message and route it to the matching handler. The ADK graphs 'process_message → router → {BUG, CUSTOMER_SUPPORT, LOGISTICS}' example as IR.",
+  "schemas": [],
+  "nodes": [
+    {
+      "id": "n_process",
+      "type": "agent",
+      "name": "process_message",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Read the incoming support message and summarize the customer's intent in one line." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_router",
+      "type": "router",
+      "name": "router",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Route the support message to the matching handler.",
+        "routes": ["BUG", "CUSTOMER_SUPPORT", "LOGISTICS"],
+        "inputType": "str",
+        "body": null
+      }
+    },
+    {
+      "id": "n_bug",
+      "type": "agent",
+      "name": "handle_bug",
+      "ui": { "x": 520, "y": -120 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Triage the reported bug, ask for reproduction steps if missing, and draft an engineering ticket." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_support",
+      "type": "agent",
+      "name": "handle_customer_support",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Answer the customer's support question directly and offer next steps." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_logistics",
+      "type": "agent",
+      "name": "handle_logistics",
+      "ui": { "x": 520, "y": 120 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Resolve the shipping or logistics request and provide tracking or delivery details." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_process" },
+    { "from": "n_process", "to": "n_router" },
+    { "from": "n_router", "to": "n_bug", "route": "BUG" },
+    { "from": "n_router", "to": "n_support", "route": "CUSTOMER_SUPPORT" },
+    { "from": "n_router", "to": "n_logistics", "route": "LOGISTICS" }
+  ]
+}

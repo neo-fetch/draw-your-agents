@@ -146,3 +146,37 @@ the `@graphical-agents/ir` package specifier (whose `main` points at an unbuilt 
 **Consequences:** One typed, golden-testable IR spec; the visual builder and draw.io importer can
 surface located findings; codegen refuses to generate from an invalid IR. The Python script is a
 historical reference, not a second source of truth.
+
+## ADR-0014 — Router slice: route-map row form + branch-target assumptions
+**Context:** Routers are the first non-linear construct ([ADR-0009](DECISIONS.md)). The edges
+compiler and assembler previously rejected them loud ([ADR-0010](DECISIONS.md),
+[ADR-0012](DECISIONS.md)); this slice generates them end to end. The IR validator already enforced
+the router route⇔edge-label invariants (IR-SCHEMA §7), so it was unchanged — the new
+`packages/ir/fixtures/routing.ir.json` ("process_message → router → {BUG, CUSTOMER_SUPPORT,
+LOGISTICS}") exercises that existing path.
+**Decision:**
+- **Edges compiler.** A router terminates the entry sequence chain and contributes a **second row**
+  `(router, {"ROUTE": target, ...})` — the ADK route map. The structured `RowMember` model gains a
+  third kind `{kind:"routeMap", entries:[{route,target}]}` (not a renderer hack —
+  [ADR-0010](DECISIONS.md)). Rendered form: **quoted route keys, bare target symbols**
+  (`{"BUG": handle_bug, ...}`). **Entry order follows the router's declared `routes` array**
+  (deterministic), *not* edge order — the validator guarantees the two sets match.
+- **Branch targets must be terminal in this slice.** A route target with its own out-edges is a
+  branch *continuation* we don't yet linearize; `compileEdges` throws `EdgesCompilerError` rather
+  than drop it. Nested routers (a router as a branch target chains a second route row), joins, and
+  parallel stay rejected loud. `compileEdges` keeps rejecting `join`/`humanInput` and non-router
+  fan-out / multiple-START.
+- **Codegen.** Routers render into **`functions.py`** (they are functions returning `Event`) via a
+  new `renderRouter` fragment: `def <name>(node_input: <inputType ?? str>) -> Event:`, `null` body →
+  a TODO stub `route: str = ...; return Event(route=route)` that names the declared routes. Function
+  and router defs interleave in **IR node order**. `generateProject` now allows
+  `agent`/`function`/`router`; `tool`/`join`/`humanInput`/`workflow` still raise `CodegenError`.
+  `workflow.py` imports router symbols from `functions` (they appear in the edge rows); branch-target
+  agents import from `agents` as before.
+**ADK assumptions to revisit with the fidelity service ([ADR-0004](DECISIONS.md)):** that the route
+row is literally `(router_symbol, {route_string: target_symbol})` and that `Event(route=...)` alone
+moves control to the mapped target. How *data* flows into a branch (the router's `node_input` vs. a
+separate payload) is not yet modelled — branches here take whatever ADK forwards positionally.
+**Consequences:** The compiler emits multi-row `edges` for the first time; goldens
+(`test/golden/routing.edges.txt`, `test/golden/routing/`) pin the row form and the generated project,
+and the py_compile trust gate now covers the routing fixture too.

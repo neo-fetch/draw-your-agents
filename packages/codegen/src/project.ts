@@ -10,12 +10,19 @@
  * *types* (tool, workflow) loud. `black` is the post-process formatter and is not
  * run yet — fragments emit black-shaped text so that step is a near no-op.
  */
-import type { AgentNode, FunctionNode, GraphIR, SchemaDef } from "@graphical-agents/ir";
+import type {
+  AgentNode,
+  FunctionNode,
+  GraphIR,
+  RouterNode,
+  SchemaDef,
+} from "@graphical-agents/ir";
 import { compileEdges, renderEdgeRows, type EdgeRow } from "./edges.ts";
 import {
   indexSchemas,
   renderAgent,
   renderFunction,
+  renderRouter,
   renderSchema,
   type Fragment,
 } from "./fragments.ts";
@@ -36,24 +43,25 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const rows = compileEdges(ir);
   const schemas = indexSchemas(ir);
 
-  // Reject out-of-slice node types loud — only agent + function this slice.
+  // Reject out-of-slice node types loud — agent + function + router this slice.
   for (const node of ir.nodes) {
-    if (node.type !== "agent" && node.type !== "function") {
+    if (node.type !== "agent" && node.type !== "function" && node.type !== "router") {
       throw new CodegenError(
         `node "${node.name}" of type "${node.type}" is not handled by the ` +
-          "agent+function slice",
+          "agent+function+router slice",
       );
     }
   }
 
   const agents = ir.nodes.filter((n): n is AgentNode => n.type === "agent");
   const functions = ir.nodes.filter((n): n is FunctionNode => n.type === "function");
+  const routers = ir.nodes.filter((n): n is RouterNode => n.type === "router");
 
   const files: GeneratedProject = new Map();
   files.set("schemas.py", schemasModule(ir, ir.schemas, schemas));
-  files.set("functions.py", functionsModule(ir, functions, schemas));
+  files.set("functions.py", functionsModule(ir, functions, routers, schemas));
   files.set("agents.py", agentsModule(ir, agents, schemas));
-  files.set("workflow.py", workflowModule(ir, rows, agents, functions));
+  files.set("workflow.py", workflowModule(ir, rows, agents, functions, routers));
   files.set("requirements.txt", REQUIREMENTS);
   files.set(".env.example", ENV_EXAMPLE);
   files.set("README.md", readme(ir));
@@ -99,11 +107,22 @@ function schemasModule(
 function functionsModule(
   ir: GraphIR,
   functions: readonly FunctionNode[],
+  routers: readonly RouterNode[],
   schemas: ReadonlyMap<string, SchemaDef>,
 ): string {
   const head = header("Function bodies (implement the TODO stubs)", ir);
-  if (functions.length === 0) return `${head}\n\n# No function nodes in the IR.\n`;
-  const frags: Fragment[] = functions.map((n) => renderFunction(n, schemas));
+  if (functions.length === 0 && routers.length === 0) {
+    return `${head}\n\n# No function or router nodes in the IR.\n`;
+  }
+  // Render in IR node order so function and router defs interleave naturally.
+  const byId = new Set<string>([...functions, ...routers].map((n) => n.id));
+  const frags: Fragment[] = ir.nodes
+    .filter((n) => byId.has(n.id))
+    .map((n) =>
+      n.type === "router"
+        ? renderRouter(n as RouterNode, schemas)
+        : renderFunction(n as FunctionNode, schemas),
+    );
   return joinModule(head, frags.flatMap((f) => f.imports), frags.map((f) => f.code), "def");
 }
 
@@ -123,13 +142,14 @@ function workflowModule(
   rows: readonly EdgeRow[],
   agents: readonly AgentNode[],
   functions: readonly FunctionNode[],
+  routers: readonly RouterNode[],
 ): string {
   const head = header("Workflow graph (entry module)", ir);
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Workflow"] }];
   if (agents.length > 0) imports.push({ module: "agents", names: agents.map((a) => a.name) });
-  if (functions.length > 0) {
-    imports.push({ module: "functions", names: functions.map((f) => f.name) });
-  }
+  // Routers live in functions.py too, and their symbols appear in the edge rows.
+  const fnNames = [...functions.map((f) => f.name), ...routers.map((r) => r.name)];
+  if (fnNames.length > 0) imports.push({ module: "functions", names: fnNames });
 
   const kwargs = `name=${pyStr(ir.name)},\n${renderEdgeRows(rows)},`;
   const body = `root_agent = Workflow(\n${indent(kwargs)}\n)\n`;

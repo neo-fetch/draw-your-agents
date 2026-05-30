@@ -25,11 +25,10 @@ function loadIR(relPath: string): GraphIR {
   return JSON.parse(readFileSync(join(repoRoot, relPath), "utf8")) as GraphIR;
 }
 
-function loadGolden(file: string): string {
-  return readFileSync(join(here, "golden", "city-time", file), "utf8");
+function loadGolden(project: string, file: string): string {
+  return readFileSync(join(here, "golden", project, file), "utf8");
 }
 
-const CITY_TIME = "packages/ir/fixtures/city-time.ir.json";
 const EXPECTED_FILES = [
   "schemas.py",
   "functions.py",
@@ -40,31 +39,39 @@ const EXPECTED_FILES = [
   "README.md",
 ];
 
-test("city-time: generates exactly the ARCHITECTURE §5 file set", () => {
-  const files = generateProject(loadIR(CITY_TIME));
-  assert.deepEqual([...files.keys()].sort(), [...EXPECTED_FILES].sort());
-});
+// Each golden project: the fixture IR and the golden directory under golden/.
+const PROJECTS = [
+  { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json" },
+  { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
+];
 
-for (const file of EXPECTED_FILES) {
-  test(`city-time: ${file} matches golden`, () => {
-    const files = generateProject(loadIR(CITY_TIME));
-    assert.equal(files.get(file), loadGolden(file));
+for (const { name, fixture } of PROJECTS) {
+  test(`${name}: generates exactly the ARCHITECTURE §5 file set`, () => {
+    const files = generateProject(loadIR(fixture));
+    assert.deepEqual([...files.keys()].sort(), [...EXPECTED_FILES].sort());
+  });
+
+  for (const file of EXPECTED_FILES) {
+    test(`${name}: ${file} matches golden`, () => {
+      const files = generateProject(loadIR(fixture));
+      assert.equal(files.get(file), loadGolden(name, file));
+    });
+  }
+
+  test(`${name}: trust check — every generated .py passes python3 -m py_compile`, () => {
+    const files = generateProject(loadIR(fixture));
+    const dir = mkdtempSync(join(tmpdir(), "ga-codegen-"));
+    const pyFiles: string[] = [];
+    for (const [file, content] of files) {
+      const path = join(dir, file);
+      writeFileSync(path, content);
+      if (file.endsWith(".py")) pyFiles.push(path);
+    }
+    assert.ok(pyFiles.length > 0, "expected at least one .py file");
+    // py_compile only — proves syntax, does not import ADK.
+    execFileSync("python3", ["-m", "py_compile", ...pyFiles], { stdio: "pipe" });
   });
 }
-
-test("city-time: trust check — every generated .py passes python3 -m py_compile", () => {
-  const files = generateProject(loadIR(CITY_TIME));
-  const dir = mkdtempSync(join(tmpdir(), "ga-codegen-"));
-  const pyFiles: string[] = [];
-  for (const [name, content] of files) {
-    const path = join(dir, name);
-    writeFileSync(path, content);
-    if (name.endsWith(".py")) pyFiles.push(path);
-  }
-  assert.ok(pyFiles.length > 0, "expected at least one .py file");
-  // py_compile only — proves syntax, does not import ADK.
-  execFileSync("python3", ["-m", "py_compile", ...pyFiles], { stdio: "pipe" });
-});
 
 test("rejects an out-of-slice node type via the assembler's own guard", () => {
   // A `tool` node passes the edges compiler (it linearizes fine) but is not an
@@ -86,17 +93,6 @@ test("rejects an out-of-slice graph shape (humanInput) loud", () => {
     schemas: [],
     nodes: [{ id: "h", type: "humanInput", name: "ask", config: { message: "?" } }],
     edges: [{ from: "START", to: "h" }],
-  };
-  assert.throws(() => generateProject(ir));
-});
-
-test("rejects a router graph (out-of-slice shape) loud", () => {
-  const ir: GraphIR = {
-    irVersion: "0.1.0",
-    name: "has_router",
-    schemas: [],
-    nodes: [{ id: "r", type: "router", name: "r", config: { routes: ["X"] } }],
-    edges: [{ from: "START", to: "r" }],
   };
   assert.throws(() => generateProject(ir));
 });

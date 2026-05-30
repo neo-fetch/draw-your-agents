@@ -70,15 +70,59 @@ test("rejects parallel fan-out (a node with multiple out-edges)", () => {
   assert.throws(() => compileEdges(ir), /fans out/);
 });
 
-test("rejects a router node as out of slice", () => {
+test("routing: router collapses to an entry chain + a route-map row", () => {
+  const ir = loadIR("packages/ir/fixtures/routing.ir.json");
+  const rendered = renderEdgeRows(compileEdges(ir));
+  assert.equal(rendered, loadGolden("routing.edges.txt"));
+});
+
+test("routing: produces an entry chain row + a route-map row in declared order", () => {
+  const rows = compileEdges(loadIR("packages/ir/fixtures/routing.ir.json"));
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0], [
+    { kind: "start" },
+    { kind: "node", name: "process_message" },
+    { kind: "node", name: "router" },
+  ]);
+  assert.deepEqual(rows[1], [
+    { kind: "node", name: "router" },
+    {
+      kind: "routeMap",
+      entries: [
+        { route: "BUG", target: "handle_bug" },
+        { route: "CUSTOMER_SUPPORT", target: "handle_customer_support" },
+        { route: "LOGISTICS", target: "handle_logistics" },
+      ],
+    },
+  ]);
+});
+
+test("rejects a branch continuation (a non-terminal router target) loud", () => {
   const ir: GraphIR = {
     irVersion: "0.1.0",
-    name: "has_router",
+    name: "branch_continues",
     schemas: [],
     nodes: [
       { id: "r", type: "router", name: "r", config: { routes: ["X"] } },
+      { id: "a", type: "function", name: "a", config: { inputType: "str", outputType: "str" } },
+      { id: "b", type: "function", name: "b", config: { inputType: "str", outputType: "str" } },
     ],
-    edges: [{ from: "START", to: "r" }],
+    edges: [
+      { from: "START", to: "r" },
+      { from: "r", to: "a", route: "X" },
+      { from: "a", to: "b" },
+    ],
   };
-  assert.throws(() => compileEdges(ir), /router/);
+  assert.throws(() => compileEdges(ir), /branch continuation/);
+});
+
+test("rejects a join (fan-in) as out of slice", () => {
+  const ir: GraphIR = {
+    irVersion: "0.1.0",
+    name: "has_join",
+    schemas: [],
+    nodes: [{ id: "j", type: "join", name: "collect", config: {} }],
+    edges: [{ from: "START", to: "j" }],
+  };
+  assert.throws(() => compileEdges(ir), /join/);
 });
