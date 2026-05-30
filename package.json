@@ -1,0 +1,15 @@
+{
+  "name": "graphical-agents",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Visual builder that compiles a drag-and-drop agent graph into runnable Google ADK graph-workflow projects.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "check:ir": "python3 scripts/check_ir.py packages/ir/fixtures/*.ir.json",
+    "build": "tsc -b",
+    "test": "npm run check:ir"
+  }
+}

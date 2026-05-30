@@ -1,0 +1,86 @@
+{
+  "irVersion": "0.1.0",
+  "name": "city_time_workflow",
+  "description": "Generate a city, look up its time, report it. The ADK graphs 'Get started' example expressed as IR.",
+  "schemas": [
+    {
+      "name": "CityTime",
+      "fields": [
+        { "name": "time_info", "type": "str" },
+        { "name": "city", "type": "str" }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_city_gen",
+      "type": "agent",
+      "name": "city_generator",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Return the name of a random city. Return only the name, nothing else." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_lookup",
+      "type": "function",
+      "name": "lookup_time",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Return the current time in the given city.",
+        "inputType": "str",
+        "outputType": "CityTime",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_report",
+      "type": "agent",
+      "name": "city_report",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Output the following line:\nIt is " },
+            { "type": "var", "schema": "CityTime", "field": "time_info", "source": "lookup_time" },
+            { "type": "text", "value": " in " },
+            { "type": "var", "schema": "CityTime", "field": "city", "source": "lookup_time" },
+            { "type": "text", "value": " right now." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": "CityTime",
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_done",
+      "type": "function",
+      "name": "completed_message",
+      "ui": { "x": 780, "y": 0 },
+      "config": {
+        "description": "Append a workflow-completed notice to the report.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "message",
+        "body": null
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_city_gen" },
+    { "from": "n_city_gen", "to": "n_lookup" },
+    { "from": "n_lookup", "to": "n_report" },
+    { "from": "n_report", "to": "n_done" }
+  ]
+}

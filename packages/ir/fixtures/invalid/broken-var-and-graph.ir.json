@@ -1,0 +1,47 @@
+{
+  "irVersion": "0.1.0",
+  "name": "broken_example",
+  "description": "Intentionally invalid IR. Used to assert the validator rejects bad graphs. Lives under invalid/ so the default check:ir glob (fixtures/*.ir.json) skips it.",
+  "schemas": [
+    { "name": "CityTime", "fields": [{ "name": "city", "type": "str" }] }
+  ],
+  "nodes": [
+    {
+      "id": "n_gen",
+      "type": "agent",
+      "name": "city_generator",
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": { "segments": [{ "type": "text", "value": "Return a city." }] },
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_report",
+      "type": "agent",
+      "name": "city_report",
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "It is in " },
+            { "type": "var", "schema": "CityTime", "field": "time_info", "source": "city_generator" }
+          ]
+        },
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_orphan",
+      "type": "function",
+      "name": "orphan",
+      "config": { "inputType": "str", "outputType": "Mystery" }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_gen" },
+    { "from": "n_gen", "to": "n_report" }
+  ]
+}

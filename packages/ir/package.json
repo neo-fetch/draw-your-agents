@@ -1,0 +1,12 @@
+{
+  "name": "@graphical-agents/ir",
+  "version": "0.1.0",
+  "description": "Graph IR — types, JSON Schema, and (TS) validator. The keystone contract.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "schema"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

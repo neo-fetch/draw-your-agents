@@ -1,0 +1,179 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://graphical-agents/ir.schema.json",
+  "title": "Graph IR",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["irVersion", "name", "nodes", "edges", "schemas"],
+  "properties": {
+    "irVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "name": { "$ref": "#/definitions/identifier" },
+    "description": { "type": "string" },
+    "schemas": { "type": "array", "items": { "$ref": "#/definitions/schemaDef" } },
+    "nodes": { "type": "array", "items": { "$ref": "#/definitions/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/definitions/edge" } }
+  },
+  "definitions": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+    "scalarType": { "enum": ["str", "int", "float", "bool", "date", "datetime"] },
+
+    "schemaDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "fields"],
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "fields": { "type": "array", "items": { "$ref": "#/definitions/field" } }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "type": { "$ref": "#/definitions/scalarType" },
+        "optional": { "type": "boolean" },
+        "default": {}
+      }
+    },
+
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "route": { "type": "string" }
+      }
+    },
+
+    "instructionTemplate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["segments"],
+      "properties": {
+        "segments": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["type", "value"],
+                "properties": {
+                  "type": { "const": "text" },
+                  "value": { "type": "string" }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["type", "schema", "field", "source"],
+                "properties": {
+                  "type": { "const": "var" },
+                  "schema": { "$ref": "#/definitions/identifier" },
+                  "field": { "$ref": "#/definitions/identifier" },
+                  "source": { "$ref": "#/definitions/identifier" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+
+    "modelParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": { "type": "number" },
+        "topP": { "type": "number" },
+        "topK": { "type": "integer" },
+        "maxOutputTokens": { "type": "integer" }
+      }
+    },
+
+    "agentConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "instruction", "outputSchemaRef"],
+      "properties": {
+        "model": { "type": "string" },
+        "instruction": { "$ref": "#/definitions/instructionTemplate" },
+        "modelParams": { "$ref": "#/definitions/modelParams" },
+        "mode": { "enum": ["task", "single_turn"] },
+        "tools": { "type": "array", "items": { "type": "string" } },
+        "inputSchemaRef": { "type": ["string", "null"] },
+        "outputSchemaRef": { "type": "string" }
+      }
+    },
+    "functionConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputType", "outputType"],
+      "properties": {
+        "description": { "type": "string" },
+        "inputType": { "type": "string" },
+        "outputType": { "type": "string" },
+        "emits": { "enum": ["output", "message"] },
+        "body": { "type": ["string", "null"] }
+      }
+    },
+    "routerConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["routes"],
+      "properties": {
+        "description": { "type": "string" },
+        "routes": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "inputType": { "type": "string" },
+        "body": { "type": ["string", "null"] }
+      }
+    },
+    "joinConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "description": { "type": "string" } }
+    },
+    "humanInputConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string" },
+        "payloadRef": { "type": ["string", "null"] },
+        "responseSchemaRef": { "type": ["string", "null"] }
+      }
+    },
+
+    "node": {
+      "type": "object",
+      "required": ["id", "type", "name", "config"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["agent", "function", "router", "tool", "join", "humanInput", "workflow"] },
+        "name": { "$ref": "#/definitions/identifier" },
+        "config": { "type": "object" },
+        "ui": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "x": { "type": "number" }, "y": { "type": "number" } }
+        }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "agent" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/agentConfig" } } } },
+        { "if": { "properties": { "type": { "const": "function" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/functionConfig" } } } },
+        { "if": { "properties": { "type": { "const": "router" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/routerConfig" } } } },
+        { "if": { "properties": { "type": { "const": "join" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/joinConfig" } } } },
+        { "if": { "properties": { "type": { "const": "humanInput" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/humanInputConfig" } } } }
+      ]
+    }
+  }
+}
