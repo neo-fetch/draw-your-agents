@@ -87,3 +87,33 @@ Tests use the built-in `node:test` runner; `npm test` runs `python3 check_ir.py`
 Bundling for `apps/web` (Vite) and any `tsc` typecheck resolve `.ts`/workspace types normally; this
 diverges from `packages/ir`'s tsc-emit `.js` specifiers, which is fine since codegen never imports
 IR at runtime.
+
+## ADR-0012 — Project assembler: fragment templates per node, scaffold + py_compile trust gate
+**Context:** Slice 2 of codegen turns the IR into the runnable project file set (ARCHITECTURE.md §5),
+scoped to the same constructs the edges compiler supports (ADR-0010): linear graphs of agent +
+function nodes.
+**Decision:** `generateProject(ir)` returns a `Map<path, content>` for the seven-file set
+(`schemas.py`, `functions.py`, `agents.py`, `workflow.py`, `requirements.txt`, `.env.example`,
+`README.md`). Each `.py` module is assembled from **per-node template fragments** (`renderSchema` /
+`renderFunction` / `renderAgent` in `fragments.ts`), never string-splicing (ADR-0003). A fragment is
+a pure `{ imports, code }`; the assembler dedupes/groups imports isort-style (stdlib → third-party →
+local) and stitches bodies. Scope is enforced loud, mirroring ADR-0010: `compileEdges` rejects
+out-of-slice graph *shapes*; `generateProject` additionally rejects out-of-slice node *types*
+(tool/workflow) with `CodegenError`. The golden files under `test/golden/city-time/` are the spec;
+a separate trust check shells out to `python3 -m py_compile` on every generated `.py` (py_compile
+**only** — it proves syntax without importing ADK).
+**Conventions chosen (assumptions to revisit with the fidelity service, ADR-0004):**
+- ADK import surface emitted as `from google.adk import Agent | Event | Workflow`; cross-module
+  refs as flat `from schemas|agents|functions import …` (project root on `sys.path`).
+- Function nodes: signature `def name(node_input: <inputType>) -> Event:`; `null` body → a TODO
+  stub returning `Event(<channel>=<channel>)` where channel honors `emits` (`output` vs `message`),
+  with an annotated `... ` placeholder so the return type is visible.
+- Agent prompt rendered source-bound `<Schema.field from node>` (ADR-0008); `"str"` schema refs
+  map to the builtin `str`, named refs to the pydantic class; `null` `inputSchemaRef` omits
+  `input_schema`. `modelParams` map to snake_case kwargs.
+- **`black` is not run yet** — it is the post-process step (ADR-0003); fragments emit black-shaped
+  text (4-space indent, double quotes, trailing commas, 2 blank lines around top-level def/class)
+  so that step is a near no-op.
+**Consequences:** New node types/constructs are added one fragment + one golden at a time. The
+edges compiler stays the single linearizer feeding `workflow.py`. The py_compile gate is the
+headless precursor to the full Python fidelity service (ADR-0004).
