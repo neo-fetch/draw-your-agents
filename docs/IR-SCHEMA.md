@@ -69,6 +69,15 @@ Branch targets are edges out of the router carrying a matching `route` label.
   "config": { "message": "Enter a number:", "payloadRef": null, "responseSchemaRef": null } }
 ```
 
+### tool
+```jsonc
+{ "id": "n_fetch", "type": "tool", "name": "fetch_data",
+  "config": { "description": "...", "inputType": "str", "outputType": "Article",
+              "body": null } }   // body null → generate a TODO stub
+```
+Compiles to a `FunctionTool` wrapping an underlying `<name>_impl` function
+(ADR-0019). Emits on the `output` channel; the edge symbol is the wrapper.
+
 ### workflow (nested)
 ```jsonc
 { "id": "n_nested", "type": "workflow", "name": "nested_workflow",

@@ -92,6 +92,14 @@ export interface WorkflowConfig {
   graph: GraphIR;
 }
 
+export interface ToolConfig {
+  description?: string;
+  inputType: TypeRef;
+  outputType: TypeRef;
+  /** null → generate a TODO stub with the correct signature. */
+  body?: string | null;
+}
+
 // --- Nodes ---
 export type NodeType =
   | "agent"
@@ -122,15 +130,16 @@ export type RouterNode = BaseNode<"router", RouterConfig>;
 export type JoinNode = BaseNode<"join", JoinConfig>;
 export type HumanInputNode = BaseNode<"humanInput", HumanInputConfig>;
 export type WorkflowNode = BaseNode<"workflow", WorkflowConfig>;
+export type ToolNode = BaseNode<"tool", ToolConfig>;
 
-/** Tool nodes arrive in Phase 3. */
 export type GraphNode =
   | AgentNode
   | FunctionNode
   | RouterNode
   | JoinNode
   | HumanInputNode
-  | WorkflowNode;
+  | WorkflowNode
+  | ToolNode;
 
 // --- Edges & graph ---
 /** Edge `from` may be this sentinel to mark a graph entry point. */

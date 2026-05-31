@@ -68,6 +68,34 @@ test("human-input fixture validates with zero errors and zero warnings", () => {
   assert.equal(r.ok, true);
 });
 
+test("tool fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/tool.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("tool node with bad type refs emits TOOL_UNKNOWN_INPUT/OUTPUT_TYPE", () => {
+  const ir = {
+    irVersion: "0.1.0",
+    name: "bad_tool",
+    schemas: [],
+    nodes: [
+      {
+        id: "n_tool",
+        type: "tool",
+        name: "fetch",
+        config: { inputType: "Mystery", outputType: "AlsoMystery", body: null },
+      },
+    ],
+    edges: [{ from: "START", to: "n_tool" }],
+  } as unknown as GraphIR;
+  const r = validate(ir);
+  const codes = new Set(r.errors.map((f) => f.code));
+  assert.ok(codes.has(ValidationCode.TOOL_UNKNOWN_INPUT_TYPE));
+  assert.ok(codes.has(ValidationCode.TOOL_UNKNOWN_OUTPUT_TYPE));
+});
+
 test("human-input-bad-ref fixture reports both UNKNOWN_HUMANINPUT_* codes on the same node", () => {
   const r = validate(loadIR("../fixtures/invalid/human-input-bad-ref.ir.json"));
   assert.equal(r.ok, false);

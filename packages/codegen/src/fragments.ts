@@ -17,6 +17,7 @@ import type {
   RouterNode,
   ScalarType,
   SchemaDef,
+  ToolNode,
   TypeRef,
 } from "@graphical-agents/ir";
 import { CodegenError, type ImportReq, indent, pyStr } from "./python.ts";
@@ -191,6 +192,59 @@ export function renderHumanInput(
 export function renderJoin(node: JoinNode): Fragment {
   const imports: ImportReq[] = [{ module: "google.adk.workflow", names: ["JoinNode"] }];
   const body = `${node.name} = JoinNode(\n${indent(`name=${pyStr(node.name)},`)}\n)\n`;
+  return { imports, code: body };
+}
+
+/** Codegen-internal symbol for a tool node's underlying function (ADR-0019). */
+export function toolImplName(node: ToolNode): string {
+  return `${node.name}_impl`;
+}
+
+/**
+ * functions.py: one `def <name>_impl(node_input: <inputType>) -> Event:` per
+ * tool node (ADR-0019). Mirrors `renderFunction` (output channel only — tools
+ * have no `emits` choice).
+ */
+export function renderToolImpl(
+  node: ToolNode,
+  schemas: ReadonlyMap<string, SchemaDef>,
+): Fragment {
+  const cfg = node.config;
+  const imports: ImportReq[] = [{ module: "google.adk", names: ["Event"] }];
+
+  const input = resolveRef(cfg.inputType, schemas);
+  imports.push(...input.imports);
+  const output = resolveRef(cfg.outputType, schemas);
+  imports.push(...output.imports);
+
+  const implName = toolImplName(node);
+  const header: string[] = [`def ${implName}(node_input: ${input.py}) -> Event:`];
+  if (cfg.description) header.push(indent(`"""${cfg.description}"""`));
+
+  let body: string;
+  if (cfg.body != null) {
+    body = indent(cfg.body);
+  } else {
+    body = indent(
+      [
+        `# TODO: implement ${node.name} — body not yet provided in the IR.`,
+        `output: ${output.py} = ...`,
+        `return Event(output=output)`,
+      ].join("\n"),
+    );
+  }
+
+  return { imports, code: `${header.join("\n")}\n${body}\n` };
+}
+
+/**
+ * workflow.py: one `<name> = FunctionTool(func=<name>_impl)` per tool node
+ * (ADR-0019). Emitted inline before that level's joins and `Workflow(...)`
+ * assignment, in the same slot pattern as `renderJoin`.
+ */
+export function renderToolWrapper(node: ToolNode): Fragment {
+  const imports: ImportReq[] = [{ module: "google.adk.tools", names: ["FunctionTool"] }];
+  const body = `${node.name} = FunctionTool(func=${toolImplName(node)})\n`;
   return { imports, code: body };
 }
 

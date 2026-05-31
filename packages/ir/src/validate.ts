@@ -57,6 +57,8 @@ export const ValidationCode = {
   UNKNOWN_INPUT_SCHEMA_REF: "UNKNOWN_INPUT_SCHEMA_REF",
   FUNCTION_UNKNOWN_INPUT_TYPE: "FUNCTION_UNKNOWN_INPUT_TYPE",
   FUNCTION_UNKNOWN_OUTPUT_TYPE: "FUNCTION_UNKNOWN_OUTPUT_TYPE",
+  TOOL_UNKNOWN_INPUT_TYPE: "TOOL_UNKNOWN_INPUT_TYPE",
+  TOOL_UNKNOWN_OUTPUT_TYPE: "TOOL_UNKNOWN_OUTPUT_TYPE",
   ROUTER_NO_ROUTES: "ROUTER_NO_ROUTES",
   HUMANINPUT_MISSING_MESSAGE: "HUMANINPUT_MISSING_MESSAGE",
   UNKNOWN_HUMANINPUT_PAYLOAD_REF: "UNKNOWN_HUMANINPUT_PAYLOAD_REF",
@@ -319,6 +321,16 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
         }
         break;
       }
+      case "tool": {
+        const ctx = `tool ${n.name}`;
+        if (!refOk(c.inputType)) {
+          err(ValidationCode.TOOL_UNKNOWN_INPUT_TYPE, `${ctx}: unknown inputType ${repr(c.inputType)}`, n.id);
+        }
+        if (!refOk(c.outputType)) {
+          err(ValidationCode.TOOL_UNKNOWN_OUTPUT_TYPE, `${ctx}: unknown outputType ${repr(c.outputType)}`, n.id);
+        }
+        break;
+      }
       case "router": {
         if (!(Array.isArray(c.routes) && c.routes.length > 0)) {
           err(ValidationCode.ROUTER_NO_ROUTES, `router ${n.name}: must declare at least one route`, n.id);
@@ -362,7 +374,7 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
         break;
       }
       default:
-        break; // join / tool have no per-type checks in this slice
+        break; // join has no per-type checks
     }
   }
 

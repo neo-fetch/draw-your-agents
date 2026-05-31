@@ -1,0 +1,49 @@
+{
+  "irVersion": "0.1.0",
+  "name": "tool_workflow",
+  "description": "Linear chain with a Tool node: START → fetch_data (tool) → summarize (agent). The tool emits a structured Article that the agent consumes as input.",
+  "schemas": [
+    {
+      "name": "Article",
+      "fields": [
+        { "name": "title", "type": "str" },
+        { "name": "body", "type": "str" }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_fetch",
+      "type": "tool",
+      "name": "fetch_data",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "description": "Fetch an article from a remote source.",
+        "inputType": "str",
+        "outputType": "Article",
+        "body": null
+      }
+    },
+    {
+      "id": "n_summarize",
+      "type": "agent",
+      "name": "summarize",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Summarize the article in one sentence." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": "Article",
+        "outputSchemaRef": "str"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_fetch" },
+    { "from": "n_fetch", "to": "n_summarize" }
+  ]
+}

@@ -375,3 +375,75 @@ and the generated project; the `py_compile` trust gate covers the nested
 project too. A manual three-level sanity check (root → middle → innermost)
 confirms deepest-first emission and DFS-preorder module bodies generalize to
 arbitrary depth.
+
+## ADR-0019 — Tool node: `FunctionTool` wrapping `<name>_impl`, inline in `workflow.py`
+**Context:** `tool` is the last v1 declarative leaf
+([ARCHITECTURE.md §2](ARCHITECTURE.md)) — after [ADR-0018](DECISIONS.md) it was
+the only node type still rejected loud by `generateProject`'s type guard and
+absent from the validator's per-type switch. The ADK docs surface
+`FunctionTool(func=...)` from `google.adk.tools` for the agent-tool use case,
+but do **not** specify how a Tool is used as a graph node. This slice picks a
+minimal defensible shape and records it as an explicit assumption to revisit
+with the fidelity service ([ADR-0004](DECISIONS.md)), mirroring how
+[ADR-0016](DECISIONS.md) pinned `RequestInput` and [ADR-0015](DECISIONS.md)
+pinned `JoinNode`.
+**Decision:**
+- **IR shape.** `ToolConfig = { description?, inputType, outputType, body? }`
+  — structurally identical to `FunctionConfig` minus the `emits` channel
+  choice (tools always emit on `output`). `tool.ir.json`
+  (`START → fetch_data (tool) → summarize (agent)`, `Article` schema) is the
+  worked example.
+- **Validator.** New `TOOL_UNKNOWN_INPUT_TYPE` / `TOOL_UNKNOWN_OUTPUT_TYPE`
+  codes; a `case "tool":` branch in the per-type switch runs `refOk` on
+  `inputType` / `outputType` exactly like `function`. Name uniqueness,
+  reachability, DAG, and edge checks are type-blind and already cover `tool`
+  generically.
+- **Edges compiler.** A tool node is a plain linear-chain member —
+  `{kind:"node", name}`, no new `RowMember` kind. The chain walker already
+  treats anything that is not a `router` or `join` as linear, so no source
+  change was needed.
+- **Emission surface.** A tool node compiles to two pieces:
+  ```python
+  # functions.py
+  def fetch_data_impl(node_input: str) -> Event:
+      """..."""
+      # TODO: implement fetch_data — body not yet provided in the IR.
+      output: Article = ...
+      return Event(output=output)
+
+  # workflow.py — inline, in the same slot as JoinNode declarations
+  fetch_data = FunctionTool(func=fetch_data_impl)
+  ```
+  The edge symbol is the wrapper (`fetch_data`), so parent `edges` rows
+  reference it directly like any other node. The underlying impl is named
+  `<node_name>_impl` and lives in `functions.py`; the suffix is a
+  codegen-internal symbol (the flat global namespace from
+  [ADR-0017](DECISIONS.md) is over user-facing node `name`s only, so no
+  validator rule is needed for it). Import surface:
+  `from google.adk.tools import FunctionTool`. Per-context emission order in
+  `workflow.py` is **tool wrappers → join declarations → `Workflow(...)`
+  assignment**, walked deepest-first ([ADR-0018](DECISIONS.md)) so a nested
+  workflow brings its tool wrappers and join declarations with it.
+- **Project assembler.** `generateProject`'s rejection list is gone — every
+  v1 declarative type is now handled. The remaining type guard only fires on
+  malformed IR with an unknown `type` string (the validator's
+  `UNKNOWN_NODE_TYPE` is the upstream gate; codegen trusts a clean IR,
+  reaffirming [ADR-0013](DECISIONS.md)).
+**ADK assumptions to revisit with the fidelity service ([ADR-0004](DECISIONS.md)):**
+that `FunctionTool` is importable from `google.adk.tools`; that the
+graph-workflow surface for a tool node is the `FunctionTool` *object*
+referenced by bare symbol in `edges` rows (like a function or agent); that
+the underlying `func=` callable has the function-node signature
+`(node_input: <inputType>) -> Event` and emits on the `output` channel. The
+ADK docs surveyed (`graphs/`, `graphs/routes/`, `graphs/data-handling/`,
+`tools-custom/`) mention "ADK Tools" can be workflow nodes but do not
+demonstrate the surface explicitly — this slice's emission is the minimal
+shape that compiles cleanly and aligns with `FunctionTool`'s documented
+constructor.
+**Consequences:** Every v1 declarative node type
+([ARCHITECTURE.md §2](ARCHITECTURE.md)) now compiles end to end —
+agent, function, router, join, humanInput, workflow, and tool. The codegen
+scope log closes here: no `CodegenError` path is reachable from a valid IR.
+Goldens (`test/golden/tool.edges.txt`, `test/golden/tool/`) pin the row form
+and the generated project; the `py_compile` trust gate now covers the tool
+fixture too.

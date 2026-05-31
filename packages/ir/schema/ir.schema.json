@@ -156,6 +156,17 @@
         "graph": { "$ref": "#" }
       }
     },
+    "toolConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputType", "outputType"],
+      "properties": {
+        "description": { "type": "string" },
+        "inputType": { "type": "string" },
+        "outputType": { "type": "string" },
+        "body": { "type": ["string", "null"] }
+      }
+    },
 
     "node": {
       "type": "object",
@@ -183,7 +194,9 @@
         { "if": { "properties": { "type": { "const": "humanInput" } } },
           "then": { "properties": { "config": { "$ref": "#/definitions/humanInputConfig" } } } },
         { "if": { "properties": { "type": { "const": "workflow" } } },
-          "then": { "properties": { "config": { "$ref": "#/definitions/workflowConfig" } } } }
+          "then": { "properties": { "config": { "$ref": "#/definitions/workflowConfig" } } } },
+        { "if": { "properties": { "type": { "const": "tool" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/toolConfig" } } } }
       ]
     }
   }

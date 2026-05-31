@@ -4,11 +4,12 @@
  * compiler, dispatches per-node template fragments (ADR-0003), dedupes their
  * imports, and assembles the modules + scaffold files.
  *
- * Scope: every declarative v1 node type. compileEdges rejects out-of-slice
- * graph *shapes* loud; this module additionally rejects out-of-slice node
- * *types* (currently just `tool`) loud. `black` is the post-process formatter
- * and is not run yet — fragments emit black-shaped text so that step is a
- * near no-op.
+ * Scope: every declarative v1 node type — agent, function, router, join,
+ * humanInput, workflow, and tool (ADR-0019, the closing slice). compileEdges
+ * rejects out-of-slice graph *shapes* loud; this module's type guard now only
+ * fires on malformed IR with an unknown `type` string (the validator should
+ * have caught it upstream). `black` is the post-process formatter and is not
+ * run yet — fragments emit black-shaped text so that step is a near no-op.
  *
  * Nested `workflow` nodes (ADR-0018) compile recursively: each sub-graph is its
  * own `Workflow(...)` assignment in `workflow.py`, emitted deepest-first so a
@@ -26,6 +27,7 @@ import type {
   JoinNode,
   RouterNode,
   SchemaDef,
+  ToolNode,
 } from "@graphical-agents/ir";
 import { compileEdges, renderEdgeRows, type EdgeRow } from "./edges.ts";
 import {
@@ -36,6 +38,9 @@ import {
   renderJoin,
   renderRouter,
   renderSchema,
+  renderToolImpl,
+  renderToolWrapper,
+  toolImplName,
   type Fragment,
 } from "./fragments.ts";
 import { CodegenError, type ImportReq, indent, pyStr, renderImports } from "./python.ts";
@@ -61,6 +66,7 @@ interface WorkflowContext {
   readonly symbol: string;
   readonly rows: readonly EdgeRow[];
   readonly joins: readonly JoinNode[];
+  readonly tools: readonly ToolNode[];
 }
 
 /**
@@ -106,6 +112,7 @@ function collectWorkflowContexts(ir: GraphIR): WorkflowContext[] {
       symbol,
       rows: compileEdges(g),
       joins: g.nodes.filter((n): n is JoinNode => n.type === "join"),
+      tools: g.nodes.filter((n): n is ToolNode => n.type === "tool"),
     });
   };
   visit(ir, "root_agent", true);
@@ -120,8 +127,9 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const allNodes = walkAllNodes(ir);
   const allSchemaDefs = walkAllSchemas(ir);
 
-  // Reject out-of-slice node types loud. `tool` is the only remaining
-  // Phase 3 type after [ADR-0018](../../../docs/DECISIONS.md).
+  // Reject unknown node types loud. After ADR-0019, every v1 declarative type
+  // (agent/function/router/join/humanInput/workflow/tool) is handled — so any
+  // miss here is a malformed IR the validator should have caught upstream.
   for (const node of allNodes) {
     if (
       node.type !== "agent" &&
@@ -129,11 +137,12 @@ export function generateProject(ir: GraphIR): GeneratedProject {
       node.type !== "router" &&
       node.type !== "join" &&
       node.type !== "humanInput" &&
-      node.type !== "workflow"
+      node.type !== "workflow" &&
+      node.type !== "tool"
     ) {
       throw new CodegenError(
-        `node "${node.name}" of type "${node.type}" is not handled by the v1 ` +
-          "agent+function+router+join+humanInput+workflow slice",
+        `node "${(node as { name: string }).name}" of unknown type ` +
+          `"${(node as { type: string }).type}"`,
       );
     }
   }
@@ -143,18 +152,23 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const functions = allNodes.filter((n): n is FunctionNode => n.type === "function");
   const routers = allNodes.filter((n): n is RouterNode => n.type === "router");
   const humanInputs = allNodes.filter((n): n is HumanInputNode => n.type === "humanInput");
-  // Workflow assignments + their joins are emitted by workflowModule via the
-  // context list; deepest-first dependency order is baked into the collector.
+  const tools = allNodes.filter((n): n is ToolNode => n.type === "tool");
+  // Workflow assignments + their joins + their tool wrappers are emitted by
+  // workflowModule via the context list; deepest-first dependency order is
+  // baked into the collector.
   const workflowContexts = collectWorkflowContexts(ir);
 
   const files: GeneratedProject = new Map();
   files.set("schemas.py", schemasModule(ir, allSchemaDefs, schemas));
   files.set(
     "functions.py",
-    functionsModule(ir, allNodes, functions, routers, humanInputs, schemas),
+    functionsModule(ir, allNodes, functions, routers, humanInputs, tools, schemas),
   );
   files.set("agents.py", agentsModule(ir, agents, schemas));
-  files.set("workflow.py", workflowModule(ir, workflowContexts, agents, functions, routers, humanInputs));
+  files.set(
+    "workflow.py",
+    workflowModule(ir, workflowContexts, agents, functions, routers, humanInputs, tools),
+  );
   files.set("requirements.txt", REQUIREMENTS);
   files.set(".env.example", ENV_EXAMPLE);
   files.set("README.md", readme(ir));
@@ -203,16 +217,23 @@ function functionsModule(
   functions: readonly FunctionNode[],
   routers: readonly RouterNode[],
   humanInputs: readonly HumanInputNode[],
+  tools: readonly ToolNode[],
   schemas: ReadonlyMap<string, SchemaDef>,
 ): string {
   const head = header("Function bodies (implement the TODO stubs)", ir);
-  if (functions.length === 0 && routers.length === 0 && humanInputs.length === 0) {
-    return `${head}\n\n# No function, router, or humanInput nodes in the IR.\n`;
+  if (
+    functions.length === 0 &&
+    routers.length === 0 &&
+    humanInputs.length === 0 &&
+    tools.length === 0
+  ) {
+    return `${head}\n\n# No function, router, humanInput, or tool nodes in the IR.\n`;
   }
   // Render in DFS preorder across the parent + every nested sub-graph so
-  // function, router, and humanInput defs interleave naturally (ADR-0017).
+  // function, router, humanInput, and tool-impl defs interleave naturally
+  // (ADR-0017).
   const byId = new Set<string>(
-    [...functions, ...routers, ...humanInputs].map((n) => n.id),
+    [...functions, ...routers, ...humanInputs, ...tools].map((n) => n.id),
   );
   const frags: Fragment[] = allNodes
     .filter((n) => byId.has(n.id))
@@ -222,6 +243,8 @@ function functionsModule(
           return renderRouter(n as RouterNode, schemas);
         case "humanInput":
           return renderHumanInput(n as HumanInputNode, schemas);
+        case "tool":
+          return renderToolImpl(n as ToolNode, schemas);
         default:
           return renderFunction(n as FunctionNode, schemas);
       }
@@ -247,26 +270,35 @@ function workflowModule(
   functions: readonly FunctionNode[],
   routers: readonly RouterNode[],
   humanInputs: readonly HumanInputNode[],
+  tools: readonly ToolNode[],
 ): string {
   const head = header("Workflow graph (entry module)", ir);
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Workflow"] }];
   if (agents.length > 0) imports.push({ module: "agents", names: agents.map((a) => a.name) });
   // Routers and humanInput generators live in functions.py too — their symbols
-  // appear in the edge rows alongside plain function nodes.
+  // appear in the edge rows alongside plain function nodes. Tool impls live
+  // in functions.py as `<name>_impl`; the FunctionTool wrapper (which is what
+  // the edge rows reference) is declared inline below.
   const fnNames = [
     ...functions.map((f) => f.name),
     ...routers.map((r) => r.name),
     ...humanInputs.map((h) => h.name),
+    ...tools.map((t) => toolImplName(t)),
   ];
   if (fnNames.length > 0) imports.push({ module: "functions", names: fnNames });
 
-  // Walk contexts deepest-first: emit each level's join declarations inline,
-  // then this level's `Workflow(...)` assignment. The root context comes last
-  // and renders as `root_agent = Workflow(...)`; every nested context renders
-  // as `<workflow_node_name> = Workflow(...)` so the parent's edge rows can
-  // reference the symbol by name (ADR-0018).
+  // Walk contexts deepest-first: emit each level's tool wrappers, then its
+  // join declarations, then this level's `Workflow(...)` assignment. The root
+  // context comes last and renders as `root_agent = Workflow(...)`; every
+  // nested context renders as `<workflow_node_name> = Workflow(...)` so the
+  // parent's edge rows can reference the symbol by name (ADR-0018 / ADR-0019).
   const bodies: string[] = [];
   for (const ctx of contexts) {
+    for (const tool of ctx.tools) {
+      const frag = renderToolWrapper(tool);
+      imports.push(...frag.imports);
+      bodies.push(frag.code);
+    }
     for (const join of ctx.joins) {
       const frag = renderJoin(join);
       imports.push(...frag.imports);

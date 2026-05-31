@@ -149,6 +149,28 @@ test("human-input: produces one linear row with START + humanInput + downstream"
   ]);
 });
 
+// -- tool linear chain (ADR-0019) --
+//
+// A tool node is a plain linear-chain member in its parent's rows — the edge
+// symbol is the FunctionTool wrapper (`<node_name>`), and the underlying impl
+// (`<node_name>_impl`) lives in functions.py.
+
+test("tool: linear chain through fetch_data → summarize matches golden", () => {
+  const ir = loadIR("packages/ir/fixtures/tool.ir.json");
+  const rendered = renderEdgeRows(compileEdges(ir));
+  assert.equal(rendered, loadGolden("tool.edges.txt"));
+});
+
+test("tool: produces one linear row with the tool node as a plain member", () => {
+  const rows = compileEdges(loadIR("packages/ir/fixtures/tool.ir.json"));
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], [
+    { kind: "start" },
+    { kind: "node", name: "fetch_data" },
+    { kind: "node", name: "summarize" },
+  ]);
+});
+
 // -- nested workflow linear chain (ADR-0018) --
 //
 // `compileEdges` does not recurse into a workflow node's sub-graph — the node

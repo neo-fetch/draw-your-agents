@@ -46,6 +46,7 @@ const PROJECTS = [
   { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json" },
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json" },
   { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json" },
+  { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json" },
 ];
 
 for (const { name, fixture } of PROJECTS) {
@@ -76,16 +77,16 @@ for (const { name, fixture } of PROJECTS) {
   });
 }
 
-test("rejects an out-of-slice node type via the assembler's own guard", () => {
-  // A `tool` node passes the edges compiler (it linearizes fine) but is not an
-  // agent/function/router/join/humanInput/workflow, so generateProject rejects
-  // it with CodegenError. `tool` is the only remaining Phase 3 node type.
+test("rejects an unknown node type via the assembler's own guard", () => {
+  // After ADR-0019 the assembler handles every v1 declarative type, so its
+  // type guard now only fires on malformed IR with an unknown `type` string
+  // (the validator should have caught it upstream with UNKNOWN_NODE_TYPE).
   const ir = {
     irVersion: "0.1.0",
-    name: "has_tool",
+    name: "has_bogus",
     schemas: [],
-    nodes: [{ id: "t", type: "tool", name: "fetch", config: {} }],
-    edges: [{ from: "START", to: "t" }],
+    nodes: [{ id: "b", type: "bogus", name: "mystery", config: {} }],
+    edges: [{ from: "START", to: "b" }],
   } as unknown as GraphIR;
   assert.throws(() => generateProject(ir), CodegenError);
 });
