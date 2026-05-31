@@ -2,10 +2,25 @@
 
 from google.adk import Workflow
 
-from agents import handle_bug, handle_customer_support, handle_logistics, process_message
+from agents import (
+    handle_bug,
+    handle_customer_support,
+    handle_logistics,
+    process_message,
+)
 from functions import router
 
 root_agent = Workflow(
     name="support_router_workflow",
-    edges=[("START", process_message, router), (router, {"BUG": handle_bug, "CUSTOMER_SUPPORT": handle_customer_support, "LOGISTICS": handle_logistics})],
+    edges=[
+        ("START", process_message, router),
+        (
+            router,
+            {
+                "BUG": handle_bug,
+                "CUSTOMER_SUPPORT": handle_customer_support,
+                "LOGISTICS": handle_logistics,
+            },
+        ),
+    ],
 )

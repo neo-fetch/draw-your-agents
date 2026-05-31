@@ -11,5 +11,10 @@ my_join_node = JoinNode(
 
 root_agent = Workflow(
     name="parallel_join_workflow",
-    edges=[("START", task_a, my_join_node), ("START", task_b, my_join_node), ("START", task_c, my_join_node), (my_join_node, final_task_d)],
+    edges=[
+        ("START", task_a, my_join_node),
+        ("START", task_b, my_join_node),
+        ("START", task_c, my_join_node),
+        (my_join_node, final_task_d),
+    ],
 )

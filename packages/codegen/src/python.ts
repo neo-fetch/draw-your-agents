@@ -43,10 +43,14 @@ export function indent(block: string, level = 1): string {
 const STDLIB = new Set(["__future__", "datetime", "typing"]);
 const LOCAL = new Set(["schemas", "agents", "functions", "workflow"]);
 
+/** Black's default line-length budget. Used by `renderImports` to decide when to wrap. */
+export const BLACK_LINE_WIDTH = 88;
+
 /**
  * Dedupe and group imports isort-style: stdlib, third-party, local — each group
- * sorted, blank line between groups. Empty groups are dropped. This is the
- * "import dedupe" step of the codegen pipeline (ARCHITECTURE.md §5).
+ * sorted, blank line between groups. Empty groups are dropped. Lines that
+ * exceed `BLACK_LINE_WIDTH` are wrapped in parentheses, one name per line, to
+ * match black's idempotent form (ADR-0020).
  */
 export function renderImports(reqs: readonly ImportReq[]): string {
   const byModule = new Map<string, Set<string>>();
@@ -58,7 +62,12 @@ export function renderImports(reqs: readonly ImportReq[]): string {
 
   const groups: string[][] = [[], [], []]; // stdlib, third-party, local
   for (const [module, names] of byModule) {
-    const line = `from ${module} import ${[...names].sort().join(", ")}`;
+    const sortedNames = [...names].sort();
+    const inline = `from ${module} import ${sortedNames.join(", ")}`;
+    const line =
+      inline.length <= BLACK_LINE_WIDTH
+        ? inline
+        : `from ${module} import (\n${sortedNames.map((n) => `    ${n},`).join("\n")}\n)`;
     const bucket = STDLIB.has(module) ? 0 : LOCAL.has(module) ? 2 : 1;
     groups[bucket].push(line);
   }

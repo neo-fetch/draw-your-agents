@@ -447,3 +447,76 @@ scope log closes here: no `CodegenError` path is reachable from a valid IR.
 Goldens (`test/golden/tool.edges.txt`, `test/golden/tool/`) pin the row form
 and the generated project; the `py_compile` trust gate now covers the tool
 fixture too.
+
+## ADR-0020 — Project bundling: separate black post-process + pure-TS STORE-only zip
+**Context:** ADR-0003 names the codegen pipeline as
+`IR → edges compiler → fragments → assemble → import dedupe → format (black)
+→ syntax check → bundle project scaffold`. Up to this slice the pipeline
+stopped at the `GeneratedProject` map: `black` was deferred (ADR-0012 — "not
+run yet"), and there was no bundler — the "runnable ADK project (.zip)"
+artifact ([ARCHITECTURE.md §5](ARCHITECTURE.md)) had no implementation behind
+it. The closing slice also has to be browser-compatible because `apps/web`'s
+live preview ([ADR-0003](DECISIONS.md)) will call the bundler client-side.
+**Decision:**
+- **Format is a separate exported function**, not folded into `compile()`.
+  `formatProject(project, opts?)` lives in `packages/codegen/src/format.ts`
+  and returns `{ project, status: "formatted" | "skipped" | "unavailable" }`.
+  `compile(ir)` stays pure and returns the **unformatted** map — the existing
+  goldens pin pre-format output, so they remain the authoritative spec
+  (ADR-0010 / ADR-0012). The browser path can call `formatProject` with
+  `{ black: "skip" }` to opt out entirely.
+- **`black` via `python3 -m black --quiet -` (stdin → stdout).** Same
+  shell-out posture as the `py_compile` trust gate (`project.test.ts`); no
+  new dependency on the dev environment. The module probes once
+  (`python3 -c "import black"`, cached for the process). If unavailable the
+  call returns the project unchanged with `status: "unavailable"` and emits a
+  single `console.warn` — never throws. Rationale: `npm test` must stay green
+  on a cold checkout without `pip install black`. The idempotence test is
+  skipped (not failed) when black is missing.
+- **Idempotence is the spec.** `format.test.ts` asserts that
+  `formatProject(generateProject(ir))` is byte-equal to its input for every
+  fixture when black is installed. ADR-0012 already requires fragments to
+  emit black-shaped text; this test makes that requirement enforceable. A
+  future fragment edit that drifts from black's style will fail this test
+  loud — fix the fragment, or re-baseline goldens consciously.
+- **Line wrapping moves into the assembler (refines ADR-0010).** ADR-0010
+  left line wrapping to black. Idempotence on the goldens forces the
+  fragments to actually emit the wrapped shape so black is a no-op. Two
+  helpers — `renderImports` in `python.ts` and `renderEdgesBlock` in
+  `project.ts` — wrap at the 88-column budget (`BLACK_LINE_WIDTH`) when the
+  inline form would overflow. `renderEdgeRows` in `edges.ts` is **unchanged**
+  and remains the compact canonical form pinned by `*.edges.txt` goldens —
+  it is the structural spec for the edges compiler, while the workflow.py
+  assembler owns presentation. routing/workflow.py and parallel/workflow.py
+  goldens were re-baselined to the wrapped form; the other four fit in 88
+  cols and are byte-identical to before.
+- **`.zip` bundler is pure TS, STORE-only**
+  (`packages/codegen/src/bundle.ts`). `bundleZip(project, rootDir)` writes
+  local file headers + central directory + EOCD with a precomputed CRC-32
+  table. No DEFLATE, no `node:zlib`, no `CompressionStream` — only
+  `Uint8Array`, `DataView`, and `TextEncoder`, all present in both Node and
+  browser lib. Justified by two needs: the same module runs in `apps/web`'s
+  live preview, and round-trip golden tests want a deterministic byte output
+  (DEFLATE quirks across runtimes would make that brittle). Compression
+  buys little on a 7-file project of small `.py` text.
+- **`unzipStore` co-located** as a STORE-only reader that pins the round-trip
+  spec. It is not a general-purpose unzipper — it handles archives produced
+  by `bundleZip` and rejects unknown compression methods loud. The
+  round-trip test (`bundle.test.ts`) is the contract: every fixture archives
+  to bytes that recover as a map byte-equal to the input, with every path
+  prefixed by `${ir.name}/`.
+- **CLI lives at `scripts/compile.ts`**, mirroring `scripts/check-ir.ts`
+  (Node native TS, no install / build). Pipeline: read fixture → `compile()`
+  → `formatProject()` → `bundleZip(..., ir.name)` → `writeFileSync`. Not part
+  of `npm test` — `check:ir` + validator + codegen goldens + the new format
+  & bundle tests are the gate. The CLI is exercised manually for end-to-end
+  smoke checks.
+**Open assumption to revisit:** STORE-only zips are larger than DEFLATE.
+Revisit if a generated project size ever crosses a threshold the UI download
+would notice — at that point swap in `CompressionStream`/`node:zlib` behind
+the same `bundleZip` surface and update the round-trip test to compare
+recovered contents (not bytes).
+**Consequences:** ARCHITECTURE.md §5's pipeline is closed end-to-end. The
+codegen package now exports both halves of the post-process tail; the future
+visual builder can compose them client-side without any Node-only runtime
+deps. The IR → `.zip` artifact is runnable headless via one CLI invocation.
