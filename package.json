@@ -13,6 +13,7 @@
     "build": "tsc -b",
     "test:ir": "node --test \"packages/ir/test/**/*.test.ts\"",
     "test:codegen": "node --test \"packages/codegen/test/**/*.test.ts\"",
-    "test": "npm run check:ir && npm run test:ir && npm run test:codegen"
+    "test:web": "node --test \"apps/web/test/**/*.test.ts\"",
+    "test": "npm run check:ir && npm run test:ir && npm run test:codegen && npm run test:web"
   }
 }

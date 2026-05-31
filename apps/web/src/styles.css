@@ -1,0 +1,70 @@
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  color: #1a1a1a;
+  background: #fafafa;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr 320px 480px;
+  height: 100vh;
+  width: 100vw;
+}
+
+.pane {
+  border-left: 1px solid #e0e0e0;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.pane:first-child { border-left: none; }
+
+.pane header {
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+  background: #fafafa;
+  position: sticky;
+  top: 0;
+}
+
+.pane .body { padding: 14px; }
+
+.ir-node {
+  padding: 8px 12px;
+  border: 1px solid #888;
+  border-radius: 6px;
+  background: #fff;
+  min-width: 140px;
+  font-size: 12px;
+}
+
+.ir-node.selected { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25); }
+.ir-node .name { font-weight: 600; }
+.ir-node .type { color: #777; font-size: 11px; margin-top: 2px; }
+
+.inspector label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; }
+.inspector input { width: 100%; padding: 6px 8px; font: inherit; box-sizing: border-box; }
+.inspector .empty { color: #888; font-style: italic; }
+
+.preview select { margin-bottom: 8px; font: inherit; padding: 4px; }
+.preview pre {
+  background: #f5f5f5;
+  padding: 10px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre;
+  overflow: auto;
+  margin: 0;
+}
+
+.preview .findings { color: #b91c1c; }
+.preview .findings li { margin-bottom: 6px; font-family: ui-monospace, monospace; font-size: 12px; }

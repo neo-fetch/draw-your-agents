@@ -544,3 +544,66 @@ assumptions. **Phase 0 is complete.**
 **Follow-up (deferred, low-risk):** wrap this manual check as `scripts/fidelity_check.py` that
 imports + dry-run-constructs each fixture's `root_agent`, skipping cleanly when google-adk is absent
 (mirrors black's graceful degradation). It is now confirmation, not a bug hunt, so it can wait.
+
+## ADR-0022 — Frontend slice 1: `apps/web` scaffold, IR store as UI source of truth, preview reuses `compile()`
+**Context:** Phase 0 closed with the codegen pipeline fully proven end to end against real
+`google-adk==2.0.0` ([ADR-0021](DECISIONS.md)). What was still missing was a UI. This slice
+introduces `apps/web` — the first frontend package — and proves the architectural spine
+**IR store → canvas → inspector → IR → live preview** on one editable field (`agent.config.model`)
+against the `city-time` fixture. Variable chips, drag-to-connect, save/load, draw.io, the Lexical
+prompt editor, and any field beyond `agent.model` are explicitly out of scope — those are later
+slices.
+**Decision:**
+- **Stack confirmed ([ADR-0005](DECISIONS.md)):** React 19 + React Flow (`@xyflow/react` v12) +
+  Zustand v5 + Vite 7 + TypeScript 5. Lexical is deferred — no prompt editor this slice.
+- **`apps/web` is the install boundary.** It is the first package that requires `npm install`;
+  the headless `packages/*` stay install-free ([ADR-0011](DECISIONS.md), [ADR-0013](DECISIONS.md)).
+  The root `npm test` still runs from a cold checkout: `check:ir` + `test:ir` + `test:codegen` +
+  the new `test:web`, which uses Node native TS and depends only on relative `.ts` source paths
+  (no `zustand`, no React).
+- **IR store is the UI's single source of truth** ([ADR-0001](DECISIONS.md)). One Zustand store
+  holds one `GraphIR`. Canvas, Inspector, and Preview all read from it; the store is the only
+  writer. Typed actions only — this slice ships `setSelectedNode` and `updateNodeConfig(nodeId,
+  patch)`. The pure reducer (`applyNodeConfigPatch`) lives in `irReducer.ts`, separately from the
+  `zustand` wrapper in `irStore.ts`, so the headless test can exercise the round-trip without
+  pulling in `zustand` (and therefore without `npm install`).
+- **Preview reuses the existing `compile()` client-side** ([ADR-0003](DECISIONS.md)). On every
+  store change, Preview runs `compile(ir)` and renders the selected file from the
+  `GeneratedProject` map (default `agents.py`). On `ValidationError`, it renders the structured
+  `findings` list — never crashes. No code was added to `packages/codegen` or `packages/ir`; the
+  UI inherits the proven core unchanged. Browser-safety of the chain was already pinned by
+  [ADR-0020](DECISIONS.md) (`bundle.ts` is Uint8Array-only); `compile` + `generateProject` only
+  touch IR, schemas, and string templates.
+- **Workspace resolution without a build step (refines [ADR-0011](DECISIONS.md) /
+  [ADR-0013](DECISIONS.md)).** `apps/web` imports `GraphIR` and `GraphNode` **type-only** from the
+  package specifier (`import type { … } from "@graphical-agents/ir"` — erases at runtime), and
+  imports `compile`/`ValidationError` at runtime via the **relative `.ts`** path
+  `../../../../packages/codegen/src/index.ts`. The dependency chain has **no runtime `.js`
+  specifiers** — `validate.ts`'s only `./types.js` import is type-only, and codegen's source uses
+  `.ts` specifiers throughout. So no Vite alias, no regex `.js`→`.ts` rewrite, and no `predev`
+  build of `packages/ir` is needed. The `dist/`-pointing `main` in `packages/ir/package.json`
+  stays as-is. `vite.config.ts` only widens `server.fs.allow` to the monorepo root so the dev
+  server can serve files outside `apps/web`.
+- **Reducer-shaped headless test.** `apps/web/test/irStore.test.ts` pins the round-trip the slice
+  exists to prove: apply `updateNodeConfig`, validate stays clean, `compile()` reflects the patch
+  in `agents.py`; and the negative path — emptying the model surfaces `AGENT_MISSING_MODEL`.
+  This is the closest thing the UI has to a golden, and the gate against future inspector edits
+  silently breaking the spine.
+**Manual smoke check (no automated browser yet):**
+1. `cd apps/web && npm install && npm run dev` — Vite opens at the dev URL.
+2. The three city-time nodes render at their `ui.{x,y}` positions, edges between them.
+3. Click `city_generator` → Inspector shows `model = "gemini-flash-latest"`.
+4. Edit it to `"gemini-pro-latest"` → canvas label is unchanged (label is `name`, not `model`),
+   but the Preview pane's `agents.py` shows the new string in the `model=` slot.
+5. Clear the field → Preview shows the `AGENT_MISSING_MODEL` finding; no crash.
+**Open assumptions to revisit:**
+- If `packages/ir` ever grows a runtime export that imports a sibling via `.js` specifier (rather
+  than `import type`), `apps/web`'s relative-`.ts` chain will trip. At that point the standard
+  Vite + Node fix is a regex alias (`/^(\.{1,2}\/.+)\.js$/` → `$1.ts`); add it then, not now.
+- The Preview shows the **unformatted** output of `generateProject` (matching the codegen goldens,
+  per ADR-0010 / ADR-0012). Wiring `formatProject` is a later slice — same reasoning as keeping
+  the goldens authoritative.
+**Consequences:** The IR → canvas → inspector → IR → preview spine is closed and exercised by a
+headless test. Future slices (drag-to-add, the Lexical prompt editor and variable chips, save/load,
+`.zip` download via `bundleZip`, draw.io import) extend this scaffold without re-architecting it.
+
