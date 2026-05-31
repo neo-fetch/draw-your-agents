@@ -4,16 +4,24 @@
  * compiler, dispatches per-node template fragments (ADR-0003), dedupes their
  * imports, and assembles the modules + scaffold files.
  *
- * Scope mirrors the edges-compiler slice (ADR-0010): linear graphs of agent and
- * function nodes only. compileEdges rejects out-of-slice graph *shapes* (routers,
- * joins, parallel) loud; this module additionally rejects out-of-slice node
- * *types* (tool, workflow) loud. `black` is the post-process formatter and is not
- * run yet — fragments emit black-shaped text so that step is a near no-op.
+ * Scope: every declarative v1 node type. compileEdges rejects out-of-slice
+ * graph *shapes* loud; this module additionally rejects out-of-slice node
+ * *types* (currently just `tool`) loud. `black` is the post-process formatter
+ * and is not run yet — fragments emit black-shaped text so that step is a
+ * near no-op.
+ *
+ * Nested `workflow` nodes (ADR-0018) compile recursively: each sub-graph is its
+ * own `Workflow(...)` assignment in `workflow.py`, emitted deepest-first so a
+ * nested Workflow is bound before any parent Workflow references it. Per the
+ * flat global namespace ([ADR-0017](../../../docs/DECISIONS.md)), every level's
+ * agents / functions / routers / humanInputs / schemas flow into the shared
+ * flat modules with no qualification.
  */
 import type {
   AgentNode,
   FunctionNode,
   GraphIR,
+  GraphNode,
   HumanInputNode,
   JoinNode,
   RouterNode,
@@ -41,40 +49,112 @@ const ENV_EXAMPLE = `# Google ADK credentials — copy this file to .env and fil
 GOOGLE_API_KEY=
 `;
 
+/**
+ * One graph context produced by the recursive walk: the root, plus one entry
+ * per nested `workflow` node. Entries are emitted **deepest-first** so a
+ * nested Workflow assignment is bound before any parent Workflow references it.
+ */
+interface WorkflowContext {
+  readonly graph: GraphIR;
+  readonly isRoot: boolean;
+  /** Workflow symbol — `root_agent` for the root, otherwise the workflow node's name. */
+  readonly symbol: string;
+  readonly rows: readonly EdgeRow[];
+  readonly joins: readonly JoinNode[];
+}
+
+/**
+ * Depth-first preorder walk through every node across the parent + nested
+ * sub-graphs (descending at each `workflow` node into its `config.graph`).
+ */
+function walkAllNodes(ir: GraphIR): GraphNode[] {
+  const out: GraphNode[] = [];
+  const visit = (g: GraphIR): void => {
+    for (const n of g.nodes) {
+      out.push(n);
+      if (n.type === "workflow") visit(n.config.graph);
+    }
+  };
+  visit(ir);
+  return out;
+}
+
+/** Same walk, but yielding the schema declarations of every level. */
+function walkAllSchemas(ir: GraphIR): SchemaDef[] {
+  const out: SchemaDef[] = [];
+  const visit = (g: GraphIR): void => {
+    for (const s of g.schemas) out.push(s);
+    for (const n of g.nodes) if (n.type === "workflow") visit(n.config.graph);
+  };
+  visit(ir);
+  return out;
+}
+
+/**
+ * Collect one WorkflowContext per graph (root + each nested), in **deepest-first**
+ * post-order so emission satisfies "declared before referenced" automatically.
+ */
+function collectWorkflowContexts(ir: GraphIR): WorkflowContext[] {
+  const out: WorkflowContext[] = [];
+  const visit = (g: GraphIR, symbol: string, isRoot: boolean): void => {
+    for (const n of g.nodes) {
+      if (n.type === "workflow") visit(n.config.graph, n.name, false);
+    }
+    out.push({
+      graph: g,
+      isRoot,
+      symbol,
+      rows: compileEdges(g),
+      joins: g.nodes.filter((n): n is JoinNode => n.type === "join"),
+    });
+  };
+  visit(ir, "root_agent", true);
+  return out;
+}
+
 /** Compile an IR into the runnable ADK project file set. */
 export function generateProject(ir: GraphIR): GeneratedProject {
-  // Reject out-of-slice graph shapes (routers, joins, parallel, no START) loud.
-  const rows = compileEdges(ir);
-  const schemas = indexSchemas(ir);
+  // Flatten across nesting levels (ADR-0017 flat global namespace). Walk order
+  // is DFS preorder so module bodies read naturally — parent's nodes, then the
+  // sub-graph's nodes at the point of the workflow node, then the rest.
+  const allNodes = walkAllNodes(ir);
+  const allSchemaDefs = walkAllSchemas(ir);
 
-  // Reject out-of-slice node types loud. `tool` and `workflow` are Phase 3;
-  // every other declared node type in the v1 taxonomy is handled here.
-  for (const node of ir.nodes) {
+  // Reject out-of-slice node types loud. `tool` is the only remaining
+  // Phase 3 type after [ADR-0018](../../../docs/DECISIONS.md).
+  for (const node of allNodes) {
     if (
       node.type !== "agent" &&
       node.type !== "function" &&
       node.type !== "router" &&
       node.type !== "join" &&
-      node.type !== "humanInput"
+      node.type !== "humanInput" &&
+      node.type !== "workflow"
     ) {
       throw new CodegenError(
         `node "${node.name}" of type "${node.type}" is not handled by the v1 ` +
-          "agent+function+router+join+humanInput slice",
+          "agent+function+router+join+humanInput+workflow slice",
       );
     }
   }
 
-  const agents = ir.nodes.filter((n): n is AgentNode => n.type === "agent");
-  const functions = ir.nodes.filter((n): n is FunctionNode => n.type === "function");
-  const routers = ir.nodes.filter((n): n is RouterNode => n.type === "router");
-  const joins = ir.nodes.filter((n): n is JoinNode => n.type === "join");
-  const humanInputs = ir.nodes.filter((n): n is HumanInputNode => n.type === "humanInput");
+  const schemas = indexSchemas({ ...ir, schemas: allSchemaDefs });
+  const agents = allNodes.filter((n): n is AgentNode => n.type === "agent");
+  const functions = allNodes.filter((n): n is FunctionNode => n.type === "function");
+  const routers = allNodes.filter((n): n is RouterNode => n.type === "router");
+  const humanInputs = allNodes.filter((n): n is HumanInputNode => n.type === "humanInput");
+  // Workflow assignments + their joins are emitted by workflowModule via the
+  // context list; deepest-first dependency order is baked into the collector.
+  const workflowContexts = collectWorkflowContexts(ir);
 
   const files: GeneratedProject = new Map();
-  files.set("schemas.py", schemasModule(ir, ir.schemas, schemas));
-  files.set("functions.py", functionsModule(ir, functions, routers, humanInputs, schemas));
+  files.set("schemas.py", schemasModule(ir, allSchemaDefs, schemas));
+  files.set(
+    "functions.py",
+    functionsModule(ir, allNodes, functions, routers, humanInputs, schemas),
+  );
   files.set("agents.py", agentsModule(ir, agents, schemas));
-  files.set("workflow.py", workflowModule(ir, rows, agents, functions, routers, humanInputs, joins));
+  files.set("workflow.py", workflowModule(ir, workflowContexts, agents, functions, routers, humanInputs));
   files.set("requirements.txt", REQUIREMENTS);
   files.set(".env.example", ENV_EXAMPLE);
   files.set("README.md", readme(ir));
@@ -119,6 +199,7 @@ function schemasModule(
 
 function functionsModule(
   ir: GraphIR,
+  allNodes: readonly GraphNode[],
   functions: readonly FunctionNode[],
   routers: readonly RouterNode[],
   humanInputs: readonly HumanInputNode[],
@@ -128,11 +209,12 @@ function functionsModule(
   if (functions.length === 0 && routers.length === 0 && humanInputs.length === 0) {
     return `${head}\n\n# No function, router, or humanInput nodes in the IR.\n`;
   }
-  // Render in IR node order so function, router, and humanInput defs interleave naturally.
+  // Render in DFS preorder across the parent + every nested sub-graph so
+  // function, router, and humanInput defs interleave naturally (ADR-0017).
   const byId = new Set<string>(
     [...functions, ...routers, ...humanInputs].map((n) => n.id),
   );
-  const frags: Fragment[] = ir.nodes
+  const frags: Fragment[] = allNodes
     .filter((n) => byId.has(n.id))
     .map((n) => {
       switch (n.type) {
@@ -160,12 +242,11 @@ function agentsModule(
 
 function workflowModule(
   ir: GraphIR,
-  rows: readonly EdgeRow[],
+  contexts: readonly WorkflowContext[],
   agents: readonly AgentNode[],
   functions: readonly FunctionNode[],
   routers: readonly RouterNode[],
   humanInputs: readonly HumanInputNode[],
-  joins: readonly JoinNode[],
 ): string {
   const head = header("Workflow graph (entry module)", ir);
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Workflow"] }];
@@ -179,15 +260,22 @@ function workflowModule(
   ];
   if (fnNames.length > 0) imports.push({ module: "functions", names: fnNames });
 
-  // JoinNode declarations are rendered inline in workflow.py.
-  const joinFrags: Fragment[] = joins.map((j) => renderJoin(j));
-  for (const frag of joinFrags) imports.push(...frag.imports);
+  // Walk contexts deepest-first: emit each level's join declarations inline,
+  // then this level's `Workflow(...)` assignment. The root context comes last
+  // and renders as `root_agent = Workflow(...)`; every nested context renders
+  // as `<workflow_node_name> = Workflow(...)` so the parent's edge rows can
+  // reference the symbol by name (ADR-0018).
+  const bodies: string[] = [];
+  for (const ctx of contexts) {
+    for (const join of ctx.joins) {
+      const frag = renderJoin(join);
+      imports.push(...frag.imports);
+      bodies.push(frag.code);
+    }
+    const kwargs = `name=${pyStr(ctx.graph.name)},\n${renderEdgeRows(ctx.rows)},`;
+    bodies.push(`${ctx.symbol} = Workflow(\n${indent(kwargs)}\n)\n`);
+  }
 
-  const kwargs = `name=${pyStr(ir.name)},\n${renderEdgeRows(rows)},`;
-  const workflowBody = `root_agent = Workflow(\n${indent(kwargs)}\n)\n`;
-
-  // Join declarations come before the Workflow so the symbol is available.
-  const bodies = [...joinFrags.map((f) => f.code), workflowBody];
   return joinModule(head, imports, bodies, "stmt");
 }
 

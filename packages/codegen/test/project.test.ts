@@ -45,6 +45,7 @@ const PROJECTS = [
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
   { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json" },
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json" },
+  { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json" },
 ];
 
 for (const { name, fixture } of PROJECTS) {
@@ -77,25 +78,14 @@ for (const { name, fixture } of PROJECTS) {
 
 test("rejects an out-of-slice node type via the assembler's own guard", () => {
   // A `tool` node passes the edges compiler (it linearizes fine) but is not an
-  // agent/function/router/join, so generateProject rejects it with CodegenError.
+  // agent/function/router/join/humanInput/workflow, so generateProject rejects
+  // it with CodegenError. `tool` is the only remaining Phase 3 node type.
   const ir = {
     irVersion: "0.1.0",
     name: "has_tool",
     schemas: [],
     nodes: [{ id: "t", type: "tool", name: "fetch", config: {} }],
     edges: [{ from: "START", to: "t" }],
-  } as unknown as GraphIR;
-  assert.throws(() => generateProject(ir), CodegenError);
-});
-
-test("rejects an out-of-slice node type (workflow) loud", () => {
-  // A nested `workflow` node is Phase 3 and rejected loud by the assembler.
-  const ir = {
-    irVersion: "0.1.0",
-    name: "has_nested",
-    schemas: [],
-    nodes: [{ id: "w", type: "workflow", name: "nested", config: {} }],
-    edges: [{ from: "START", to: "w" }],
   } as unknown as GraphIR;
   assert.throws(() => generateProject(ir), CodegenError);
 });

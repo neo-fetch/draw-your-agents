@@ -15,9 +15,14 @@
  * - **HumanInput**: a humanInput node is a plain linear-chain member — it
  *   consumes the previous node's output, yields a `RequestInput`, and forwards
  *   the user's response (ADR-0016). It needs no new `RowMember` kind.
+ * - **Nested Workflow**: a `workflow` node is also a plain linear-chain member
+ *   in its parent's rows (ADR-0018) — `compileEdges` does **not** recurse into
+ *   `config.graph`. The project assembler walks workflow nodes separately and
+ *   invokes `compileEdges` per sub-graph, emitting each as its own
+ *   `<symbol> = Workflow(...)` assignment in `workflow.py`.
  *
- * `workflow` and `tool` node types are still out of v1 scope; they are filtered
- * by the validator's reachability/shape rules before they reach this stage.
+ * `tool` remains out of v1 scope and is filtered by the assembler's type
+ * whitelist before reaching codegen.
  */
 import type { Edge, GraphIR, GraphNode } from "@graphical-agents/ir";
 

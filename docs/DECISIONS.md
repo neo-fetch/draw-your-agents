@@ -322,3 +322,56 @@ shape. The fixture `packages/ir/fixtures/nested.ir.json` (parent
 `START → inner_step_a → inner_step_b`) is the worked example; validator tests
 pin recursion, cross-level dup detection, and the path-prefix convention.
 Codegen still rejects `workflow` loud — that is ADR-0018's job.
+
+## ADR-0018 — Nested Workflow codegen: per-sub-graph `compileEdges`, deepest-first inline Workflow assignments, flat shared modules
+**Context:** Codegen half of the nested-workflow slice, building on the IR /
+validator half ([ADR-0017](DECISIONS.md)). The brief asks how a `workflow`
+node's sub-graph compiles, where its agents / functions / schemas live, and in
+what order the `Workflow(...)` assignments are emitted so the parent's edge
+rows can reference them by symbol.
+**Decision:**
+- **Edges compiler.** A `workflow` node is a plain linear-chain member in its
+  parent's rows — `{kind:"node", name}`, no new `RowMember` kind. `compileEdges`
+  does **not** recurse into `config.graph`; the project assembler walks
+  workflow nodes separately and calls `compileEdges` per sub-graph. This keeps
+  the linearizer free of cross-cutting concerns and matches how routers /
+  joins / humanInputs each kept the compiler's surface small.
+- **Project assembler — flat shared modules.** Every level's agents,
+  functions, routers, humanInputs, and schemas flow into the shared
+  `agents.py` / `functions.py` / `schemas.py` modules with no qualification.
+  Justified by the flat global namespace ([ADR-0017](DECISIONS.md)): node
+  names are globally unique across nesting levels, so one symbol per node is
+  collision-free. Module-body order is DFS preorder (parent's nodes, then the
+  sub-graph at the point of its workflow node, then the rest), so the modules
+  read in a natural top-to-bottom order.
+- **Inline `Workflow(...)` assignments, deepest-first.** Each nested workflow
+  is emitted inline in `workflow.py` as
+  `<workflow_node_name> = Workflow(name="<workflow_node_name>", edges=[...])`,
+  in **deepest-first** post-order so a nested Workflow is bound before any
+  parent Workflow that references it — same dependency-order rule used for
+  `JoinNode` inline declarations ([ADR-0015](DECISIONS.md)). The root is the
+  last assignment and renders as `root_agent = Workflow(...)`. Each level's
+  joins are emitted immediately before that level's Workflow assignment, so a
+  nested workflow that contains a `JoinNode` brings its join declaration with
+  it. No cross-module import is needed for nested Workflows — they live in the
+  same file as the root.
+- **No fragment indirection for nested Workflows.** Unlike `renderJoin`, the
+  nested-Workflow body is built inline in `workflowModule` from the
+  `WorkflowContext` (symbol + compiled rows). Adding a `renderNestedWorkflow`
+  fragment would duplicate the existing
+  `<symbol> = Workflow(\n    name=...,\n    edges=[...],\n)` template — the
+  context loop is the simpler shape.
+- **Out-of-slice node types.** The assembler now allows
+  `agent`/`function`/`router`/`join`/`humanInput`/`workflow`. `tool` is the
+  **only** remaining Phase 3 type and is the sole `CodegenError` case.
+**ADK assumptions to revisit with the fidelity service ([ADR-0004](DECISIONS.md)):**
+that a nested `Workflow(...)` object is constructed identically to the root
+(just bound to a non-`root_agent` symbol) and that the parent references it by
+bare symbol in its `edges` row exactly like a function or agent reference.
+**Consequences:** Every v1 declarative node type now compiles end to end —
+`tool` is the only remaining Phase 3 type. Goldens
+(`test/golden/nested.edges.txt`, `test/golden/nested/`) pin the parent rows
+and the generated project; the `py_compile` trust gate covers the nested
+project too. A manual three-level sanity check (root → middle → innermost)
+confirms deepest-first emission and DFS-preorder module bodies generalize to
+arbitrary depth.

@@ -148,3 +148,27 @@ test("human-input: produces one linear row with START + humanInput + downstream"
     { kind: "node", name: "process_response" },
   ]);
 });
+
+// -- nested workflow linear chain (ADR-0018) --
+//
+// `compileEdges` does not recurse into a workflow node's sub-graph — the node
+// is a plain linear-chain member in the parent's rows, and the project
+// assembler compiles each sub-graph separately (ADR-0018). These tests pin
+// only the **parent** rows.
+
+test("nested: parent chain treats nested_workflow as a plain linear-chain member", () => {
+  const ir = loadIR("packages/ir/fixtures/nested.ir.json");
+  const rendered = renderEdgeRows(compileEdges(ir));
+  assert.equal(rendered, loadGolden("nested.edges.txt"));
+});
+
+test("nested: parent rows include the workflow node as a {kind:node}", () => {
+  const rows = compileEdges(loadIR("packages/ir/fixtures/nested.ir.json"));
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], [
+    { kind: "start" },
+    { kind: "node", name: "preprocess" },
+    { kind: "node", name: "nested_workflow" },
+    { kind: "node", name: "finalize" },
+  ]);
+});
