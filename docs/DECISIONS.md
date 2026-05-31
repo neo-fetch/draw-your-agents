@@ -272,3 +272,53 @@ humanInput — now compiles end to end. Goldens
 (`test/golden/human-input.edges.txt`, `test/golden/human-input/`) pin the row
 form and the generated project; the `py_compile` trust gate now covers the
 human-input fixture too. `tool` and `workflow` nodes remain Phase 3.
+
+## ADR-0017 — Nested Workflow: sub-IR in `config.graph`, flat global namespace, recursive validator
+**Context:** `workflow` is the only recursive node type in the v1 taxonomy
+([ARCHITECTURE.md §2](ARCHITECTURE.md)) and the only declarative leaf still
+rejected loud after [ADR-0016](DECISIONS.md). It also forces an IR-shape
+decision the brief explicitly flags: how does a workflow node carry its
+sub-graph, and what is the namespace relationship between the parent and the
+child? This ADR records the IR + validator half; the edges/codegen half is in
+ADR-0018 (forthcoming) on the same branch.
+**Decision:**
+- **IR shape.** A `workflow` node's config is `{ description?, graph: GraphIR }` —
+  the sub-graph is a **complete nested `GraphIR`** (its own START, nodes, edges,
+  schemas). The JSON Schema expresses this with a recursive `"graph": { "$ref": "#" }`,
+  so the same schema validates parents and children with no duplication.
+- **Single flat global namespace** for node `name`s **and** schema names across
+  parent + every nested sub-graph. Rationale: codegen writes flat
+  `agents.py`/`functions.py`/`schemas.py` modules with one symbol per node
+  name; cross-level collisions would silently clobber. The validator enforces
+  this by threading `globalNames` / `globalSchemas` sets through recursion and
+  emitting `DUPLICATE_NODE_NAME` / `DUPLICATE_SCHEMA_NAME` at the **second**
+  occurrence (so the offending duplicate is flagged where it is introduced).
+  Schema **lookups** (`refOk`, var segments) stay **local** to each sub-graph —
+  a sub-graph must self-contain the schemas it references; the global sets
+  exist only to detect collisions.
+- **Validator recursion.** `validate(ir)` delegates to a private
+  `validateGraph(ir, ctx)` worker that performs every existing IR-SCHEMA
+  invariant on `ir`, then recurses on each `workflow` node's `config.graph` with
+  a longer `pathPrefix`. The recursion happens **after** this level's per-type
+  switch so all of this level's names are seeded into `globalNames` before the
+  child looks for duplicates.
+- **Finding location.** `Finding.nodeId` is composed as
+  `<parentId>/.../<nodeId>` — one segment per nesting level. The `Finding`
+  shape is unchanged; this is purely a string convention so the visual builder
+  and draw.io importer can locate a finding back to its enclosing workflow
+  node. The MISSING_TOP_LEVEL_KEY short-circuit is now relative to findings
+  **added in this call** (`findings.length > findingsAtEntry`), so a nested
+  call is not aborted by findings the parent has already accumulated.
+- **New code.** `WORKFLOW_MISSING_GRAPH` — fires when `config.graph` is absent
+  or not an object; recursion is skipped for that node.
+**ADK assumptions to revisit with the fidelity service ([ADR-0004](DECISIONS.md)):**
+that a nested `Workflow(...)` object is constructed identically to the root
+(just bound to a non-`root_agent` symbol) and that the parent references it by
+bare symbol in its `edges` row. Pinned in ADR-0018 with the codegen half.
+**Consequences:** The IR contract is now genuinely recursive — the visual
+builder and draw.io importer can offer sub-canvas editing without a separate
+shape. The fixture `packages/ir/fixtures/nested.ir.json` (parent
+`START → preprocess → nested_workflow → finalize`, nested
+`START → inner_step_a → inner_step_b`) is the worked example; validator tests
+pin recursion, cross-level dup detection, and the path-prefix convention.
+Codegen still rejects `workflow` loud — that is ADR-0018's job.

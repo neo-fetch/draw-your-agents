@@ -1,0 +1,86 @@
+{
+  "irVersion": "0.1.0",
+  "name": "nested_parent_workflow",
+  "description": "Parent workflow that chains through a nested Workflow node. The ADK 'nested workflows' example: START → preprocess → nested_workflow → finalize, where nested_workflow has its own sub-graph START → inner_step_a → inner_step_b.",
+  "schemas": [],
+  "nodes": [
+    {
+      "id": "n_preprocess",
+      "type": "function",
+      "name": "preprocess",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "description": "Parent: prepare input for the nested workflow.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_nested",
+      "type": "workflow",
+      "name": "nested_workflow",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Nested sub-graph compiled as its own Workflow(...) object.",
+        "graph": {
+          "irVersion": "0.1.0",
+          "name": "nested_workflow",
+          "description": "Inner two-step chain.",
+          "schemas": [],
+          "nodes": [
+            {
+              "id": "n_inner_a",
+              "type": "function",
+              "name": "inner_step_a",
+              "ui": { "x": 0, "y": 0 },
+              "config": {
+                "description": "Inner step A.",
+                "inputType": "str",
+                "outputType": "str",
+                "emits": "output",
+                "body": null
+              }
+            },
+            {
+              "id": "n_inner_b",
+              "type": "function",
+              "name": "inner_step_b",
+              "ui": { "x": 260, "y": 0 },
+              "config": {
+                "description": "Inner step B.",
+                "inputType": "str",
+                "outputType": "str",
+                "emits": "output",
+                "body": null
+              }
+            }
+          ],
+          "edges": [
+            { "from": "START", "to": "n_inner_a" },
+            { "from": "n_inner_a", "to": "n_inner_b" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n_finalize",
+      "type": "function",
+      "name": "finalize",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "description": "Parent: finalize after the nested workflow returns.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_preprocess" },
+    { "from": "n_preprocess", "to": "n_nested" },
+    { "from": "n_nested", "to": "n_finalize" }
+  ]
+}

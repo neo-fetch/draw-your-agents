@@ -86,6 +86,12 @@ export interface HumanInputConfig {
   responseSchemaRef?: string | null;
 }
 
+export interface WorkflowConfig {
+  description?: string;
+  /** Nested sub-graph: a complete GraphIR with its own START, nodes, edges, schemas. */
+  graph: GraphIR;
+}
+
 // --- Nodes ---
 export type NodeType =
   | "agent"
@@ -115,14 +121,16 @@ export type FunctionNode = BaseNode<"function", FunctionConfig>;
 export type RouterNode = BaseNode<"router", RouterConfig>;
 export type JoinNode = BaseNode<"join", JoinConfig>;
 export type HumanInputNode = BaseNode<"humanInput", HumanInputConfig>;
+export type WorkflowNode = BaseNode<"workflow", WorkflowConfig>;
 
-/** Tool and (nested) workflow nodes arrive in Phase 3. */
+/** Tool nodes arrive in Phase 3. */
 export type GraphNode =
   | AgentNode
   | FunctionNode
   | RouterNode
   | JoinNode
-  | HumanInputNode;
+  | HumanInputNode
+  | WorkflowNode;
 
 // --- Edges & graph ---
 /** Edge `from` may be this sentinel to mark a graph entry point. */

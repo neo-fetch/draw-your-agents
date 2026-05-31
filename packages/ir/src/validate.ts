@@ -61,6 +61,7 @@ export const ValidationCode = {
   HUMANINPUT_MISSING_MESSAGE: "HUMANINPUT_MISSING_MESSAGE",
   UNKNOWN_HUMANINPUT_PAYLOAD_REF: "UNKNOWN_HUMANINPUT_PAYLOAD_REF",
   UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF: "UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF",
+  WORKFLOW_MISSING_GRAPH: "WORKFLOW_MISSING_GRAPH",
   // Prompt-variable provenance (IR-SCHEMA invariant 6)
   VAR_SOURCE_NOT_NODE: "VAR_SOURCE_NOT_NODE",
   VAR_SOURCE_NOT_STRUCTURED: "VAR_SOURCE_NOT_STRUCTURED",
@@ -122,11 +123,43 @@ function repr(v: unknown): string {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Loose = Record<string, any>;
 
+/**
+ * Recursion context threaded through validateGraph (ADR-0017).
+ *  - `pathPrefix`  composes finding `nodeId`s as `<parentId>/.../<nodeId>` so
+ *                  callers can locate a finding to its enclosing workflow node.
+ *  - `globalNames` / `globalSchemas` enforce a **single, flat namespace** for
+ *                  node names and schema names across parent + every nested
+ *                  sub-graph (invariant 1 holds across nesting).
+ */
+interface RecursionCtx {
+  readonly pathPrefix: string;
+  readonly globalNames: Set<string>;
+  readonly globalSchemas: Set<string>;
+  readonly findings: Finding[];
+}
+
 /** Validate an IR document, returning structured findings (never throws). */
 export function validate(ir: GraphIR): ValidationResult {
   const findings: Finding[] = [];
+  validateGraph(ir, {
+    pathPrefix: "",
+    globalNames: new Set(),
+    globalSchemas: new Set(),
+    findings,
+  });
+  return result(findings);
+}
+
+function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
+  const { pathPrefix, globalNames, globalSchemas, findings } = ctx;
+  const findingsAtEntry = findings.length;
+  const composeId = (nid: string): string => `${pathPrefix}${nid}`;
   const err = (code: string, message: string, nodeId?: string): void => {
-    findings.push(nodeId === undefined ? { severity: "error", code, message } : { severity: "error", code, message, nodeId });
+    findings.push(
+      nodeId === undefined
+        ? { severity: "error", code, message }
+        : { severity: "error", code, message, nodeId: composeId(nodeId) },
+    );
   };
 
   const doc = ir as unknown as Loose;
@@ -138,7 +171,9 @@ export function validate(ir: GraphIR): ValidationResult {
       err(ValidationCode.MISSING_TOP_LEVEL_KEY, `missing top-level key '${key}'`);
     }
   }
-  if (findings.length > 0) return result(findings);
+  // Short-circuit only on findings *added in this call* — a nested call must not
+  // be aborted by findings the parent already accumulated.
+  if (findings.length > findingsAtEntry) return;
 
   if (!isIdent(doc.name)) {
     err(ValidationCode.INVALID_WORKFLOW_NAME, `workflow name is not a valid python identifier: ${repr(doc.name)}`);
@@ -155,8 +190,13 @@ export function validate(ir: GraphIR): ValidationResult {
     if (!isIdent(name)) {
       err(ValidationCode.INVALID_SCHEMA_NAME, `schema name is not a valid identifier: ${repr(name)}`);
     }
-    if (typeof name === "string" && schemaFields.has(name)) {
-      err(ValidationCode.DUPLICATE_SCHEMA_NAME, `duplicate schema name ${repr(name)}`);
+    if (typeof name === "string") {
+      // Flat global namespace across parent + every nested sub-graph (ADR-0017).
+      if (globalSchemas.has(name) || schemaFields.has(name)) {
+        err(ValidationCode.DUPLICATE_SCHEMA_NAME, `duplicate schema name ${repr(name)}`);
+      } else {
+        globalSchemas.add(name);
+      }
     }
     const fields: Loose[] = Array.isArray(s?.fields) ? s.fields : [];
     const fieldSet = new Set<string>();
@@ -196,10 +236,12 @@ export function validate(ir: GraphIR): ValidationResult {
     if (!NODE_TYPES.has(t)) err(ValidationCode.UNKNOWN_NODE_TYPE, `node ${nid}: unknown type ${repr(t)}`, nid);
     if (!isIdent(nm)) {
       err(ValidationCode.INVALID_NODE_NAME, `node ${nid}: name is not a valid python identifier: ${repr(nm)}`, nid);
-    } else if (nameToId.has(nm)) {
+    } else if (nameToId.has(nm) || globalNames.has(nm)) {
+      // Flat global namespace across parent + every nested sub-graph (ADR-0017).
       err(ValidationCode.DUPLICATE_NODE_NAME, `duplicate node name ${repr(nm)} (used as the codegen symbol)`, nid);
     } else {
       nameToId.set(nm, nid);
+      globalNames.add(nm);
     }
   }
   if (nameToId.has(START)) {
@@ -298,8 +340,29 @@ export function validate(ir: GraphIR): ValidationResult {
         }
         break;
       }
+      case "workflow": {
+        // A nested workflow is itself a valid graph — recurse with the same
+        // rule set, threading the global namespaces and a longer pathPrefix so
+        // findings inside the sub-graph are located back to the parent
+        // (ADR-0017).
+        if (c.graph === null || typeof c.graph !== "object" || Array.isArray(c.graph)) {
+          err(
+            ValidationCode.WORKFLOW_MISSING_GRAPH,
+            `workflow ${n.name}: missing or invalid 'graph' sub-IR`,
+            n.id,
+          );
+        } else {
+          validateGraph(c.graph as GraphIR, {
+            pathPrefix: `${pathPrefix}${n.id}/`,
+            globalNames,
+            globalSchemas,
+            findings,
+          });
+        }
+        break;
+      }
       default:
-        break; // join / tool / workflow have no per-type checks in this slice
+        break; // join / tool have no per-type checks in this slice
     }
   }
 
@@ -398,9 +461,7 @@ export function validate(ir: GraphIR): ValidationResult {
   }
 
   // -- warning pass (ARCHITECTURE.md §7) --
-  checkJoinFailsafe(findings, nodesById, edgeList);
-
-  return result(findings);
+  checkJoinFailsafe(findings, nodesById, edgeList, composeId);
 }
 
 /**
@@ -415,9 +476,14 @@ function checkJoinFailsafe(
   findings: Finding[],
   nodesById: ReadonlyMap<string, Loose>,
   edgeList: readonly Loose[],
+  composeId: (nid: string) => string,
 ): void {
   const warn = (code: string, message: string, nodeId?: string): void => {
-    findings.push(nodeId === undefined ? { severity: "warning", code, message } : { severity: "warning", code, message, nodeId });
+    findings.push(
+      nodeId === undefined
+        ? { severity: "warning", code, message }
+        : { severity: "warning", code, message, nodeId: composeId(nodeId) },
+    );
   };
 
   for (const [joinId, joinNode] of nodesById) {

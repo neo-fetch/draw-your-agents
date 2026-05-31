@@ -147,6 +147,15 @@
         "responseSchemaRef": { "type": ["string", "null"] }
       }
     },
+    "workflowConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph"],
+      "properties": {
+        "description": { "type": "string" },
+        "graph": { "$ref": "#" }
+      }
+    },
 
     "node": {
       "type": "object",
@@ -172,7 +181,9 @@
         { "if": { "properties": { "type": { "const": "join" } } },
           "then": { "properties": { "config": { "$ref": "#/definitions/joinConfig" } } } },
         { "if": { "properties": { "type": { "const": "humanInput" } } },
-          "then": { "properties": { "config": { "$ref": "#/definitions/humanInputConfig" } } } }
+          "then": { "properties": { "config": { "$ref": "#/definitions/humanInputConfig" } } } },
+        { "if": { "properties": { "type": { "const": "workflow" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/workflowConfig" } } } }
       ]
     }
   }

@@ -82,3 +82,112 @@ test("human-input-bad-ref fixture reports both UNKNOWN_HUMANINPUT_* codes on the
     assert.equal(f?.nodeId, "n_ask");
   }
 });
+
+// -- nested workflow recursion (ADR-0017) --
+
+test("nested fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/nested.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("workflow node missing config.graph emits WORKFLOW_MISSING_GRAPH", () => {
+  const ir = {
+    irVersion: "0.1.0",
+    name: "missing_graph",
+    schemas: [],
+    nodes: [{ id: "w", type: "workflow", name: "nested", config: {} }],
+    edges: [{ from: "START", to: "w" }],
+  } as unknown as GraphIR;
+  const r = validate(ir);
+  assert.equal(r.ok, false);
+  const f = r.errors.find((e) => e.code === ValidationCode.WORKFLOW_MISSING_GRAPH);
+  assert.ok(f, "expected WORKFLOW_MISSING_GRAPH finding");
+  assert.equal(f!.nodeId, "w");
+});
+
+test("nested sub-IR findings are located with a parent-id path prefix", () => {
+  // Sub-graph references a non-existent schema → FUNCTION_UNKNOWN_OUTPUT_TYPE on
+  // n_inner; finding's nodeId should be "n_outer/n_inner" (ADR-0017).
+  const ir = {
+    irVersion: "0.1.0",
+    name: "outer",
+    schemas: [],
+    nodes: [
+      {
+        id: "n_outer",
+        type: "workflow",
+        name: "outer_nested",
+        config: {
+          graph: {
+            irVersion: "0.1.0",
+            name: "inner",
+            schemas: [],
+            nodes: [
+              {
+                id: "n_inner",
+                type: "function",
+                name: "inner_fn",
+                config: { inputType: "str", outputType: "Mystery", body: null },
+              },
+            ],
+            edges: [{ from: "START", to: "n_inner" }],
+          },
+        },
+      },
+    ],
+    edges: [{ from: "START", to: "n_outer" }],
+  } as unknown as GraphIR;
+  const r = validate(ir);
+  const f = r.errors.find((e) => e.code === ValidationCode.FUNCTION_UNKNOWN_OUTPUT_TYPE);
+  assert.ok(f, "expected FUNCTION_UNKNOWN_OUTPUT_TYPE from the nested sub-graph");
+  assert.equal(f!.nodeId, "n_outer/n_inner");
+});
+
+test("duplicate node name across parent + nested levels fires DUPLICATE_NODE_NAME", () => {
+  // The flat global namespace (ADR-0017): parent has a function named `shared`;
+  // a nested sub-graph reuses the same name → flagged at the child.
+  const ir = {
+    irVersion: "0.1.0",
+    name: "outer",
+    schemas: [],
+    nodes: [
+      {
+        id: "n_shared_parent",
+        type: "function",
+        name: "shared",
+        config: { inputType: "str", outputType: "str", body: null },
+      },
+      {
+        id: "n_outer",
+        type: "workflow",
+        name: "outer_nested",
+        config: {
+          graph: {
+            irVersion: "0.1.0",
+            name: "inner",
+            schemas: [],
+            nodes: [
+              {
+                id: "n_shared_child",
+                type: "function",
+                name: "shared",
+                config: { inputType: "str", outputType: "str", body: null },
+              },
+            ],
+            edges: [{ from: "START", to: "n_shared_child" }],
+          },
+        },
+      },
+    ],
+    edges: [
+      { from: "START", to: "n_shared_parent" },
+      { from: "n_shared_parent", to: "n_outer" },
+    ],
+  } as unknown as GraphIR;
+  const r = validate(ir);
+  const f = r.errors.find((e) => e.code === ValidationCode.DUPLICATE_NODE_NAME);
+  assert.ok(f, "expected DUPLICATE_NODE_NAME across nesting levels");
+  assert.equal(f!.nodeId, "n_outer/n_shared_child");
+});

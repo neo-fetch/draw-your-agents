@@ -69,6 +69,16 @@ Branch targets are edges out of the router carrying a matching `route` label.
   "config": { "message": "Enter a number:", "payloadRef": null, "responseSchemaRef": null } }
 ```
 
+### workflow (nested)
+```jsonc
+{ "id": "n_nested", "type": "workflow", "name": "nested_workflow",
+  "config": { "description": "...", "graph": { /* a full GraphIR — same shape as the root */ } } }
+```
+A `workflow` node carries a complete sub-IR in `config.graph` (its own START,
+nodes, edges, schemas) and the validator recurses with the **same** rules
+(ADR-0017). Node `name`s and schema names share **one flat global namespace**
+across parent + every nested sub-graph (invariant 1 holds across nesting).
+
 ## Edges
 ```jsonc
 { "from": "START", "to": "n_city_gen" }                 // START begins the graph (may repeat)
