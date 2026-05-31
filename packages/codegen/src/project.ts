@@ -14,6 +14,7 @@ import type {
   AgentNode,
   FunctionNode,
   GraphIR,
+  HumanInputNode,
   JoinNode,
   RouterNode,
   SchemaDef,
@@ -23,6 +24,7 @@ import {
   indexSchemas,
   renderAgent,
   renderFunction,
+  renderHumanInput,
   renderJoin,
   renderRouter,
   renderSchema,
@@ -45,12 +47,19 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const rows = compileEdges(ir);
   const schemas = indexSchemas(ir);
 
-  // Reject out-of-slice node types loud — agent + function + router + join this slice.
+  // Reject out-of-slice node types loud. `tool` and `workflow` are Phase 3;
+  // every other declared node type in the v1 taxonomy is handled here.
   for (const node of ir.nodes) {
-    if (node.type !== "agent" && node.type !== "function" && node.type !== "router" && node.type !== "join") {
+    if (
+      node.type !== "agent" &&
+      node.type !== "function" &&
+      node.type !== "router" &&
+      node.type !== "join" &&
+      node.type !== "humanInput"
+    ) {
       throw new CodegenError(
-        `node "${node.name}" of type "${node.type}" is not handled by the ` +
-          "agent+function+router+join slice",
+        `node "${node.name}" of type "${node.type}" is not handled by the v1 ` +
+          "agent+function+router+join+humanInput slice",
       );
     }
   }
@@ -59,12 +68,13 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const functions = ir.nodes.filter((n): n is FunctionNode => n.type === "function");
   const routers = ir.nodes.filter((n): n is RouterNode => n.type === "router");
   const joins = ir.nodes.filter((n): n is JoinNode => n.type === "join");
+  const humanInputs = ir.nodes.filter((n): n is HumanInputNode => n.type === "humanInput");
 
   const files: GeneratedProject = new Map();
   files.set("schemas.py", schemasModule(ir, ir.schemas, schemas));
-  files.set("functions.py", functionsModule(ir, functions, routers, schemas));
+  files.set("functions.py", functionsModule(ir, functions, routers, humanInputs, schemas));
   files.set("agents.py", agentsModule(ir, agents, schemas));
-  files.set("workflow.py", workflowModule(ir, rows, agents, functions, routers, joins));
+  files.set("workflow.py", workflowModule(ir, rows, agents, functions, routers, humanInputs, joins));
   files.set("requirements.txt", REQUIREMENTS);
   files.set(".env.example", ENV_EXAMPLE);
   files.set("README.md", readme(ir));
@@ -111,21 +121,29 @@ function functionsModule(
   ir: GraphIR,
   functions: readonly FunctionNode[],
   routers: readonly RouterNode[],
+  humanInputs: readonly HumanInputNode[],
   schemas: ReadonlyMap<string, SchemaDef>,
 ): string {
   const head = header("Function bodies (implement the TODO stubs)", ir);
-  if (functions.length === 0 && routers.length === 0) {
-    return `${head}\n\n# No function or router nodes in the IR.\n`;
+  if (functions.length === 0 && routers.length === 0 && humanInputs.length === 0) {
+    return `${head}\n\n# No function, router, or humanInput nodes in the IR.\n`;
   }
-  // Render in IR node order so function and router defs interleave naturally.
-  const byId = new Set<string>([...functions, ...routers].map((n) => n.id));
+  // Render in IR node order so function, router, and humanInput defs interleave naturally.
+  const byId = new Set<string>(
+    [...functions, ...routers, ...humanInputs].map((n) => n.id),
+  );
   const frags: Fragment[] = ir.nodes
     .filter((n) => byId.has(n.id))
-    .map((n) =>
-      n.type === "router"
-        ? renderRouter(n as RouterNode, schemas)
-        : renderFunction(n as FunctionNode, schemas),
-    );
+    .map((n) => {
+      switch (n.type) {
+        case "router":
+          return renderRouter(n as RouterNode, schemas);
+        case "humanInput":
+          return renderHumanInput(n as HumanInputNode, schemas);
+        default:
+          return renderFunction(n as FunctionNode, schemas);
+      }
+    });
   return joinModule(head, frags.flatMap((f) => f.imports), frags.map((f) => f.code), "def");
 }
 
@@ -146,13 +164,19 @@ function workflowModule(
   agents: readonly AgentNode[],
   functions: readonly FunctionNode[],
   routers: readonly RouterNode[],
+  humanInputs: readonly HumanInputNode[],
   joins: readonly JoinNode[],
 ): string {
   const head = header("Workflow graph (entry module)", ir);
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Workflow"] }];
   if (agents.length > 0) imports.push({ module: "agents", names: agents.map((a) => a.name) });
-  // Routers live in functions.py too, and their symbols appear in the edge rows.
-  const fnNames = [...functions.map((f) => f.name), ...routers.map((r) => r.name)];
+  // Routers and humanInput generators live in functions.py too — their symbols
+  // appear in the edge rows alongside plain function nodes.
+  const fnNames = [
+    ...functions.map((f) => f.name),
+    ...routers.map((r) => r.name),
+    ...humanInputs.map((h) => h.name),
+  ];
   if (fnNames.length > 0) imports.push({ module: "functions", names: fnNames });
 
   // JoinNode declarations are rendered inline in workflow.py.

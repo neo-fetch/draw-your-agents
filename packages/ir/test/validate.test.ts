@@ -60,3 +60,25 @@ test("join-missing-failsafe fixture produces the warning, no errors", () => {
   assert.equal(w.nodeId, "n_risky_fn");
   assert.equal(w.severity, "warning");
 });
+
+test("human-input fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/human-input.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("human-input-bad-ref fixture reports both UNKNOWN_HUMANINPUT_* codes on the same node", () => {
+  const r = validate(loadIR("../fixtures/invalid/human-input-bad-ref.ir.json"));
+  assert.equal(r.ok, false);
+  const codes = new Set(r.errors.map((f) => f.code));
+  assert.ok(codes.has(ValidationCode.UNKNOWN_HUMANINPUT_PAYLOAD_REF));
+  assert.ok(codes.has(ValidationCode.UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF));
+  for (const code of [
+    ValidationCode.UNKNOWN_HUMANINPUT_PAYLOAD_REF,
+    ValidationCode.UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF,
+  ]) {
+    const f = r.errors.find((e) => e.code === code);
+    assert.equal(f?.nodeId, "n_ask");
+  }
+});

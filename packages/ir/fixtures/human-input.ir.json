@@ -1,0 +1,36 @@
+{
+  "irVersion": "0.1.0",
+  "name": "human_input_workflow",
+  "description": "Linear chain with a HumanInput (RequestInput) node mid-chain: START → ask_user → process_response.",
+  "schemas": [],
+  "nodes": [
+    {
+      "id": "n_ask",
+      "type": "humanInput",
+      "name": "ask_user",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "message": "Enter a number to summarize:",
+        "payloadRef": null,
+        "responseSchemaRef": null
+      }
+    },
+    {
+      "id": "n_process",
+      "type": "function",
+      "name": "process_response",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Forward the human's response.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_ask" },
+    { "from": "n_ask", "to": "n_process" }
+  ]
+}

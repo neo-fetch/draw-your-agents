@@ -12,9 +12,12 @@
  * - **Parallel fan-out + join**: repeated START edges fan out to branches that
  *   converge on a join node. Each branch is its own START row ending at the join;
  *   a continuation row begins at the join (ADR-0015).
+ * - **HumanInput**: a humanInput node is a plain linear-chain member — it
+ *   consumes the previous node's output, yields a `RequestInput`, and forwards
+ *   the user's response (ADR-0016). It needs no new `RowMember` kind.
  *
- * `humanInput` and `workflow`/`tool` node types are rejected with a clear error
- * so later slices fail loud rather than emit wrong code.
+ * `workflow` and `tool` node types are still out of v1 scope; they are filtered
+ * by the validator's reachability/shape rules before they reach this stage.
  */
 import type { Edge, GraphIR, GraphNode } from "@graphical-agents/ir";
 
@@ -48,8 +51,6 @@ export class EdgesCompilerError extends Error {
 export function compileEdges(ir: GraphIR): EdgeRow[] {
   const nodeById = new Map<string, GraphNode>();
   for (const node of ir.nodes) nodeById.set(node.id, node);
-
-  rejectUnsupported(ir);
 
   // Index outgoing edges per node and in-degree per node. A START edge is an
   // entry point; it still counts toward the target's in-degree (so a node fed by
@@ -262,13 +263,3 @@ export function renderEdgeRows(rows: readonly EdgeRow[]): string {
   return `edges=[${rows.map(renderRow).join(", ")}]`;
 }
 
-/** Reject constructs this slice cannot linearize, with an actionable message. */
-function rejectUnsupported(ir: GraphIR): void {
-  for (const node of ir.nodes) {
-    if (node.type === "humanInput") {
-      throw new EdgesCompilerError(
-        `node "${node.name}" of type "${node.type}" is not handled by this slice`,
-      );
-    }
-  }
-}

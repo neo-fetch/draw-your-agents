@@ -131,13 +131,20 @@ test("parallel: produces N fan-out rows + 1 continuation row", () => {
   ]);
 });
 
-test("rejects humanInput as out of slice", () => {
-  const ir: GraphIR = {
-    irVersion: "0.1.0",
-    name: "has_human",
-    schemas: [],
-    nodes: [{ id: "h", type: "humanInput", name: "ask", config: { message: "?" } }],
-    edges: [{ from: "START", to: "h" }],
-  };
-  assert.throws(() => compileEdges(ir), /humanInput/);
+// -- humanInput linear chain (ADR-0016) --
+
+test("human-input: linear chain through ask_user → process_response matches golden", () => {
+  const ir = loadIR("packages/ir/fixtures/human-input.ir.json");
+  const rendered = renderEdgeRows(compileEdges(ir));
+  assert.equal(rendered, loadGolden("human-input.edges.txt"));
+});
+
+test("human-input: produces one linear row with START + humanInput + downstream", () => {
+  const rows = compileEdges(loadIR("packages/ir/fixtures/human-input.ir.json"));
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0], [
+    { kind: "start" },
+    { kind: "node", name: "ask_user" },
+    { kind: "node", name: "process_response" },
+  ]);
 });

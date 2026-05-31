@@ -218,3 +218,57 @@ minimal constructor call.
 fan-out + join); goldens (`test/golden/parallel.edges.txt`, `test/golden/parallel/`) pin the
 row form and the generated project, and the py_compile trust gate now covers the parallel fixture.
 The warning channel is no longer stubbed — callers can surface `JOIN_MISSING_FAILSAFE` findings.
+
+## ADR-0016 — HumanInput: zero-arg generator yielding RequestInput; payload/responseSchema ref checks
+**Context:** `humanInput` is the last v1 declarative leaf
+([ARCHITECTURE.md §2](ARCHITECTURE.md)); the edges compiler
+([ADR-0010](DECISIONS.md)) and assembler ([ADR-0012](DECISIONS.md)) were still
+rejecting it loud. The IR validator already enforced `HUMANINPUT_MISSING_MESSAGE`
+but did not resolve `payloadRef` / `responseSchemaRef` against declared schemas.
+The slice closes both gaps end to end. The fixture
+`packages/ir/fixtures/human-input.ir.json` (`START → ask_user → process_response`)
+is the worked example.
+**Decision:**
+- **Emission surface.** A humanInput node renders into `functions.py` as a
+  **zero-arg generator** that yields a single `RequestInput`:
+  ```python
+  def ask_user():
+      yield RequestInput(
+          message="...",
+          payload=<PayloadSchema>,           # omitted when payloadRef is null
+          response_schema=<ResponseSchema>,  # omitted when responseSchemaRef is null
+      )
+  ```
+  No `node_input` parameter, no `Event` return: per the ADK docs
+  (https://adk.dev/graphs/human-input/) the runtime pauses at the `yield` and
+  forwards the user's response to the next node's `node_input`. **Import surface:**
+  `from google.adk.events import RequestInput`. Null `payloadRef` /
+  `responseSchemaRef` → omit the kwarg (matching how `renderAgent` handles
+  `inputSchemaRef: null`).
+- **Edges compiler.** A humanInput node is a plain linear-chain member —
+  `{kind:"node", name}`, no new `RowMember` kind. `rejectUnsupported` is
+  **removed** because the linearizer now handles every declared node type the
+  validator lets through (`tool`/`workflow` are Phase 3 and would be rejected by
+  the assembler's type whitelist before reaching the compiler).
+- **Validator addition.** New stable codes
+  `UNKNOWN_HUMANINPUT_PAYLOAD_REF` and `UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF`,
+  emitted via the existing `refOk(ref, allowNull=true)` helper. `null`, omitted,
+  `"str"`, and any declared schema name are all valid — `"str"` is accepted for
+  consistency with agent/function ref slots, even though the canonical docs
+  example uses null-or-pydantic. No `inputType` inference for humanInput is
+  added in this slice (deferred, same posture as [ADR-0006](DECISIONS.md)).
+- **Project assembler.** `humanInput` joins `function` and `router` in
+  `functions.py` (interleaved in IR node order) and contributes its symbol to
+  `workflow.py`'s `from functions import …` line. Tool and workflow nodes still
+  raise `CodegenError`.
+**ADK assumptions to revisit with the fidelity service ([ADR-0004](DECISIONS.md)):**
+that `RequestInput` is importable from `google.adk.events`; that a zero-arg
+generator yielding `RequestInput` (no `Event` wrapper) is the correct
+graph-workflow surface; that `payload=` / `response_schema=` are the kwarg
+names. Verified against [adk.dev/graphs/human-input/](https://adk.dev/graphs/human-input/).
+**Consequences:** Every v1 declarative leaf
+([ARCHITECTURE.md §2](ARCHITECTURE.md)) — agent, function, router, join,
+humanInput — now compiles end to end. Goldens
+(`test/golden/human-input.edges.txt`, `test/golden/human-input/`) pin the row
+form and the generated project; the `py_compile` trust gate now covers the
+human-input fixture too. `tool` and `workflow` nodes remain Phase 3.

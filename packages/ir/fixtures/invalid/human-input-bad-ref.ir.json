@@ -1,0 +1,28 @@
+{
+  "irVersion": "0.1.0",
+  "name": "human_input_bad_ref",
+  "description": "Negative fixture: humanInput.responseSchemaRef names an undeclared schema, and payloadRef is a non-null string that does not resolve. Validator should report both UNKNOWN_HUMANINPUT_* codes.",
+  "schemas": [],
+  "nodes": [
+    {
+      "id": "n_ask",
+      "type": "humanInput",
+      "name": "ask_user",
+      "config": {
+        "message": "Pick one:",
+        "payloadRef": "NotDeclared",
+        "responseSchemaRef": "AlsoMissing"
+      }
+    },
+    {
+      "id": "n_after",
+      "type": "function",
+      "name": "after",
+      "config": { "inputType": "str", "outputType": "str", "emits": "output", "body": null }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_ask" },
+    { "from": "n_ask", "to": "n_after" }
+  ]
+}

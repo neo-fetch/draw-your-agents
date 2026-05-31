@@ -44,6 +44,7 @@ const PROJECTS = [
   { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json" },
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
   { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json" },
+  { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json" },
 ];
 
 for (const { name, fixture } of PROJECTS) {
@@ -87,13 +88,14 @@ test("rejects an out-of-slice node type via the assembler's own guard", () => {
   assert.throws(() => generateProject(ir), CodegenError);
 });
 
-test("rejects an out-of-slice graph shape (humanInput) loud", () => {
-  const ir: GraphIR = {
+test("rejects an out-of-slice node type (workflow) loud", () => {
+  // A nested `workflow` node is Phase 3 and rejected loud by the assembler.
+  const ir = {
     irVersion: "0.1.0",
-    name: "has_human",
+    name: "has_nested",
     schemas: [],
-    nodes: [{ id: "h", type: "humanInput", name: "ask", config: { message: "?" } }],
-    edges: [{ from: "START", to: "h" }],
-  };
-  assert.throws(() => generateProject(ir));
+    nodes: [{ id: "w", type: "workflow", name: "nested", config: {} }],
+    edges: [{ from: "START", to: "w" }],
+  } as unknown as GraphIR;
+  assert.throws(() => generateProject(ir), CodegenError);
 });

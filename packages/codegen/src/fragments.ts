@@ -10,6 +10,7 @@ import type {
   AgentNode,
   FunctionNode,
   GraphIR,
+  HumanInputNode,
   InstructionTemplate,
   JoinNode,
   ModelParams,
@@ -145,6 +146,45 @@ export function renderRouter(
   }
 
   return { imports, code: `${header.join("\n")}\n${body}\n` };
+}
+
+/**
+ * functions.py: one generator `def` per humanInput node (ADR-0016).
+ *
+ * Per the ADK graph-workflow human-input pattern, a human-input node renders as
+ * a zero-arg generator that yields a `RequestInput` — the runtime pauses the
+ * graph there and forwards the user's response to the next node's `node_input`
+ * (so the function itself does not wrap or return an `Event`).
+ *
+ *   def ask_user():
+ *       yield RequestInput(
+ *           message="...",
+ *           payload=<PayloadSchema>,           # omitted when payloadRef is null
+ *           response_schema=<ResponseSchema>,  # omitted when responseSchemaRef is null
+ *       )
+ */
+export function renderHumanInput(
+  node: HumanInputNode,
+  schemas: ReadonlyMap<string, SchemaDef>,
+): Fragment {
+  const cfg = node.config;
+  const imports: ImportReq[] = [{ module: "google.adk.events", names: ["RequestInput"] }];
+
+  const kwargs: string[] = [`message=${pyStr(cfg.message)},`];
+
+  if (cfg.payloadRef != null) {
+    const payload = resolveRef(cfg.payloadRef, schemas);
+    imports.push(...payload.imports);
+    kwargs.push(`payload=${payload.py},`);
+  }
+  if (cfg.responseSchemaRef != null) {
+    const response = resolveRef(cfg.responseSchemaRef, schemas);
+    imports.push(...response.imports);
+    kwargs.push(`response_schema=${response.py},`);
+  }
+
+  const body = `def ${node.name}():\n${indent(`yield RequestInput(\n${indent(kwargs.join("\n"))}\n)`)}\n`;
+  return { imports, code: body };
 }
 
 /** workflow.py: one `JoinNode(name=...)` per join node (ADR-0015). */

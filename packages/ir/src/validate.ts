@@ -59,6 +59,8 @@ export const ValidationCode = {
   FUNCTION_UNKNOWN_OUTPUT_TYPE: "FUNCTION_UNKNOWN_OUTPUT_TYPE",
   ROUTER_NO_ROUTES: "ROUTER_NO_ROUTES",
   HUMANINPUT_MISSING_MESSAGE: "HUMANINPUT_MISSING_MESSAGE",
+  UNKNOWN_HUMANINPUT_PAYLOAD_REF: "UNKNOWN_HUMANINPUT_PAYLOAD_REF",
+  UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF: "UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF",
   // Prompt-variable provenance (IR-SCHEMA invariant 6)
   VAR_SOURCE_NOT_NODE: "VAR_SOURCE_NOT_NODE",
   VAR_SOURCE_NOT_STRUCTURED: "VAR_SOURCE_NOT_STRUCTURED",
@@ -282,7 +284,18 @@ export function validate(ir: GraphIR): ValidationResult {
         break;
       }
       case "humanInput": {
-        if (!c.message) err(ValidationCode.HUMANINPUT_MISSING_MESSAGE, `humanInput ${n.name}: missing message`, n.id);
+        const ctx = `humanInput ${n.name}`;
+        if (!c.message) err(ValidationCode.HUMANINPUT_MISSING_MESSAGE, `${ctx}: missing message`, n.id);
+        if (!refOk(c.payloadRef, true)) {
+          err(ValidationCode.UNKNOWN_HUMANINPUT_PAYLOAD_REF, `${ctx}: unknown payloadRef ${repr(c.payloadRef)}`, n.id);
+        }
+        if (!refOk(c.responseSchemaRef, true)) {
+          err(
+            ValidationCode.UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF,
+            `${ctx}: unknown responseSchemaRef ${repr(c.responseSchemaRef)}`,
+            n.id,
+          );
+        }
         break;
       }
       default:
