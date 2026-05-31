@@ -607,3 +607,58 @@ slices.
 headless test. Future slices (drag-to-add, the Lexical prompt editor and variable chips, save/load,
 `.zip` download via `bundleZip`, draw.io import) extend this scaffold without re-architecting it.
 
+## ADR-0023 — Inspector slice 2: type-dispatched config form, focused `updateModelParam`, dropdowns mirror `ir.schemas`
+**Context:** [ADR-0022](DECISIONS.md) wired the canvas → inspector → preview spine on one editable
+field (`agent.config.model`). The next slice widens that proven round-trip to the **complete
+config surface** of every v1 declarative node type — without forking the store, growing the
+validator, or touching codegen. The IR types in `packages/ir/src/types.ts` are the contract;
+this ADR records the three judgment calls made implementing against it.
+**Decision:**
+- **Focused `applyModelParamPatch` for nested `modelParams`.** `applyNodeConfigPatch` is a
+  *shallow* config merge. That is correct for top-level fields (model, mode, inputType, body,
+  routes, tools, …) but **wrong** for nested `modelParams`: patching
+  `{ modelParams: { temperature: 0.5 } }` shallowly would clobber `topP` / `topK` /
+  `maxOutputTokens`. The sibling reducer `applyModelParamPatch(ir, nodeId, key, value)` deep-
+  merges into `modelParams`, with `value === undefined` clearing a single key and an empty
+  `modelParams` collapsing to *absent* (not `{}`), so it serializes the way the validator and
+  goldens expect. Both reducers stay **pure** in `irReducer.ts` (no zustand reference) so the
+  headless `apps/web/test/` suite continues to exercise them under `node --test` with no
+  install ([ADR-0022](DECISIONS.md) reducer-purity rule). The store gains a matching typed
+  action `updateModelParam(nodeId, key, value)`. Rejected alternative: generalize to a recursive
+  deep-merge action — buys flexibility we don't need (no other nested-object configs in v1),
+  costs precision in the action name and patch shape.
+- **Instruction (and nested workflow `graph`) stay read-only.** Agent `instruction` is rendered
+  read-only in this slice with a hint that the chip editor is Phase 2 — that editor needs
+  Lexical + the variable-chip atom architecture ([ADR-0005](DECISIONS.md),
+  [ARCHITECTURE.md §3](ARCHITECTURE.md)), which is a slice of its own. Likewise a `workflow`
+  node's nested `graph` is shown as a node-count placeholder; sub-graph editing is a later slice.
+  The instruction is still **rendered** in source-bound form (`<schema.field from source>` —
+  [ADR-0008](DECISIONS.md)) so the user can see what the agent will receive even while editing
+  is gated. This boundary keeps the slice scoped to the config surface that is one round-trip
+  away from compile output, and avoids half-shipping a chip UI without the segment model.
+- **Dropdowns mirror `ir.schemas`; the validator stays authoritative.** Schema-ref and type-ref
+  selectors enumerate the actual declared `ir.schemas` names (plus the literal `"str"`, plus
+  `null` where the field allows it; humanInput's refs intentionally omit `"str"` per the IR
+  field semantics). This is the UI mirror of validator invariant 5 (every type ref resolves to
+  `"str"` / `null` / a declared schema) — but enforcement still lives in `validate.ts` and
+  surfaces in the Preview pane's findings list. The UI is a **narrowing** of choices, not a
+  duplicate validator. Free-form text fields (model, message, body, tools, route names) stay
+  free-form: the validator catches the empty/invalid cases (`AGENT_MISSING_MODEL`,
+  `HUMANINPUT_MISSING_MESSAGE`, `ROUTER_ROUTE_NO_TARGET`, …) and the existing Preview surfaces
+  them — no new UI validation logic.
+**Headless regression oracle (`apps/web/test/irStore.test.ts`).** The three new tests widen the
+spine test alongside the original `model` round-trip:
+- `applyModelParamPatch` add / preserve siblings / clear one key / drop the empty field
+  (deep-merge contract + purity).
+- `applyNodeConfigPatch` on a function `outputType` (top-level type-ref change) — validates
+  clean and reaches `functions.py`.
+- `applyNodeConfigPatch` on `router.routes` — the **negative** path trips
+  `ROUTER_ROUTE_NO_TARGET` + `ROUTER_EDGE_ROUTE_UNDECLARED` (invariant 7) without crashing,
+  and a reordering keeps the IR clean and drives route-map entry order in `workflow.py`
+  ([ADR-0014](DECISIONS.md)).
+**Consequences:** A builder can now configure every v1 declarative node type end to end. The
+spine extends without re-architecture (one shared reducer family, one preview, one validator).
+Out-of-scope this slice: chip editor for `instruction`; canvas topology mutation (add / connect
+/ delete nodes / edges); nested workflow sub-graph editing; save / load. Each lifts off the
+same scaffold; none change this slice's contracts.
+

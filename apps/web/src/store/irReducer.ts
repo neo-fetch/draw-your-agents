@@ -22,6 +22,39 @@ export function applyNodeConfigPatch(
   return { ...ir, nodes };
 }
 
+export type ModelParamKey =
+  | "temperature"
+  | "topP"
+  | "topK"
+  | "maxOutputTokens";
+
+/**
+ * Patch one key inside an agent node's nested `modelParams` without clobbering
+ * the others (the shallow `applyNodeConfigPatch` would). `value === undefined`
+ * clears the key; if `modelParams` becomes empty, the field is removed
+ * entirely so it serializes to absent, not `{}`.
+ */
+export function applyModelParamPatch(
+  ir: GraphIR,
+  nodeId: string,
+  key: ModelParamKey,
+  value: number | undefined,
+): GraphIR {
+  const nodes = ir.nodes.map((n): GraphNode => {
+    if (n.id !== nodeId || n.type !== "agent") return n;
+    const prev = n.config.modelParams ?? {};
+    const nextParams: Record<string, number> = { ...prev };
+    if (value === undefined) delete nextParams[key];
+    else nextParams[key] = value;
+    const cleaned = Object.keys(nextParams).length === 0 ? undefined : nextParams;
+    const { modelParams: _drop, ...rest } = n.config;
+    const nextConfig =
+      cleaned === undefined ? rest : { ...rest, modelParams: cleaned };
+    return { ...n, config: nextConfig } as GraphNode;
+  });
+  return { ...ir, nodes };
+}
+
 /** Deep-clone via JSON so the store starts from a mutable copy of the fixture. */
 export function cloneFixture<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;

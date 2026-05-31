@@ -12,7 +12,12 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import type { GraphIR } from "@graphical-agents/ir";
 import cityTime from "../../../../packages/ir/fixtures/city-time.ir.json" with { type: "json" };
-import { applyNodeConfigPatch, cloneFixture } from "./irReducer.ts";
+import {
+  applyModelParamPatch,
+  applyNodeConfigPatch,
+  cloneFixture,
+  type ModelParamKey,
+} from "./irReducer.ts";
 
 export interface IRState {
   ir: GraphIR;
@@ -20,6 +25,12 @@ export interface IRState {
   setSelectedNode: (id: string | null) => void;
   /** Shallow-merge `patch` into the node's `config`, returning a new IR. */
   updateNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void;
+  /** Patch one nested `modelParams` key (undefined clears it). */
+  updateModelParam: (
+    nodeId: string,
+    key: ModelParamKey,
+    value: number | undefined,
+  ) => void;
 }
 
 export type IRStore = UseBoundStore<StoreApi<IRState>>;
@@ -31,6 +42,8 @@ export function createIRStore(initial: GraphIR): IRStore {
     setSelectedNode: (id) => set({ selectedNodeId: id }),
     updateNodeConfig: (nodeId, patch) =>
       set((s) => ({ ir: applyNodeConfigPatch(s.ir, nodeId, patch) })),
+    updateModelParam: (nodeId, key, value) =>
+      set((s) => ({ ir: applyModelParamPatch(s.ir, nodeId, key, value) })),
   }));
 }
 
