@@ -520,3 +520,27 @@ recovered contents (not bytes).
 codegen package now exports both halves of the post-process tail; the future
 visual builder can compose them client-side without any Node-only runtime
 deps. The IR → `.zip` artifact is runnable headless via one CLI invocation.
+
+## ADR-0021 — Fidelity verified against real google-adk==2.0.0 (assumptions confirmed)
+**Context:** ADR-0012/0016/0019 pinned the emitted ADK API surface as **assumptions** to confirm
+against the real package (the deferred ADR-0004 fidelity gate). `py_compile` proved syntax and
+`black` proved formatting, but real ADK *acceptance* — that a generated `Workflow(...)` actually
+constructs — was unproven.
+**Method:** Manual verification (not yet automated). In a clean venv on Python 3.14:
+`pip install google-adk==2.0.0` (installs clean), then probed every emitted import path and
+constructed `root_agent` for all six fixtures (city-time, routing, parallel, human-input, nested,
+tool) with a dummy `GOOGLE_API_KEY`.
+**Result — every assumption is CONFIRMED, no generator changes needed:**
+- `from google.adk import Workflow | Event | Agent` — all present (top-level exports; the graph
+  `Workflow` lives in `google/adk/workflow/_workflow.py`).
+- `from google.adk.workflow import JoinNode` — present.
+- `from google.adk.events import RequestInput` — present.
+- `from google.adk.tools import FunctionTool` — present.
+- All six fixtures: `import workflow` succeeds and `root_agent` is a real ADK `Workflow` instance.
+**Consequences:** The codegen core is trustworthy for real, not just on paper — the full pipeline
+`IR → validate → generateProject → black → .zip` produces code that constructs against real ADK
+across the entire v1 declarative taxonomy. The import surfaces in ADR-0012/0016/0019 are no longer
+assumptions. **Phase 0 is complete.**
+**Follow-up (deferred, low-risk):** wrap this manual check as `scripts/fidelity_check.py` that
+imports + dry-run-constructs each fixture's `root_agent`, skipping cleanly when google-adk is absent
+(mirrors black's graceful degradation). It is now confirmation, not a bug hunt, so it can wait.
