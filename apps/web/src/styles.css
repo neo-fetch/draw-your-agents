@@ -160,3 +160,14 @@ html, body, #root {
 
 .palette-item:hover { background: #f0f0f0; border-color: #888; }
 .palette-item:active { background: #e6e6e6; }
+
+.start-node {
+  padding: 6px 14px;
+  border: 1px solid #4b5563;
+  border-radius: 999px;
+  background: #1f2937;
+  color: #f9fafb;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}

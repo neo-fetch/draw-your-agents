@@ -212,6 +212,38 @@ test("applyNodeConfigPatch on router.routes — matched routes validate, mismatc
 
 // ---- Save / load slice (ADR-0024) ---------------------------------------
 
+// ---- Canvas topology slice (ADR-0026) -----------------------------------
+
+test("store.deleteNode clears selectedNodeId when it matched the removed node", () => {
+  const ir = cloneFixture(loadFixture());
+  const store = createIRStore(ir);
+
+  store.getState().setSelectedNode("n_lookup");
+  assert.strictEqual(store.getState().selectedNodeId, "n_lookup");
+
+  store.getState().deleteNode("n_lookup");
+
+  assert.strictEqual(
+    store.getState().selectedNodeId,
+    null,
+    "selection must clear when the selected node is deleted",
+  );
+  assert.ok(
+    !store.getState().ir.nodes.some((n) => n.id === "n_lookup"),
+    "node must be gone from the store IR",
+  );
+
+  // Deleting a different node leaves the (now-null) selection alone, and
+  // deleting nothing leaves a non-matching selection alone.
+  store.getState().setSelectedNode("n_city_gen");
+  store.getState().deleteNode("n_done");
+  assert.strictEqual(
+    store.getState().selectedNodeId,
+    "n_city_gen",
+    "deleting a different node must not clear the selection",
+  );
+});
+
 test("replaceIR swaps the entire IR and clears the selection", () => {
   const a = cloneFixture(loadFixture());
   const b = cloneFixture(loadRoutingFixture());

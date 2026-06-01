@@ -815,3 +815,90 @@ reuse the global id/name walk to validate cross-graph references) and the Phase 
 untouched; codegen and validator stay frozen ([ADR-0013](DECISIONS.md), [ADR-0020](DECISIONS.md)).
 Out of scope this slice (deliberate): edge creation, delete, rename UI, drag-to-canvas, chips —
 each of those is a follow-on slice that builds on the IR shape this one establishes.
+
+## ADR-0026 — Connect plain edges + delete nodes/edges: three pure reducers, synthetic START node, router-label deferral
+**Context:** [ADR-0022](DECISIONS.md)/[ADR-0023](DECISIONS.md)/[ADR-0024](DECISIONS.md)/[ADR-0025](DECISIONS.md)
+took the visual builder to palette → canvas → inspector → preview → save/load/zip, but the
+canvas itself was still **read-only**. A user could drop disconnected nodes from the palette and
+edit their config, but could not wire them or delete anything. This slice closes that gap with
+three pure IR-mutation reducers + minimal React Flow wiring so the canvas becomes a true editor.
+**Decisions:**
+- **Three pure reducers in `apps/web/src/store/irEdges.ts`** — joins
+  [`irReducer.ts`](../apps/web/src/store/irReducer.ts) and
+  [`addNode.ts`](../apps/web/src/store/addNode.ts) as the third pure-reducer module, React-free /
+  zustand-free / DOM-free, exercised under `node --test` from a cold checkout
+  ([ADR-0011](DECISIONS.md) / [ADR-0022](DECISIONS.md) purity rule):
+  - `connectEdge(ir, fromId, toId)` appends `{from, to}` with no `route` label this slice.
+    `fromId` may be the literal `"START"`. Silent **no-op (returns the input IR reference)** on:
+    `toId === "START"` (IR-SCHEMA invariant 2 — START is reserved as an edge `from` only),
+    `fromId === toId` (self-loop — not a meaningful edit), and exact duplicate of an existing
+    edge (same `from`/`to`/`route`). The reducer deliberately does **not** re-implement
+    validation — no cycle check, no reachability check, no DAG check. The validator owns the IR
+    spec ([ADR-0001](DECISIONS.md) / [ADR-0013](DECISIONS.md)) and the Preview pane already
+    surfaces findings without crashing; duplicating that logic in the reducer would split the
+    source of truth.
+  - `deleteNode(ir, nodeId)` removes the node AND every edge that references it (as `from` or
+    `to`) — a cascade, not a dangling-edge leak. Operates on the **top-level graph only**: if
+    `nodeId` is not a top-level node (e.g. lives inside `workflow.config.graph`), the reducer
+    returns the input IR reference. Nested-graph topology editing is a focused follow-up slice.
+  - `deleteEdge(ir, fromId, toId)` removes every edge matching `{from, to}` (route-agnostic — a
+    click-delete on a router branch edge removes it regardless of label). No-op (same IR ref)
+    if no edge matches.
+  - All three reducers are pure: existing array elements stay referentially equal where
+    unchanged, and the no-op branches return the exact input ref so the React store wrapper can
+    short-circuit without re-rendering.
+- **Selection-clear-on-delete is a store concern, not a reducer concern.** The `deleteNode`
+  reducer stays pure; `useIRStore.deleteNode` is the wrapper that additionally clears
+  `selectedNodeId` when it matched the removed node. Same purity boundary as
+  [ADR-0022](DECISIONS.md): React-free reducers below, zustand glue above.
+- **START is represented as a synthetic, non-deletable canvas node** with id `"START"` and
+  `type: "ir-start"`, prepended when mapping `ir.nodes` → React Flow nodes. It is **not** in
+  `ir.nodes`. Materializing START on the canvas lets React Flow's `onConnect` return
+  `source: "START"` naturally when the user drags from it, so the reducer signature stays a
+  symmetric `(fromId, toId)` pair instead of a special-case "connect from START" action. The
+  synthetic node is marked `deletable: false` / `selectable: false` / `draggable: false`, so
+  the delete-key path can't remove it and `setSelectedNode` ignores clicks on it. This drops
+  the previous Canvas.tsx "filter out START edges" hack — every IR edge is now a real RF edge.
+- **Store-not-React-Flow owns the edges.** The canvas does **not** adopt React Flow's
+  `useNodesState` / `useEdgesState`; that would create a parallel mutable copy and split the
+  source of truth. Instead, every render derives RF nodes + edges from the IR store, and the
+  `onConnect` / `onNodesDelete` / `onEdgesDelete` callbacks dispatch reducer actions. The IR
+  remains the single source of truth ([ADR-0001](DECISIONS.md)), and the canvas re-derives
+  from the new IR on each store update.
+- **Router-label deferral, with the `ROUTER_UNLABELED_EDGE`-is-honest rationale.** Router
+  branch edges need a `route` label (IR invariant 7 — declared `routes` ⇔ out-edge `route`
+  labels). The UI for picking the label at connect-time is its own focused slice; it needs an
+  edge-creation flow that knows which source is a router and surfaces the declared routes.
+  This slice **does not** special-case wires out of a router — they are created as plain
+  (unlabeled) edges, exactly like wires out of an agent or function. The existing Preview
+  surfaces the resulting `ROUTER_UNLABELED_EDGE` validator finding. That is correct, honest
+  behavior — the validator already says exactly the right thing — and the right time to silence
+  the finding is when the route-label UI lands, not by hiding it in the reducer.
+- **Headless regression oracle, no new fixture.** [`apps/web/test/irEdges.test.ts`](../apps/web/test/irEdges.test.ts)
+  pins the contracts above against `city-time.ir.json` and `nested.ir.json`:
+  - `connectEdge` happy path — drop the city-time `n_lookup → n_report` edge, assert
+    `UNREACHABLE_NODE`, wire it back, assert `validate` clean and `compile()` reflects the new
+    chain in `workflow.py`. The chosen edge gives the strongest one-line oracle:
+    `UNREACHABLE_NODE` before, validates after, mentions both `lookup_time` and `city_report`
+    in `workflow.py`.
+  - `connectEdge` guards — edge-to-START, duplicate (including double-call on a freshly-added
+    pair), and self-loop each return the same IR reference.
+  - `deleteNode` cascade — using `n_lookup` (has both an in-edge and an out-edge) asserts both
+    edges vanish and no remaining edge references the deleted id.
+  - `deleteNode` nested no-op — calling on `n_inner_a` (an id that lives only inside
+    `nested.ir.json`'s sub-graph) returns the input IR reference.
+  - `deleteEdge` exact — removes only the target pair; non-existent pair returns the input ref.
+  - Purity — all three reducers leave the input arrays untouched and preserve sibling node
+    identity in the result.
+- **`packages/*` unchanged.** No new validator codes, no new edges-compiler rules, no new
+  codegen behavior; codegen and validator stay frozen ([ADR-0013](DECISIONS.md),
+  [ADR-0020](DECISIONS.md)). The slice is pure UI surface plus a new reducer module.
+**Consequences:** The canvas becomes a true editor: palette nodes can be wired in any order,
+mistakes are recoverable via delete + reconnect, and Preview's findings list narrates the
+graph-shape consequences in real time. The three reducers join the chip system's
+forthcoming dependency-edge code as the foundation for Phase 2's variable-source binding
+(a chip drop will mint a data-dependency edge through the same store action discipline).
+**Out of scope this slice (deliberate):** router `route` labels at connect-time, nested
+`workflow.config.graph` topology editing, edge reconnection / drag-to-move endpoint (delete +
+recreate is fine), undo/redo, node position editing. Each is independent and lifts off the
+scaffold this slice establishes; none change its contracts.

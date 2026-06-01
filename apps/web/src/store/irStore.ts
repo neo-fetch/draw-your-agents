@@ -19,6 +19,11 @@ import {
   type ModelParamKey,
 } from "./irReducer.ts";
 import { addNode as addNodeReducer, type AddableNodeType } from "./addNode.ts";
+import {
+  connectEdge as connectEdgeReducer,
+  deleteEdge as deleteEdgeReducer,
+  deleteNode as deleteNodeReducer,
+} from "./irEdges.ts";
 
 export interface IRState {
   ir: GraphIR;
@@ -45,6 +50,16 @@ export interface IRState {
    * graph-shape findings until edges land in the next slice.
    */
   addNode: (type: AddableNodeType) => void;
+  /** Append a plain edge (no `route` label this slice — ADR-0026). */
+  connectEdge: (fromId: string, toId: string) => void;
+  /**
+   * Delete a top-level node and cascade-remove every edge that references it.
+   * Clears `selectedNodeId` if it matched the removed node — selection
+   * lifecycle is a store concern, not part of the pure reducer (ADR-0026).
+   */
+  deleteNode: (nodeId: string) => void;
+  /** Remove every edge matching `{from, to}` (route-agnostic). */
+  deleteEdge: (fromId: string, toId: string) => void;
 }
 
 export type IRStore = UseBoundStore<StoreApi<IRState>>;
@@ -64,6 +79,17 @@ export function createIRStore(initial: GraphIR): IRStore {
         const { ir, nodeId } = addNodeReducer(s.ir, type);
         return { ir, selectedNodeId: nodeId };
       }),
+    connectEdge: (fromId, toId) =>
+      set((s) => ({ ir: connectEdgeReducer(s.ir, fromId, toId) })),
+    deleteNode: (nodeId) =>
+      set((s) => {
+        const ir = deleteNodeReducer(s.ir, nodeId);
+        const selectedNodeId =
+          s.selectedNodeId === nodeId ? null : s.selectedNodeId;
+        return { ir, selectedNodeId };
+      }),
+    deleteEdge: (fromId, toId) =>
+      set((s) => ({ ir: deleteEdgeReducer(s.ir, fromId, toId) })),
   }));
 }
 
