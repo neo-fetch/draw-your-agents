@@ -739,3 +739,79 @@ keep editing → download a runnable project. `apps/web` remains the only consum
 codegen stays frozen. Out of scope this slice (deliberate): localStorage autosave, multi-file
 project import, draw.io, canvas topology mutation, in-browser black. Each is independent and
 can lift off the same scaffold; none change this slice's contracts.
+
+## ADR-0025 — Node palette: click-to-add, pure addNode reducer, global-namespace minting
+**Context:** [ADR-0022](DECISIONS.md)/[ADR-0023](DECISIONS.md)/[ADR-0024](DECISIONS.md) wired
+canvas → inspector → preview → save/load/zip, but the UI could only *edit* existing nodes.
+This slice is the first to **create** IR structure: a palette of the 7 v1 declarative node
+types, click to drop a fresh node into the graph. Wiring it up is the next slice; the chip
+system is Phase 2. The single hard problem the slice exists to solve is **minting a unique `id`
+and `name`** that hold across the entire IR including nested `workflow.config.graph` sub-graphs
+(validator invariant 1, ADR-0017 flat global namespace) and produce a non-keyword Python
+identifier (the codegen symbol).
+**Decisions:**
+- **Pure `addNode(ir, type)` reducer in [apps/web/src/store/addNode.ts](../apps/web/src/store/addNode.ts).**
+  React-free, zustand-free, DOM-free — same purity split as `irReducer.ts`
+  ([ADR-0022](DECISIONS.md)) so the headless test under `node --test` exercises the minter
+  without `npm install`. The minter is the foundation the connect-edges slice and the Phase 2
+  chip system will both reuse; keeping it out of zustand keeps the round-trip oracle live as
+  those slices land. Public surface: `addNode`, `makeNodeId`, `makeNodeName`,
+  `collectAllIds`, `collectAllNames`, `defaultPositionFor`.
+- **Id + name scheme.** `id = n_<type>_<n>`, `name = <type>_<n>`, `n` starting at 1 and bumping
+  until free against the recursively-collected namespace. `humanInput` → `human_input` for
+  the name prefix (the type token isn't a valid Python identifier; the snake_case form is and
+  matches the existing fixture convention). Id and name counters advance independently —
+  collisions are checked against their own namespaces, never assumed paired. Rejected: short
+  uuids or `cuid` — readable names beat opaque tokens for the codegen symbol the user will
+  see in `agents.py` / `functions.py`, and "next free integer" is trivial to reason about.
+- **Global-namespace walk.** `collectAllIds` / `collectAllNames` recurse through every
+  `workflow.config.graph` so the minter respects [ADR-0017](DECISIONS.md)'s flat global
+  namespace across parent + every nested sub-graph. Tested by planting a name and id INSIDE a
+  nested sub-graph and asserting the minter skips past them. Node ids are not formally shared
+  across sub-graphs by the validator (DUPLICATE_NODE_ID is per-graph), but the minter unifies
+  the id space anyway — a single flat id space will simplify cross-graph lookups in the
+  connect-edges slice without any cost.
+- **Default-config-per-type table.** Each default satisfies its TS shape and every per-type
+  validator rule so the only errors on a fresh add are *graph-shape* errors that disappear
+  once edges are wired (next slice), not "missing field" errors:
+  - `agent` — `model: "gemini-flash-latest"`, `instruction: { segments: [] }`, `mode: "task"`,
+    `outputSchemaRef: "str"`, `inputSchemaRef: null` (AGENT_MISSING_MODEL needs non-empty model).
+  - `function` / `tool` — `inputType: "str"`, `outputType: "str"`, `body: null` (the
+    TODO-stub path).
+  - `router` — `routes: ["DEFAULT"]` (ROUTER_NO_ROUTES needs ≥1 route).
+  - `join` — `{ description: "" }` (no per-type checks).
+  - `humanInput` — `message: "Enter input:"` (HUMANINPUT_MISSING_MESSAGE needs non-empty
+    message).
+  - `workflow` — `graph` = a one-node passthrough sub-IR (see next decision).
+- **"Empty workflow is not valid; default sub-IR is a one-node passthrough."** A truly empty
+  sub-IR fails `NO_START_EDGE` and surfaces nested findings, breaking the "fresh add ⇒
+  predictable shape errors" oracle. So a fresh `workflow` node ships with one inner
+  `function` + a `START → inner` edge. The inner node's name is minted against
+  `parent ∪ {workflow's own name}` so the flat global namespace stays unique. Rejected:
+  ship `workflow` with an explicitly-invalid empty sub-IR and rely on Preview to flag it —
+  pollutes the per-type "expected fresh-add codes" set with nested findings and confuses
+  later edge wiring.
+- **Disconnected add ⇒ expected `UNREACHABLE_NODE` (and, for routers,
+  `ROUTER_ROUTE_NO_TARGET`)** is the test oracle, not a bug. The headless test pins
+  `EXPECTED_FRESH_ERROR_CODES` per type and asserts every finding is one of those codes,
+  scoped to the new node id. Both codes are *graph-shape* errors that go away once edges
+  land in the next slice — they are not the "missing field" pile the test exists to forbid.
+  Router gets the extra code because invariant 7 ties `routes` to out-edges: with ≥1
+  declared route (required) and zero edges (by design this slice), the imbalance is
+  unavoidable. The Preview pane already renders findings gracefully ([ADR-0022](DECISIONS.md));
+  we do not suppress.
+- **Click-to-add (no drag) this slice.** Drag-to-canvas needs React Flow's drop-target API
+  and a coordinate-space transform; it's a UI slice of its own and offers no additional
+  test surface for the minter — which is the actual hard problem. The default `ui` position
+  staggers 280px to the right of the existing graph's rightmost node so the new node doesn't
+  stack on top of an existing one. Free-positioning lands when canvas drag does.
+- **Palette as a 4th column** (160px) to the left of Canvas, parallel to Inspector and
+  Preview — matches the existing pane rhythm and survives Phase 2 growth (variable-source
+  pickers, schema palette). Rejected: inline in Canvas header (crowds canvas chrome as the
+  type list grows) and a second toolbar row (a canvas action, not a project action).
+**Consequences:** The minter is the cornerstone for two upcoming slices: connect-edges (will
+reuse the global id/name walk to validate cross-graph references) and the Phase 2 chip system
+(will mint variable references that bind a consumer to a producer by `name`). `packages/*` is
+untouched; codegen and validator stay frozen ([ADR-0013](DECISIONS.md), [ADR-0020](DECISIONS.md)).
+Out of scope this slice (deliberate): edge creation, delete, rename UI, drag-to-canvas, chips —
+each of those is a follow-on slice that builds on the IR shape this one establishes.

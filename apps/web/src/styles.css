@@ -16,7 +16,7 @@ html, body, #root {
 
 .app {
   display: grid;
-  grid-template-columns: 1fr 320px 480px;
+  grid-template-columns: 160px 1fr 320px 480px;
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -137,3 +137,26 @@ html, body, #root {
 
 .preview .findings { color: #b91c1c; }
 .preview .findings li { margin-bottom: 6px; font-family: ui-monospace, monospace; font-size: 12px; }
+
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.palette-item {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  padding: 7px 10px;
+  border: 1px solid #c8c8c8;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.palette-item:hover { background: #f0f0f0; border-color: #888; }
+.palette-item:active { background: #e6e6e6; }

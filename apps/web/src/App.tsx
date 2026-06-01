@@ -1,5 +1,6 @@
 import { Canvas } from "./canvas/Canvas.tsx";
 import { Inspector } from "./inspector/Inspector.tsx";
+import { Palette } from "./palette/Palette.tsx";
 import { Preview } from "./preview/Preview.tsx";
 import { Toolbar } from "./toolbar/Toolbar.tsx";
 
@@ -8,6 +9,12 @@ export function App() {
     <div className="app-shell">
       <Toolbar />
       <div className="app">
+        <section className="pane palette-pane">
+          <header>Add Node</header>
+          <div className="body palette">
+            <Palette />
+          </div>
+        </section>
         <section className="pane">
           <header>Canvas</header>
           <Canvas />

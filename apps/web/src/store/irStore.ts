@@ -18,6 +18,7 @@ import {
   cloneFixture,
   type ModelParamKey,
 } from "./irReducer.ts";
+import { addNode as addNodeReducer, type AddableNodeType } from "./addNode.ts";
 
 export interface IRState {
   ir: GraphIR;
@@ -36,6 +37,14 @@ export interface IRState {
    * because node ids from the loaded IR don't match the previous graph.
    */
   replaceIR: (ir: GraphIR) => void;
+  /**
+   * Append a new disconnected node of the given type to the IR (ADR-0025).
+   * Mints a unique id + name across the entire IR (including nested
+   * sub-graphs), selects the new node so the inspector opens on it. The
+   * fresh node is unwired by design; Preview will surface the expected
+   * graph-shape findings until edges land in the next slice.
+   */
+  addNode: (type: AddableNodeType) => void;
 }
 
 export type IRStore = UseBoundStore<StoreApi<IRState>>;
@@ -50,6 +59,11 @@ export function createIRStore(initial: GraphIR): IRStore {
     updateModelParam: (nodeId, key, value) =>
       set((s) => ({ ir: applyModelParamPatch(s.ir, nodeId, key, value) })),
     replaceIR: (ir) => set({ ir, selectedNodeId: null }),
+    addNode: (type) =>
+      set((s) => {
+        const { ir, nodeId } = addNodeReducer(s.ir, type);
+        return { ir, selectedNodeId: nodeId };
+      }),
   }));
 }
 
