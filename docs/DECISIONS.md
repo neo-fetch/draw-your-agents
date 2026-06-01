@@ -662,3 +662,80 @@ Out-of-scope this slice: chip editor for `instruction`; canvas topology mutation
 / delete nodes / edges); nested workflow sub-graph editing; save / load. Each lifts off the
 same scaffold; none change this slice's contracts.
 
+
+## ADR-0024 — Save / load IR + in-browser zip download
+**Context:** [ADR-0022](DECISIONS.md) wired canvas → inspector → preview over an in-memory
+fixture IR, and [ADR-0023](DECISIONS.md) opened up the inspector to every v1 node type. The
+builder was usable but had no off-ramp: edits couldn't persist, and the runnable ADK project
+couldn't leave the browser. This slice closes the original product loop ("download it to
+further refine") by adding three actions to the existing store: Save IR (download the in-memory
+`GraphIR` as `<name>.agentgraph.json`), Load IR (file-picker replaces the store IR), and
+Download .zip (compile + bundle the project in-browser as `<name>.zip`). Nothing in
+`packages/*` changed — codegen is frozen ([ADR-0013](DECISIONS.md), [ADR-0020](DECISIONS.md)); the
+slice is a pure *consumer* of `compile` + `bundleZip`.
+**Decisions:**
+- **Save format = the bare IR JSON, no wrapper envelope.** The IR is the source of truth
+  ([ADR-0001](DECISIONS.md)) and the canonical save/load contract; a `{ version, ir }` envelope
+  would just be a second schema to evolve. `irVersion` already lives inside the IR; round-trip
+  is `JSON.stringify(ir, null, 2)` ↔ `JSON.parse(text)`.
+- **Load policy = parse-guard + shape-guard + load-then-surface, don't gate semantics.**
+  Rejected outright: `JSON.parse` failures, non-object payloads (string / number / null /
+  array), and objects missing the three array fields the canvas / inspector / preview
+  iterate over (`nodes`, `edges`, `schemas`). Manual smoke caught the renderer crashing on
+  `replaceIR({name:"x"})` (`Cannot read properties of undefined (reading 'map')`), which
+  defeats "load-then-surface" — the user can't fix what they can't see. Accepted (load-then-
+  surface): a structurally-shaped object that fails `validate` *semantically* (broken var
+  refs, missing models, undeclared schemas, missing required scalar keys like `irVersion` /
+  `name`). Those findings flow through the same Preview pane that already renders validation
+  errors ([ADR-0022](DECISIONS.md)) plus a non-blocking banner on the toolbar showing the
+  finding count. The inspector is the fix surface; gating *semantic* load behind validity
+  would force the user to fix the file in a text editor before they could even see what was
+  wrong. The structural guard is the minimum needed to keep React alive long enough for them
+  to do that.
+- **Download zip skips `format.ts` (black).** `formatProject` shells out to `python3 -m black`
+  via `node:child_process` ([ADR-0020](DECISIONS.md)) and cannot run in a browser. Fragments are
+  already black-shaped ([ADR-0012](DECISIONS.md)) so the emitted project is shipped unformatted-
+  by-black; the round-trip test confirms byte-equality through `bundleZip` / `unzipStore`. No
+  attempt to port black to WASM — that's a separate ADR if ever needed.
+- **Download zip is gated on a clean IR.** `compile` throws `ValidationError` on findings
+  ([packages/codegen/src/compile.ts](../packages/codegen/src/compile.ts)); the button is disabled
+  while `validate(ir).errors.length > 0` so we never emit a project the validator rejects.
+  Save is *not* gated — WIP is a valid thing to save.
+- **Pure helper + UI shim split, same as [ADR-0022](DECISIONS.md).** All decision logic — JSON
+  parsing, the load-then-surface decision, filename derivation — lives in
+  [apps/web/src/store/irIO.ts](../apps/web/src/store/irIO.ts) as a React-free, zustand-free,
+  DOM-free pure module exercised by `node --test` from a cold checkout (no `npm install`,
+  [ADR-0011](DECISIONS.md)). The browser-only pieces — `Blob`, `URL.createObjectURL`, anchor
+  click, hidden `<input type=file>` — live in
+  [apps/web/src/toolbar/Toolbar.tsx](../apps/web/src/toolbar/Toolbar.tsx) as a thin un-tested
+  shim. Same testability posture as `irReducer.ts` / `irStore.ts`.
+- **Store gets `replaceIR(ir)` and clears the selection.** Selection is keyed by node id;
+  ids from the loaded IR don't generally match the previous graph, so leaving a stale
+  `selectedNodeId` in place would make the inspector edit-target undefined behaviour.
+- **Codegen modules imported by their specific `.ts` path, not via
+  `@graphical-agents/codegen` index.** The index re-exports `format.ts`, which top-level
+  imports `node:child_process`; Vite would externalize that and explode at runtime
+  ([ADR-0022](DECISIONS.md) already settled this for `compile.ts` in the Preview pane). The
+  Toolbar imports `compile` from `compile.ts` and `bundleZip` from `bundle.ts` directly.
+**Headless regression oracle.** Two new test files under `apps/web/test/`:
+- `irIO.test.ts` — `serializeIR` ↔ `loadIRFromText` round-trips the city-time fixture clean;
+  malformed JSON returns `{ok:false}` rather than throwing; non-object payloads (`42`,
+  `"hello"`, `null`, `[…]`) are rejected by the shape guard; objects missing the array
+  fields the renderer iterates (`nodes` / `edges` / `schemas`, or any of them not actually
+  an array) are also rejected, so `replaceIR` never hands React an undefined-on-map crash
+  (regression caught in the dev-server smoke); a structurally-shaped object missing
+  `irVersion` / `name` still loads with `MISSING_TOP_LEVEL_KEY` findings; the
+  `invalid/broken-var-and-graph.ir.json` fixture loads with var/schema/ref-class findings;
+  filename helpers fall back to `graph.*` when `ir.name` is missing/empty.
+- `zipRoundTrip.test.ts` — mirrors [packages/codegen/test/bundle.test.ts](../packages/codegen/test/bundle.test.ts)
+  but goes through `compile` (not `generateProject` directly) so a regression in the exact
+  validate → generate → bundle chain we ship to users fails the *web* suite, not just codegen's
+  internal one. Six fixtures × `compile(ir)` → `bundleZip(project, ir.name)` →
+  `unzipStore(bytes)` byte-equal with `ir.name/` prefix; plus a guard that `compile` throws
+  `ValidationError` on the invalid fixture (the basis for the disabled download button).
+The existing `irStore.test.ts` grows one case for `replaceIR` (swaps IR, clears selection).
+**Consequences:** The builder is now usable end-to-end: edit visually → save → reload → load →
+keep editing → download a runnable project. `apps/web` remains the only consumer of `packages/*`;
+codegen stays frozen. Out of scope this slice (deliberate): localStorage autosave, multi-file
+project import, draw.io, canvas topology mutation, in-browser black. Each is independent and
+can lift off the same scaffold; none change this slice's contracts.

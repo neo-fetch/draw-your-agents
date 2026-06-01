@@ -31,6 +31,11 @@ export interface IRState {
     key: ModelParamKey,
     value: number | undefined,
   ) => void;
+  /**
+   * Swap the entire IR (used by Load IR — ADR-0024). Clears the selection
+   * because node ids from the loaded IR don't match the previous graph.
+   */
+  replaceIR: (ir: GraphIR) => void;
 }
 
 export type IRStore = UseBoundStore<StoreApi<IRState>>;
@@ -44,6 +49,7 @@ export function createIRStore(initial: GraphIR): IRStore {
       set((s) => ({ ir: applyNodeConfigPatch(s.ir, nodeId, patch) })),
     updateModelParam: (nodeId, key, value) =>
       set((s) => ({ ir: applyModelParamPatch(s.ir, nodeId, key, value) })),
+    replaceIR: (ir) => set({ ir, selectedNodeId: null }),
   }));
 }
 

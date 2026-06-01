@@ -24,6 +24,7 @@ import {
   applyNodeConfigPatch,
   cloneFixture,
 } from "../src/store/irReducer.ts";
+import { createIRStore } from "../src/store/irStore.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "..", "..", "..", "packages", "ir", "fixtures");
@@ -207,4 +208,23 @@ test("applyNodeConfigPatch on router.routes — matched routes validate, mismatc
   // Purity: original IR is untouched.
   const origRouter = initial.nodes[1] as RouterNode;
   assert.deepStrictEqual(origRouter.config.routes, ["BUG", "CUSTOMER_SUPPORT", "LOGISTICS"]);
+});
+
+// ---- Save / load slice (ADR-0024) ---------------------------------------
+
+test("replaceIR swaps the entire IR and clears the selection", () => {
+  const a = cloneFixture(loadFixture());
+  const b = cloneFixture(loadRoutingFixture());
+  const store = createIRStore(a);
+  store.getState().setSelectedNode("n_city_gen");
+  assert.strictEqual(store.getState().selectedNodeId, "n_city_gen");
+
+  store.getState().replaceIR(b);
+
+  assert.strictEqual(store.getState().ir, b, "store now holds the loaded IR");
+  assert.strictEqual(
+    store.getState().selectedNodeId,
+    null,
+    "selection clears — ids from the loaded IR don't match the previous graph",
+  );
 });
