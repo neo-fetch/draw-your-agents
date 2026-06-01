@@ -1019,3 +1019,68 @@ construct end to end — including a valid branching graph that compiles directl
 route-map row form. The deferred-router rationale in [ADR-0026](DECISIONS.md) is now closed:
 `ROUTER_UNLABELED_EDGE` will only fire from the zero-declared-routes edge case, not from
 ordinary user gestures.
+
+## ADR-0028 — Node drag: pure `applyNodePosition`, RF `position` events committed every tick
+**Context:** [ADR-0025](DECISIONS.md) deferred free-positioning ("lands when canvas drag does")
+and [ADR-0026](DECISIONS.md) kept `nodesDraggable={false}`. Once
+[ADR-0027](DECISIONS.md) made branching graphs buildable from scratch, the missing drag became
+the *visible* gap: `addNode` staggers new nodes 280px to the right of the rightmost existing
+node, so a router + two branch agents end up collinear and the connect gesture has nowhere to
+land cleanly. This slice flips on dragging and persists positions through the IR.
+**Decisions:**
+- **Pure `applyNodePosition(ir, nodeId, x, y): GraphIR`** in
+  [irReducer.ts](../apps/web/src/store/irReducer.ts) — the fourth pure reducer alongside
+  `applyNodeConfigPatch`, `applyModelParamPatch`, and the topology reducers. Writes
+  `node.ui.{x,y}`. **No-op (returns the input IR ref)** when the node isn't found OR the
+  position is byte-equal to the existing one, so RF's idle re-renders (which can emit
+  zero-delta `position` events as the layout settles) don't churn the store or trigger
+  re-renders. Same purity rule as the other reducers (ADR-0011 / ADR-0022).
+- **Sibling identity preserved.** The reducer only rebuilds the moved node; the other entries
+  in `nodes` keep referential identity. RF's `useMemo` on `rfNodes` then keeps unaffected
+  React Flow nodes identity-equal, so only the dragged node re-renders. Headless test pins
+  this — it's the gate against a "naive map(...)" regression that would tank drag perf as
+  graph size grows.
+- **Canvas commits every `position` change, not just `dragging: false`.** ADR-0026's
+  "store-not-RF-owns-edges" rule means React Flow renders in controlled mode from
+  `rfNodes` derived from `ir.nodes`. If we only committed on drag-end, RF's controlled
+  position would snap back to the IR's old `ui.{x,y}` on the next render and the drag would
+  be visually frozen. So `onNodesChange`'s `position` branch dispatches `setNodePosition`
+  on every tick. The reducer's "unchanged → input ref" guard means we don't churn during the
+  zero-delta events RF emits around drag start/end.
+- **START stays undraggable.** The synthetic START node is `draggable: false` already
+  (ADR-0026 synthetic-node decisions), and the Canvas's `position` branch skips
+  `START_NODE_ID` defensively so a manual dispatch can't move it either. Its position is
+  derived dynamically from the leftmost real node's `ui` (`startNodePosition` in Canvas) and
+  shouldn't live in the IR — START isn't an IR node.
+- **No store-side debounce, no batching.** Zustand's `set` is synchronous, the reducer is
+  pure, and React 19 batches renders across the synchronous event loop tick — so the
+  per-tick dispatch is cheap enough that adding RAF / requestIdleCallback would be a
+  premature optimization. Revisit if a large graph (100+ nodes) ever drags choppily.
+- **Save IR round-trips positions.** `node.ui` was already part of the IR JSON schema and
+  `serializeIR` / `loadIRFromText` ([ADR-0024](DECISIONS.md)) handle it generically; no
+  change needed. The headless test confirms a `JSON.stringify` ↔ `JSON.parse` cycle preserves
+  positions written by `setNodePosition`, so a saved IR re-opens with the user's layout
+  intact.
+- **`packages/*` unchanged.** No validator codes, no codegen behavior. `node.ui` is metadata
+  the validator already accepts.
+**Headless regression oracle.** Four new tests in
+[apps/web/test/irStore.test.ts](../apps/web/test/irStore.test.ts):
+- `applyNodePosition` writes `ui.{x,y}` and preserves sibling identity.
+- `applyNodePosition` returns the input IR ref when the position is unchanged.
+- `applyNodePosition` no-ops on unknown nodeId.
+- `store.setNodePosition` persists into the IR and a serialize → parse round-trip preserves
+  the moved position (Save IR contract).
+**Manual verification (in `apps/web && npm run dev`):**
+1. Drag any node on the canvas — it follows the cursor smoothly.
+2. Save IR → reload → Load IR; the node is at the new position.
+3. Add Router (palette) → Add Agent → Add Agent. The default stagger lines them up
+   collinearly; drag each agent to a distinct y to give the connect gesture room. Drag
+   from the router's source handle to each agent — both connections succeed with the
+   default `BUG` route from ADR-0027.
+**Out of scope this slice (deliberate):** drag-to-add (palette → drop on canvas), auto-layout
+("clean up positions"), multi-select drag, snap-to-grid, undo/redo for position changes. Each
+lifts off this scaffold; none change its contracts.
+**Consequences:** With this slice the canvas is a genuine 2D editor. The original ADR-0025
+deferral ("free-positioning lands when canvas drag does") is closed. ADR-0027's "drag from
+router to each agent" manual step is now physically possible from the UI without
+`globalThis.__ga_useIRStore` shenanigans.

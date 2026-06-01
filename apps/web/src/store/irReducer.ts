@@ -55,6 +55,30 @@ export function applyModelParamPatch(
   return { ...ir, nodes };
 }
 
+/**
+ * Set a node's canvas position (writes `node.ui.{x,y}`). Used by the canvas
+ * drag handler to persist positions into the IR (ADR-0028). No-op (returns
+ * the input IR reference) when the node id isn't found or the position is
+ * unchanged — so React Flow's position events during idle re-renders don't
+ * trigger spurious store updates.
+ */
+export function applyNodePosition(
+  ir: GraphIR,
+  nodeId: string,
+  x: number,
+  y: number,
+): GraphIR {
+  let changed = false;
+  const nodes = ir.nodes.map((n): GraphNode => {
+    if (n.id !== nodeId) return n;
+    if (n.ui && n.ui.x === x && n.ui.y === y) return n;
+    changed = true;
+    return { ...n, ui: { x, y } } as GraphNode;
+  });
+  if (!changed) return ir;
+  return { ...ir, nodes };
+}
+
 /** Deep-clone via JSON so the store starts from a mutable copy of the fixture. */
 export function cloneFixture<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;

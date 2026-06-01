@@ -22,6 +22,7 @@ import { compile } from "../../../packages/codegen/src/index.ts";
 import {
   applyModelParamPatch,
   applyNodeConfigPatch,
+  applyNodePosition,
   cloneFixture,
 } from "../src/store/irReducer.ts";
 import { createIRStore } from "../src/store/irStore.ts";
@@ -259,4 +260,65 @@ test("replaceIR swaps the entire IR and clears the selection", () => {
     null,
     "selection clears — ids from the loaded IR don't match the previous graph",
   );
+});
+
+// ---- applyNodePosition (ADR-0028) --------------------------------------
+
+test("applyNodePosition writes node.ui.{x,y} and preserves sibling identity", () => {
+  const ir = cloneFixture(loadFixture());
+  const before = ir.nodes.find((n) => n.id === "n_city_gen")!;
+  const beforeOthers = ir.nodes.filter((n) => n.id !== "n_city_gen");
+
+  const next = applyNodePosition(ir, "n_city_gen", 480, 120);
+
+  assert.notStrictEqual(next, ir, "position change yields a new IR object");
+  const moved = next.nodes.find((n) => n.id === "n_city_gen")!;
+  assert.deepStrictEqual(moved.ui, { x: 480, y: 120 });
+  assert.notStrictEqual(moved, before, "the moved node is a fresh object");
+
+  // Siblings preserve referential identity (the reducer doesn't recreate
+  // them — important so RF doesn't re-render unaffected nodes).
+  for (const n of beforeOthers) {
+    const found = next.nodes.find((x) => x.id === n.id);
+    assert.strictEqual(found, n, `sibling ${n.id} kept identity`);
+  }
+});
+
+test("applyNodePosition no-ops (returns input ref) when the position is unchanged", () => {
+  const ir = cloneFixture(loadFixture());
+  const target = ir.nodes.find((n) => n.id === "n_city_gen")!;
+  const { x, y } = target.ui!;
+
+  const next = applyNodePosition(ir, "n_city_gen", x, y);
+  assert.strictEqual(
+    next,
+    ir,
+    "unchanged position must return the input IR ref (idle re-renders don't churn)",
+  );
+});
+
+test("applyNodePosition no-ops when nodeId is unknown", () => {
+  const ir = cloneFixture(loadFixture());
+  const next = applyNodePosition(ir, "n_does_not_exist", 1, 2);
+  assert.strictEqual(next, ir);
+});
+
+test("store.setNodePosition persists into the IR and Save IR round-trips positions", () => {
+  const store = createIRStore(cloneFixture(loadFixture()));
+
+  store.getState().setNodePosition("n_city_gen", 999, 333);
+  const moved = store
+    .getState()
+    .ir.nodes.find((n) => n.id === "n_city_gen")!;
+  assert.deepStrictEqual(moved.ui, { x: 999, y: 333 });
+
+  // Mimic the Save IR round-trip — JSON.stringify ↔ JSON.parse — and
+  // confirm the position survives. This is the gate against a future
+  // change that, say, stops persisting `ui` to disk.
+  const serialized = JSON.stringify(store.getState().ir);
+  const roundTripped = JSON.parse(serialized) as typeof store.getState.prototype;
+  const after = (roundTripped as GraphIR).nodes.find(
+    (n) => n.id === "n_city_gen",
+  )!;
+  assert.deepStrictEqual(after.ui, { x: 999, y: 333 });
 });

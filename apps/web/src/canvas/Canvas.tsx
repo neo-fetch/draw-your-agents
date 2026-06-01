@@ -52,6 +52,7 @@ export function Canvas() {
   const connectEdge = useIRStore((s) => s.connectEdge);
   const deleteNode = useIRStore((s) => s.deleteNode);
   const deleteEdge = useIRStore((s) => s.deleteEdge);
+  const setNodePosition = useIRStore((s) => s.setNodePosition);
 
   // Map IR nodes to React Flow nodes, prepending the synthetic START node
   // so users can drag from it like any other source handle (ADR-0026).
@@ -111,17 +112,26 @@ export function Canvas() {
     return m;
   }, [ir.edges]);
 
-  // Bridge React Flow's internal selection events back into our store.
-  // We only act on `select` changes — we do not handle position/dimension
-  // changes because the IR owns topology and nodes are not draggable this
-  // slice. Other change types are ignored, not applied; the next render
-  // re-derives RF state from the IR (ADR-0026: store-not-RF-owns-edges).
+  // Bridge React Flow's internal selection + drag events back into our
+  // store. `select` events drive node selection (and React Flow's Delete
+  // key handling). `position` events drive node-drag persistence — every
+  // intermediate position is committed to `node.ui.{x,y}` so React Flow's
+  // controlled-mode render reflects the drag; the reducer no-ops on
+  // unchanged positions so idle re-renders don't churn (ADR-0028).
+  // Dimension changes are still ignored (the IR doesn't model node size).
   const onNodesChange = (changes: NodeChange[]) => {
     for (const c of changes) {
-      if (c.type !== "select") continue;
-      if (c.id === START_NODE_ID) continue;
-      if (c.selected) setSelectedNode(c.id);
-      else if (selectedNodeId === c.id) setSelectedNode(null);
+      if (c.type === "select") {
+        if (c.id === START_NODE_ID) continue;
+        if (c.selected) setSelectedNode(c.id);
+        else if (selectedNodeId === c.id) setSelectedNode(null);
+        continue;
+      }
+      if (c.type === "position") {
+        if (c.id === START_NODE_ID) continue;
+        if (c.position) setNodePosition(c.id, c.position.x, c.position.y);
+        continue;
+      }
     }
   };
   const onEdgesChange = (changes: EdgeChange[]) => {
@@ -181,7 +191,7 @@ export function Canvas() {
       onEdgesDelete={(edges) => {
         for (const e of edges) deleteEdge(e.source, e.target);
       }}
-      nodesDraggable={false}
+      nodesDraggable={true}
       nodesConnectable={true}
       elementsSelectable
       fitView

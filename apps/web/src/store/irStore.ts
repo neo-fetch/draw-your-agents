@@ -15,6 +15,7 @@ import cityTime from "../../../../packages/ir/fixtures/city-time.ir.json" with {
 import {
   applyModelParamPatch,
   applyNodeConfigPatch,
+  applyNodePosition,
   cloneFixture,
   type ModelParamKey,
 } from "./irReducer.ts";
@@ -52,6 +53,13 @@ export interface IRState {
     key: ModelParamKey,
     value: number | undefined,
   ) => void;
+  /**
+   * Persist a node's canvas position into `node.ui.{x,y}` (ADR-0028). The
+   * canvas's drag handler dispatches this on every React Flow `position`
+   * change; the reducer no-ops when the position is unchanged so idle
+   * re-renders don't churn.
+   */
+  setNodePosition: (nodeId: string, x: number, y: number) => void;
   /**
    * Swap the entire IR (used by Load IR — ADR-0024). Clears the selection
    * because node ids from the loaded IR don't match the previous graph.
@@ -122,6 +130,8 @@ export function createIRStore(initial: GraphIR): IRStore {
       set((s) => ({ ir: applyNodeConfigPatch(s.ir, nodeId, patch) })),
     updateModelParam: (nodeId, key, value) =>
       set((s) => ({ ir: applyModelParamPatch(s.ir, nodeId, key, value) })),
+    setNodePosition: (nodeId, x, y) =>
+      set((s) => ({ ir: applyNodePosition(s.ir, nodeId, x, y) })),
     replaceIR: (ir) => set({ ir, selectedNodeId: null, selectedEdge: null }),
     addNode: (type) =>
       set((s) => {
