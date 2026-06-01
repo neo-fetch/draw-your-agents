@@ -564,15 +564,108 @@ function WorkflowForm({ node }: { node: WorkflowNode }) {
   );
 }
 
+// ----- edge form ----------------------------------------------------------
+
+/**
+ * EdgeForm — route-label editor for a selected edge (ADR-0027).
+ *
+ * If the source node is a router, render a dropdown sourced from the
+ * router's own `config.routes` — same mirror-the-IR posture as the
+ * schema-ref dropdowns (ADR-0023). For non-router edges, show the edge
+ * metadata read-only with a note: this slice only edits router routes.
+ *
+ * Validity findings (route declared but no target, edge route not
+ * declared, etc.) are NOT re-implemented here — the validator owns the
+ * spec (invariant 7) and Preview surfaces them.
+ */
+function EdgeForm() {
+  const selectedEdge = useIRStore((s) => s.selectedEdge)!;
+  const sourceNode = useIRStore((s) =>
+    s.ir.nodes.find((n) => n.id === selectedEdge.from),
+  );
+  const targetNode = useIRStore((s) =>
+    s.ir.nodes.find((n) => n.id === selectedEdge.to),
+  );
+  const setEdgeRoute = useIRStore((s) => s.setEdgeRoute);
+
+  const sourceLabel = sourceNode?.name ?? selectedEdge.from;
+  const targetLabel = targetNode?.name ?? selectedEdge.to;
+  const isRouterSource = sourceNode?.type === "router";
+
+  return (
+    <div>
+      <div style={ROW}>
+        <div style={{ fontWeight: 600 }}>
+          {sourceLabel} → {targetLabel}
+        </div>
+        <div style={HINT}>
+          edge · {isRouterSource ? "router branch" : "plain edge"}
+        </div>
+      </div>
+
+      {isRouterSource ? (
+        <div style={ROW}>
+          <label htmlFor="edge-route">route</label>
+          <div style={HINT}>
+            options come from {sourceLabel}'s declared routes
+            (validator invariant 7)
+          </div>
+          <select
+            id="edge-route"
+            value={selectedEdge.route ?? ""}
+            onChange={(e) => {
+              const next = e.target.value === "" ? undefined : e.target.value;
+              setEdgeRoute(
+                selectedEdge.from,
+                selectedEdge.to,
+                selectedEdge.route,
+                next,
+              );
+            }}
+          >
+            {selectedEdge.route === undefined ||
+            !sourceNode!.config.routes.includes(selectedEdge.route) ? (
+              // Preserve whatever the edge currently carries (including
+              // unlabeled or a route the router no longer declares) so the
+              // dropdown reflects reality. Validator findings still flow
+              // through Preview.
+              <option value={selectedEdge.route ?? ""}>
+                {selectedEdge.route ?? "(unlabeled)"}
+              </option>
+            ) : null}
+            {sourceNode!.config.routes.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div style={ROW}>
+          <div style={HINT}>
+            Only router out-edges carry a route label. Delete + reconnect
+            to change the endpoint.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ----- dispatch -----------------------------------------------------------
 
 export function Inspector() {
+  const selectedEdge = useIRStore((s) => s.selectedEdge);
   const node = useIRStore((s) =>
     s.selectedNodeId ? s.ir.nodes.find((n) => n.id === s.selectedNodeId) : null,
   );
 
+  if (selectedEdge) {
+    return <EdgeForm />;
+  }
+
   if (!node) {
-    return <div className="empty">Select a node to edit its configuration.</div>;
+    return <div className="empty">Select a node or edge to edit it.</div>;
   }
 
   switch (node.type) {

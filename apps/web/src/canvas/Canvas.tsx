@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   ReactFlow,
   Background,
@@ -46,15 +46,12 @@ function startNodePosition(nodes: { ui?: { x: number; y: number } }[]): {
 export function Canvas() {
   const ir = useIRStore((s) => s.ir);
   const selectedNodeId = useIRStore((s) => s.selectedNodeId);
+  const selectedEdge = useIRStore((s) => s.selectedEdge);
   const setSelectedNode = useIRStore((s) => s.setSelectedNode);
+  const setSelectedEdge = useIRStore((s) => s.setSelectedEdge);
   const connectEdge = useIRStore((s) => s.connectEdge);
   const deleteNode = useIRStore((s) => s.deleteNode);
   const deleteEdge = useIRStore((s) => s.deleteEdge);
-
-  // Edge selection is ephemeral UI state — track locally rather than in
-  // the IR store. The IR doesn't model "selected edge"; only node
-  // selection is meaningful for the inspector.
-  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   // Map IR nodes to React Flow nodes, prepending the synthetic START node
   // so users can drag from it like any other source handle (ADR-0026).
@@ -83,21 +80,36 @@ export function Canvas() {
 
   // Every IR edge — including START edges — becomes a React Flow edge now
   // that START is a real (synthetic) node. `selected` drives RF's Delete
-  // key handling for edges.
+  // key handling for edges. The route is encoded in the RF id so the
+  // selection-bridge round-trips back to the right IR edge (ADR-0027).
   const rfEdges: RFEdge[] = useMemo(
     () =>
       ir.edges.map((e) => {
         const id = edgeId(e.from, e.to, e.route);
+        const isSelected =
+          selectedEdge !== null &&
+          selectedEdge.from === e.from &&
+          selectedEdge.to === e.to &&
+          selectedEdge.route === e.route;
         return {
           id,
           source: e.from,
           target: e.to,
           label: e.route,
-          selected: id === selectedEdgeId,
+          selected: isSelected,
         };
       }),
-    [ir.edges, selectedEdgeId],
+    [ir.edges, selectedEdge],
   );
+
+  // Resolve an RF edge id back to the IR edge triple. Necessary because
+  // selection events only give us the id; we need (from, to, route) to
+  // dispatch into the store.
+  const edgeByRFId = useMemo(() => {
+    const m = new Map<string, { from: string; to: string; route?: string }>();
+    for (const e of ir.edges) m.set(edgeId(e.from, e.to, e.route), e);
+    return m;
+  }, [ir.edges]);
 
   // Bridge React Flow's internal selection events back into our store.
   // We only act on `select` changes — we do not handle position/dimension
@@ -115,14 +127,33 @@ export function Canvas() {
   const onEdgesChange = (changes: EdgeChange[]) => {
     for (const c of changes) {
       if (c.type !== "select") continue;
-      if (c.selected) setSelectedEdgeId(c.id);
-      else if (selectedEdgeId === c.id) setSelectedEdgeId(null);
+      const ed = edgeByRFId.get(c.id);
+      if (!ed) continue;
+      if (c.selected) {
+        setSelectedEdge({ from: ed.from, to: ed.to, route: ed.route });
+      } else if (
+        selectedEdge &&
+        selectedEdge.from === ed.from &&
+        selectedEdge.to === ed.to &&
+        selectedEdge.route === ed.route
+      ) {
+        setSelectedEdge(null);
+      }
     }
   };
 
   const onConnect = (conn: Connection) => {
     if (!conn.source || !conn.target) return;
-    connectEdge(conn.source, conn.target);
+    // If the source is a router, default to its first declared route so the
+    // new edge satisfies invariant 7 immediately — the user can fix it via
+    // the Inspector edge-form dropdown. If the router has no declared
+    // routes (the validator would already be flagging ROUTER_NO_ROUTES),
+    // leave the edge unlabeled and surface ROUTER_UNLABELED_EDGE honestly
+    // (ADR-0027, follows ADR-0026's honest-surface posture).
+    const source = ir.nodes.find((n) => n.id === conn.source);
+    const route =
+      source?.type === "router" ? source.config.routes[0] : undefined;
+    connectEdge(conn.source, conn.target, route);
   };
 
   return (
@@ -138,7 +169,7 @@ export function Canvas() {
       }}
       onPaneClick={() => {
         setSelectedNode(null);
-        setSelectedEdgeId(null);
+        setSelectedEdge(null);
       }}
       onConnect={onConnect}
       onNodesDelete={(nodes) => {
@@ -149,7 +180,6 @@ export function Canvas() {
       }}
       onEdgesDelete={(edges) => {
         for (const e of edges) deleteEdge(e.source, e.target);
-        setSelectedEdgeId(null);
       }}
       nodesDraggable={false}
       nodesConnectable={true}

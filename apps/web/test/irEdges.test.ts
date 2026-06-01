@@ -25,7 +25,12 @@ import type { GraphIR } from "@graphical-agents/ir";
 import { validate } from "../../../packages/ir/src/validate.ts";
 import { compile } from "../../../packages/codegen/src/index.ts";
 import { cloneFixture } from "../src/store/irReducer.ts";
-import { connectEdge, deleteEdge, deleteNode } from "../src/store/irEdges.ts";
+import {
+  connectEdge,
+  deleteEdge,
+  deleteNode,
+  setEdgeRoute,
+} from "../src/store/irEdges.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "..", "..", "..", "packages", "ir", "fixtures");
@@ -38,6 +43,11 @@ function loadCityTime(): GraphIR {
 function loadNested(): GraphIR {
   return JSON.parse(
     readFileSync(join(fixturesDir, "nested.ir.json"), "utf8"),
+  ) as GraphIR;
+}
+function loadRouting(): GraphIR {
+  return JSON.parse(
+    readFileSync(join(fixturesDir, "routing.ir.json"), "utf8"),
   ) as GraphIR;
 }
 
@@ -226,4 +236,165 @@ test("reducers are pure: input arrays untouched, sibling nodes referentially equ
     const original = ir.nodes.find((n) => n.id === surv.id)!;
     assert.strictEqual(surv, original, "deleteNode: surviving siblings preserved");
   }
+});
+
+// ---- Router route labels (ADR-0027) -------------------------------------
+
+test("connectEdge with route: routing fixture rewires from scratch and compiles to a route map", () => {
+  // Strip the three router branch edges, leaving only START → process →
+  // router. Then reattach each via connectEdge with the matching route.
+  // After all three are wired, the IR validates clean and workflow.py
+  // contains the `(router, {route: target})` row form (ADR-0014).
+  const base = cloneFixture(loadRouting());
+  const broken: GraphIR = {
+    ...base,
+    edges: base.edges.filter((e) => e.from !== "n_router"),
+  };
+  // Precondition: stripping the router edges trips ROUTER_ROUTE_NO_TARGET.
+  const before = validate(broken);
+  assert.ok(
+    before.errors.some((f) => f.code === "ROUTER_ROUTE_NO_TARGET"),
+    `precondition expected ROUTER_ROUTE_NO_TARGET, got ${JSON.stringify(before.errors)}`,
+  );
+
+  let ir = broken;
+  ir = connectEdge(ir, "n_router", "n_bug", "BUG");
+  ir = connectEdge(ir, "n_router", "n_support", "CUSTOMER_SUPPORT");
+  ir = connectEdge(ir, "n_router", "n_logistics", "LOGISTICS");
+
+  // Each added edge carries its route label.
+  const newEdges = ir.edges.slice(-3);
+  assert.deepStrictEqual(newEdges, [
+    { from: "n_router", to: "n_bug", route: "BUG" },
+    { from: "n_router", to: "n_support", route: "CUSTOMER_SUPPORT" },
+    { from: "n_router", to: "n_logistics", route: "LOGISTICS" },
+  ]);
+
+  const after = validate(ir);
+  assert.strictEqual(
+    after.ok,
+    true,
+    `expected clean validate after wiring routes, got: ${JSON.stringify(after.errors)}`,
+  );
+
+  const workflow = compile(ir).get("workflow.py") ?? "";
+  assert.ok(workflow.includes('"BUG"'), "workflow.py must mention BUG route");
+  assert.ok(
+    workflow.includes('"CUSTOMER_SUPPORT"'),
+    "workflow.py must mention CUSTOMER_SUPPORT route",
+  );
+  assert.ok(
+    workflow.includes('"LOGISTICS"'),
+    "workflow.py must mention LOGISTICS route",
+  );
+  assert.ok(
+    workflow.includes("handle_bug") &&
+      workflow.includes("handle_customer_support") &&
+      workflow.includes("handle_logistics"),
+    "workflow.py must reference all three branch targets",
+  );
+});
+
+test("setEdgeRoute: relabels one router edge precisely, leaves siblings untouched", () => {
+  // Routing fixture has three out-edges from n_router. Relabeling the BUG
+  // edge to CUSTOMER_SUPPORT must touch only that edge — the SUPPORT and
+  // LOGISTICS edges keep their labels — and the consequent invariant-7
+  // imbalance (BUG declared but no target; CUSTOMER_SUPPORT now has two
+  // targets) trips validator findings, not reducer code.
+  const ir = cloneFixture(loadRouting());
+
+  const next = setEdgeRoute(
+    ir,
+    "n_router",
+    "n_bug",
+    "BUG",
+    "CUSTOMER_SUPPORT",
+  );
+
+  assert.notStrictEqual(next, ir);
+  const relabeled = next.edges.find(
+    (e) => e.from === "n_router" && e.to === "n_bug",
+  )!;
+  assert.strictEqual(relabeled.route, "CUSTOMER_SUPPORT");
+
+  // Siblings untouched.
+  const supportEdge = next.edges.find(
+    (e) => e.from === "n_router" && e.to === "n_support",
+  )!;
+  const logisticsEdge = next.edges.find(
+    (e) => e.from === "n_router" && e.to === "n_logistics",
+  )!;
+  assert.strictEqual(supportEdge.route, "CUSTOMER_SUPPORT");
+  assert.strictEqual(logisticsEdge.route, "LOGISTICS");
+
+  // Validator catches the consequences (the reducer doesn't).
+  const result = validate(next);
+  const codes = result.errors.map((f) => f.code);
+  assert.ok(
+    codes.includes("ROUTER_ROUTE_NO_TARGET"),
+    `expected ROUTER_ROUTE_NO_TARGET (BUG declared, no target), got: ${codes.join(", ")}`,
+  );
+});
+
+test("setEdgeRoute: no-op (returns input IR) when the (from, to, oldRoute) triple does not match", () => {
+  const ir = cloneFixture(loadRouting());
+  const next = setEdgeRoute(ir, "n_router", "n_bug", "WRONG", "BUG");
+  assert.strictEqual(next, ir);
+});
+
+test("connectEdge with route: duplicate (same router, same route) no-ops; distinct route to same target is allowed", () => {
+  // Strip the routing fixture's router branch edges, then attach one
+  // route. Re-attaching the same (router, target, route) triple must
+  // no-op; attaching a different route to the same target must add a
+  // second edge — ADK route maps {"A": target, "B": target} are valid.
+  const base = cloneFixture(loadRouting());
+  const stripped: GraphIR = {
+    ...base,
+    edges: base.edges.filter((e) => e.from !== "n_router"),
+  };
+  // Add BUG → n_bug.
+  const oneEdge = connectEdge(stripped, "n_router", "n_bug", "BUG");
+  assert.strictEqual(oneEdge.edges.length, stripped.edges.length + 1);
+
+  // Same router, same target, same route → no-op.
+  const dup = connectEdge(oneEdge, "n_router", "n_bug", "BUG");
+  assert.strictEqual(
+    dup,
+    oneEdge,
+    "same (from, to, route) triple must return the input IR ref",
+  );
+
+  // Same router, same target, different declared route → allowed.
+  const twoEdges = connectEdge(oneEdge, "n_router", "n_bug", "CUSTOMER_SUPPORT");
+  assert.strictEqual(
+    twoEdges.edges.length,
+    oneEdge.edges.length + 1,
+    "distinct route to same target must add a second edge",
+  );
+  const newest = twoEdges.edges[twoEdges.edges.length - 1]!;
+  assert.deepStrictEqual(newest, {
+    from: "n_router",
+    to: "n_bug",
+    route: "CUSTOMER_SUPPORT",
+  });
+});
+
+test("routing fixture round-trip: loads clean, compiles to the route-map row", () => {
+  const ir = loadRouting();
+  const result = validate(ir);
+  assert.strictEqual(
+    result.ok,
+    true,
+    `routing.ir.json must validate clean, got: ${JSON.stringify(result.errors)}`,
+  );
+  const workflow = compile(ir).get("workflow.py") ?? "";
+  assert.ok(workflow.includes('"BUG"'));
+  assert.ok(workflow.includes('"CUSTOMER_SUPPORT"'));
+  assert.ok(workflow.includes('"LOGISTICS"'));
+  // The route map row binds routes to bare target symbols.
+  assert.ok(
+    workflow.includes("handle_bug") &&
+      workflow.includes("handle_customer_support") &&
+      workflow.includes("handle_logistics"),
+  );
 });

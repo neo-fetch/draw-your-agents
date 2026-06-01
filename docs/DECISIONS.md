@@ -919,3 +919,103 @@ forthcoming dependency-edge code as the foundation for Phase 2's variable-source
 `workflow.config.graph` topology editing, edge reconnection / drag-to-move endpoint (delete +
 recreate is fine), undo/redo, node position editing. Each is independent and lifts off the
 scaffold this slice establishes; none change its contracts.
+
+## ADR-0027 — Router route-label editing: connect-with-default-route, `setEdgeRoute`, store-side edge selection, dropdown mirrors `router.config.routes`
+**Context:** [ADR-0026](DECISIONS.md) deliberately deferred router edge labels: a wire out of a
+`router` was created unlabeled, and the validator's invariant-7 `ROUTER_UNLABELED_EDGE` finding
+flowed through Preview as the honest signal. That is correct for one slice, but it leaves the
+visual builder unable to produce a valid branching graph — even though the IR + validator +
+codegen have supported route maps end-to-end since [ADR-0014](DECISIONS.md). This slice gives
+the UI the ability to **write and edit** `edge.route`. `packages/*` is unchanged.
+**Decisions:**
+- **Extended `connectEdge(ir, fromId, toId, route?)` rather than a sibling `connectRouterEdge`.**
+  One signature keeps the duplicate rule in one place and matches how the canvas already calls
+  a single reducer. The optional fourth arg is `undefined` for non-router connects (existing
+  call sites unaffected). Pure reducer in
+  [apps/web/src/store/irEdges.ts](../apps/web/src/store/irEdges.ts), exercised under `node --test`
+  with no install ([ADR-0011](DECISIONS.md) / [ADR-0026](DECISIONS.md) purity rule).
+- **Duplicate rule = exact `(from, to, route)` match.** Same router → same target → same route is
+  a no-op (returns the input IR ref). Same router → same target → *different* declared routes is
+  **allowed** — the ADK route map shape `{"A": target, "B": target}` is legitimate. The
+  ADR-0026 rule (plain edges deduplicate on `(from, to)` with both `route` undefined) is the
+  special case of this generalized rule where both routes are undefined.
+- **`setEdgeRoute(ir, fromId, toId, oldRoute, newRoute)` is the relabel operation.**
+  Identifying by the `(from, to, oldRoute)` triple is required because a single router can have
+  several out-edges to *different* targets and (per the duplicate decision above) to the *same*
+  target under different routes. No-op (input IR ref) if no edge matches. The replacement
+  preserves array position so unrelated edges keep their identity for downstream memoization.
+- **Connect UX: default to the router's first declared route.** When `onConnect` fires with a
+  router as source, the canvas looks up the source node and passes `config.routes[0]` as the
+  fourth arg. The resulting edge satisfies invariant 7 *immediately* (the route is declared, the
+  target exists) so the IR stays valid through the drag — no blocking modal mid-gesture. The
+  user can fix it via the Inspector edge-form dropdown in two clicks. If the router has zero
+  declared routes (the validator is already screaming `ROUTER_NO_ROUTES`), `route` is left
+  undefined and `ROUTER_UNLABELED_EDGE` surfaces honestly — same posture as
+  [ADR-0026](DECISIONS.md)'s deferred-router rationale. Rejected: route-picker popover on
+  connect (overbuild for the slice; the default + dropdown is two clicks max and avoids a
+  modal-during-drag UX).
+- **Edge selection lifted into the store as `selectedEdge: { from, to, route? } | null`.**
+  ADR-0026 kept `selectedEdgeId` as Canvas-local state because only React Flow's Delete handler
+  needed it. The route dropdown needs *the Inspector* to read the selected edge, so the
+  selection moves into [irStore.ts](../apps/web/src/store/irStore.ts) alongside `selectedNodeId`
+  with `setSelectedEdge`. The triple (not the RF edge id string) is what gets stored because
+  two router edges may share `(from, to)` under distinct routes. Node and edge selection are
+  *mutually exclusive when one is set*: setting a non-null node clears the edge and vice
+  versa; setting either to null leaves the other alone. Pane click clears both.
+- **`setEdgeRoute` store wrapper updates the selection in lockstep.** When the user relabels the
+  currently-selected edge, the wrapper rewrites `selectedEdge.route` to `newRoute` so the
+  dropdown's `value` follows the change without the user re-clicking the edge. The pure reducer
+  doesn't know about selection (ADR-0026 reducer-purity rule); the store glue owns it.
+- **Inspector dispatches `selectedEdge` to a new `EdgeForm` before the node form.** When the
+  source is a router, the form renders a `<select>` whose options come from that router's
+  `config.routes` — same mirror-the-IR posture as the schema-ref dropdowns
+  ([ADR-0023](DECISIONS.md)). When the source is not a router, the form is a read-only
+  "plain edge" hint; this slice only edits router routes. The dropdown shows the edge's
+  *current* route as a synthetic option when it isn't in the declared list (e.g. after the
+  router's `routes` was edited downstream) so the value stays visible while Preview surfaces
+  the `ROUTER_EDGE_ROUTE_UNDECLARED` finding. Validation is **not** re-implemented in the
+  Inspector — the validator owns invariant 7 and Preview is the one place findings surface.
+- **`packages/*` unchanged.** No new validator codes, no new edges-compiler rules, no codegen
+  behavior change; codegen and validator stay frozen ([ADR-0013](DECISIONS.md),
+  [ADR-0020](DECISIONS.md)). The slice is pure UI surface plus a new reducer (`setEdgeRoute`)
+  and a generalized `connectEdge`.
+**Headless regression oracle.** New tests in
+[apps/web/test/irEdges.test.ts](../apps/web/test/irEdges.test.ts):
+- `connectEdge` with route rewires `routing.ir.json` from scratch: strip the three branch
+  edges, reattach each `(router → target, route)`, assert `validate` clean and the
+  `(router, {route: target})` row appears in `workflow.py` with all three declared routes and
+  branch-target symbols.
+- `setEdgeRoute` precisely relabels one of three out-edges from `n_router`: the BUG edge
+  becomes CUSTOMER_SUPPORT; the SUPPORT and LOGISTICS edges keep their labels; the resulting
+  invariant-7 imbalance (`ROUTER_ROUTE_NO_TARGET: BUG`) surfaces as a validator finding —
+  proving the reducer mutates only the one edge and the validator catches the consequences.
+- `setEdgeRoute` no-op (returns input IR ref) when the `(from, to, oldRoute)` triple does not
+  match any edge.
+- Duplicate-route guard vs. distinct-route-same-target: same `(router, target, "BUG")` twice
+  is a no-op; same `(router, target)` with `"BUG"` then `"CUSTOMER_SUPPORT"` adds a second
+  edge (ADK route maps are fine with that).
+- `routing.ir.json` round-trip: loads clean, compiles to the route-map row mentioning all
+  three routes and all three branch-target symbols.
+The existing ADR-0026 tests still pass unchanged — the duplicate guard for the plain-edge
+case is the both-`undefined` special case of the generalized rule.
+**Manual verification (in `apps/web && npm run dev`):**
+1. Load IR → `packages/ir/fixtures/routing.ir.json`. Preview is clean; `workflow.py` shows
+   `(router, {"BUG": handle_bug, "CUSTOMER_SUPPORT": handle_customer_support, "LOGISTICS": handle_logistics})`.
+2. Click one of the three branch edges → Inspector shows `router → handle_bug` with a route
+   dropdown populated from `["BUG", "CUSTOMER_SUPPORT", "LOGISTICS"]`.
+3. Relabel BUG → CUSTOMER_SUPPORT. Canvas label updates immediately; Preview now shows the
+   invariant-7 finding `ROUTER_ROUTE_NO_TARGET: BUG`. Relabel back to BUG → findings clear.
+4. From-scratch: Add Router (palette) → set `routes` in Inspector to `["BUG", "SUPPORT"]` →
+   Add two Agents → drag router→agent twice. The first edge gets `route: "BUG"` by default;
+   relabel the second to `SUPPORT` via the dropdown. Preview's `workflow.py` reflects the
+   two-route map. Findings clear once both declared routes are wired.
+**Out of scope this slice (deliberate):** nested-graph topology editing (lives in
+`workflow.config.graph` — a follow-on slice), edge endpoint-drag reconnection (delete +
+recreate works), drag-to-canvas, undo/redo, route-label chip rendering inside the canvas
+beyond React Flow's default label. Each is independent and none changes this slice's
+contracts.
+**Consequences:** With this slice the visual builder can produce *every* v1 declarative
+construct end to end — including a valid branching graph that compiles directly to ADK's
+route-map row form. The deferred-router rationale in [ADR-0026](DECISIONS.md) is now closed:
+`ROUTER_UNLABELED_EDGE` will only fire from the zero-declared-routes edge case, not from
+ordinary user gestures.
