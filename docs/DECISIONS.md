@@ -865,6 +865,23 @@ three pure IR-mutation reducers + minimal React Flow wiring so the canvas become
   `onConnect` / `onNodesDelete` / `onEdgesDelete` callbacks dispatch reducer actions. The IR
   remains the single source of truth ([ADR-0001](DECISIONS.md)), and the canvas re-derives
   from the new IR on each store update.
+- **Selection bridge — `onNodesChange` / `onEdgesChange` for `select` events only.** React
+  Flow's keyboard Delete handler reads from RF's internal selection store, which in
+  controlled mode only learns about clicks through `onNodesChange` / `onEdgesChange`. To
+  make Delete actually fire `onNodesDelete` / `onEdgesDelete`, the canvas wires both change
+  callbacks, filters to `change.type === "select"`, and updates our store (`setSelectedNode`
+  for nodes; local `selectedEdgeId` state for edges — the IR doesn't model edge selection).
+  All other change kinds (position, dimensions, add, remove) are ignored: nodes aren't
+  draggable this slice, and topology mutations flow through `onConnect` / `onNodesDelete` /
+  `onEdgesDelete` against the IR. The `selected` flag is set at the RF-node top level (not
+  inside `data`) on each render so RF picks it up — `data.selected` is kept for our own
+  `IRNode` visual feedback.
+- **Dev-only `globalThis.__ga_useIRStore` hook for manual verification.** Gated behind
+  `import.meta.env.DEV` so production builds drop it. Exists because the chrome-devtools
+  MCP's synthesized keydowns don't reach React Flow's keyboard listener, so the manual
+  in-browser verification step needs a direct route to dispatch reducer actions and read
+  back the resulting IR. A real user with focus on the canvas hits the Delete-key path
+  via React Flow's listener normally; the hook is only for the headless browser harness.
 - **Router-label deferral, with the `ROUTER_UNLABELED_EDGE`-is-honest rationale.** Router
   branch edges need a `route` label (IR invariant 7 — declared `routes` ⇔ out-edge `route`
   labels). The UI for picking the label at connect-time is its own focused slice; it needs an

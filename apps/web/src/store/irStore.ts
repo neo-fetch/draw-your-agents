@@ -97,3 +97,12 @@ export function createIRStore(initial: GraphIR): IRStore {
 export const useIRStore: IRStore = createIRStore(
   cloneFixture(cityTime) as GraphIR,
 );
+
+// Dev-only: expose the store on window so the manual browser verification
+// step in ADR-0026 can dispatch reducer actions without a UI gesture
+// (chrome-devtools' synthesized keydowns don't reach React Flow's keyboard
+// listener). No-op in production builds.
+if (import.meta.env?.DEV) {
+  (globalThis as unknown as { __ga_useIRStore?: IRStore }).__ga_useIRStore =
+    useIRStore;
+}
