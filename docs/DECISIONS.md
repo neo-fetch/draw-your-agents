@@ -1595,3 +1595,93 @@ console errors. `packages/*` untouched.
 the drop→`addNode(type, position)` path is the same shape an importer will use to materialize parsed
 nodes at their diagram coordinates. Out of scope: drag-to-reposition existing palette categories,
 drag-to-connect-on-drop, multi-drop.
+
+## ADR-0035 — Graphical schema authoring: six pure CRUD reducers + rename cascade closes the variable-chip loop
+**Context.** Phase 0 → Phase 2 made every v1 declarative construct buildable from the canvas, but
+`ir.schemas` was still **read-only** in the UI. Every inspector type-ref dropdown
+([apps/web/src/inspector/Inspector.tsx](../apps/web/src/inspector/Inspector.tsx)) and the chip
+palette ([apps/web/src/inspector/VariablePalette.tsx](../apps/web/src/inspector/VariablePalette.tsx))
+mirrored `ir.schemas`, but nothing in the UI ever **mutated** it — schemas could only enter via
+Load IR. [ADR-0029](DECISIONS.md) decision 6 / [ADR-0030](DECISIONS.md) "Consequences" both
+explicitly deferred this as "schema/field authoring". This slice closes that gap: a Schemas section
+in the left pane CRUDs the top-level `ir.schemas` array, which closes the variable-chip loop
+end-to-end (define a schema → point a producer at it → its fields appear as draggable chips).
+**Decisions.**
+- **Six pure reducers in [apps/web/src/store/schemas.ts](../apps/web/src/store/schemas.ts)** — joins
+  `irReducer.ts`/`addNode.ts`/`irEdges.ts`/`insertVariable.ts` as the fifth install-free reducer
+  module ([ADR-0011](DECISIONS.md) / [ADR-0013](DECISIONS.md) / [ADR-0022](DECISIONS.md) /
+  [ADR-0032](DECISIONS.md) purity rule): React-free, zustand-free, no `lexical`, IR types
+  type-only. Surface: `addSchema(ir): { ir, schemaName }` (mints `Schema{N}` plus one default
+  `field1: str` — a zero-field schema compiles to the awkward `class X(BaseModel): pass`, so start
+  populated), `renameSchema(ir, oldName, newName)`, `deleteSchema(ir, name)`,
+  `addField(ir, schemaName)`, `updateField(ir, schemaName, fieldName, patch)`,
+  `deleteField(ir, schemaName, fieldName)`. All pure: new IR, sibling node identity preserved,
+  no-op (returns input IR ref) on unknown schema/field or `newName === oldName`.
+- **`renameSchema` cascades top-level references.** A schema rename rewrites every top-level
+  reference in one pass: agent `inputSchemaRef` / `outputSchemaRef`, agent
+  `instruction.segments[].schema` (the var-chip `schema` field), function `inputType` /
+  `outputType`, router `inputType`, tool `inputType` / `outputType`, humanInput `payloadRef` /
+  `responseSchemaRef`. Without the cascade, a single rename click would surface a parade of
+  `UNKNOWN_*_SCHEMA_REF` / `VAR_UNKNOWN_SCHEMA` findings — and the obvious fix (update every
+  dropdown by hand) is the kind of busy-work a graph editor exists to eliminate.
+  **Top-level only — nested `workflow.config.graph.schemas` are out of scope**, consistent with
+  the nested-graph editing deferral across [ADR-0023](DECISIONS.md) / [ADR-0026](DECISIONS.md) /
+  [ADR-0029](DECISIONS.md). When sub-graph editing lands, the same reducers will need to recurse
+  (or the sub-graph slice picks up the cascade as a sibling concern). Identifier
+  validity / uniqueness is **not** re-implemented — invariant 1 stays in `validate.ts` and Preview
+  surfaces `INVALID_SCHEMA_NAME` / `DUPLICATE_SCHEMA_NAME` honestly if a user types something
+  illegal ([ADR-0023](DECISIONS.md) mirror-the-validator posture).
+- **`deleteSchema` leaves references dangling.** Removing a schema does NOT scrub references;
+  Preview's findings list shows what broke. Same honest-surface choice as
+  [ADR-0026](DECISIONS.md)'s `ROUTER_UNLABELED_EDGE` deferral: the validator already says exactly
+  the right thing, hiding it in the reducer would just split the source of truth. The user can fix
+  it in the inspector dropdowns, recreate the schema, or undo (when undo lands).
+- **Field-name rename does NOT cascade into var-chip `field` refs.** Field renames are rarer than
+  schema renames and the rebinding is ambiguous (a chip `{schema: Article, field: title}` after
+  rename `title→header` could mean "rebind to header" *or* "this chip is now broken because the
+  field it pointed at is gone"). The validator surfaces `VAR_FIELD_NOT_FOUND` honestly; same
+  honest-surface posture as `deleteSchema`.
+- **Left-pane layout: a Schemas sub-section below "Add Node"; column widened `178px → 240px`.**
+  The Schemas panel lives in the same pane as the node palette
+  ([apps/web/src/App.tsx](../apps/web/src/App.tsx)) under a `.pane__subhead` registration-tick
+  divider that mirrors [ADR-0033](DECISIONS.md)'s `.pane > header` treatment but isn't sticky (so
+  the section scrolls naturally below the palette). A field row holds name + 6-option type select +
+  optional checkbox + ✕; the previous 178px column truncated it, so
+  [apps/web/src/styles.css](../apps/web/src/styles.css) widened the first grid track to 240px.
+  Rejected: a fifth pane column (steals canvas space and clutters the top-level layout for what is
+  conceptually an "input-vocabulary" sidebar, not a peer of Inspector/Preview); a modal
+  schema-editor (would force a context switch every time the user wants to add a field).
+- **Schema-name input commits on blur / Enter, not per keystroke.** Mid-type names like "Articl"
+  are invalid identifiers; committing per keystroke would dispatch a rename cascade plus a
+  validator finding for every character. The `NameInput` widget keeps a local buffer and commits
+  on blur or Enter (Esc reverts); the parent keys `<SchemaCard>` on the schema name so a
+  successful rename remounts the card with a fresh initial value.
+- **No new "selected schema" concept.** Every schema is rendered inline in the panel — adding a
+  selection model would duplicate the inspector's dispatch pattern without buying anything.
+- **`packages/*` unchanged.** No new validator codes, no codegen change. The slice is a pure
+  consumer of the existing IR contract.
+**Headless oracle.** [apps/web/test/schemas.test.ts](../apps/web/test/schemas.test.ts) pins the six
+reducers under `node --test` install-free (ADR-0032 test/** = install-free tier): `addSchema`
+reaches `schemas.py` via codegen; `renameSchema` cascades to function `outputType`, agent
+`inputSchemaRef`, AND every var-chip `schema` field, with `validate` staying clean and
+`compile()` emitting the new source-bound `<NewName.field from …>` form; `deleteSchema` leaves
+refs dangling and a finding fires; `addField`/`updateField`/`deleteField` flow through to
+`schemas.py` (including `optional: true → Optional[int] = None`); all six reducers preserve
+sibling node identity and leave the input IR untouched.
+**Verification.** Default `npm test` 88 green (76 → 88: +12 new tests); cold-checkout sim
+(`mv node_modules /tmp/x && npm test`) still 88 green — pinning the install-free tier invariant.
+`npm run test:web:app` 8/8. Vite production build clean. Live browser pass: `+ Schema`
+mints `Schema1`, rename to `Article` (commit on blur), add a `word_count: int` field with
+`optional` checked → Preview's `schemas.py` shows `class Article(BaseModel): title: str;
+word_count: Optional[int] = None`. The function inspector's `outputType` dropdown now lists
+`Article`. Deleting `Article` leaves `lookup_time.outputType` dangling — validity pill flips to
+"3 errors" honestly. Zero console errors throughout. `git diff --name-only main -- packages/`
+empty.
+**Consequences.** ADR-0029 decision 6 / ADR-0030's "schema/field authoring … explicitly deferred"
+is closed. The variable-chip loop is now fully reachable from the UI without ever editing JSON: a
+user can declare a schema, define its fields, point a producer node's output at it, and watch the
+fields show up as draggable chips on a downstream agent. The deliberate gaps that remain — nested
+`workflow.config.graph.schemas`, field-name cascade into chips, schema duplication/templates, field
+reordering, drag-and-drop reorder — each have a sentence in this ADR or in the codebase guarding
+the boundary; none changes this slice's contracts. Phase 2 is now complete; the only remaining v1
+piece is Phase 3 (draw.io import).

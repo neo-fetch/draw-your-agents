@@ -2,6 +2,7 @@ import { Canvas } from "./canvas/Canvas.tsx";
 import { Inspector } from "./inspector/Inspector.tsx";
 import { Palette } from "./palette/Palette.tsx";
 import { Preview } from "./preview/Preview.tsx";
+import { SchemaPanel } from "./schemas/SchemaPanel.tsx";
 import { Toolbar } from "./toolbar/Toolbar.tsx";
 
 export function App() {
@@ -13,6 +14,10 @@ export function App() {
           <header>Add Node</header>
           <div className="body palette">
             <Palette />
+          </div>
+          <header className="pane__subhead">Schemas</header>
+          <div className="body schemas">
+            <SchemaPanel />
           </div>
         </section>
         <section className="pane">

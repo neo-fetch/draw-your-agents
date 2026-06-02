@@ -26,6 +26,15 @@ import {
   deleteNode as deleteNodeReducer,
   setEdgeRoute as setEdgeRouteReducer,
 } from "./irEdges.ts";
+import {
+  addField as addFieldReducer,
+  addSchema as addSchemaReducer,
+  deleteField as deleteFieldReducer,
+  deleteSchema as deleteSchemaReducer,
+  renameSchema as renameSchemaReducer,
+  updateField as updateFieldReducer,
+  type FieldPatch,
+} from "./schemas.ts";
 
 /**
  * The triple that uniquely identifies an edge for selection purposes
@@ -101,6 +110,29 @@ export interface IRState {
    * `selectedEdge` if it referenced any of the removed edges.
    */
   deleteEdge: (fromId: string, toId: string) => void;
+  /** Append a new schema with one default `field1: str` (ADR-0035). */
+  addSchema: () => void;
+  /**
+   * Rename a schema and cascade every top-level reference (agent / function /
+   * router / tool / humanInput refs + agent var-chip `schema` fields). No-op
+   * when `newName === oldName` or the schema doesn't exist.
+   */
+  renameSchema: (oldName: string, newName: string) => void;
+  /**
+   * Remove a schema. Leaves references dangling for the validator to surface
+   * (honest-surface posture).
+   */
+  deleteSchema: (name: string) => void;
+  /** Append `field{N}: str` to a named schema. */
+  addField: (schemaName: string) => void;
+  /** Patch one field's name / type / optional. */
+  updateField: (
+    schemaName: string,
+    fieldName: string,
+    patch: FieldPatch,
+  ) => void;
+  /** Remove a field from a schema. */
+  deleteField: (schemaName: string, fieldName: string) => void;
 }
 
 export type IRStore = UseBoundStore<StoreApi<IRState>>;
@@ -177,6 +209,21 @@ export function createIRStore(initial: GraphIR): IRStore {
             : s.selectedEdge;
         return { ir, selectedEdge };
       }),
+    addSchema: () =>
+      set((s) => {
+        const { ir } = addSchemaReducer(s.ir);
+        return { ir };
+      }),
+    renameSchema: (oldName, newName) =>
+      set((s) => ({ ir: renameSchemaReducer(s.ir, oldName, newName) })),
+    deleteSchema: (name) =>
+      set((s) => ({ ir: deleteSchemaReducer(s.ir, name) })),
+    addField: (schemaName) =>
+      set((s) => ({ ir: addFieldReducer(s.ir, schemaName) })),
+    updateField: (schemaName, fieldName, patch) =>
+      set((s) => ({ ir: updateFieldReducer(s.ir, schemaName, fieldName, patch) })),
+    deleteField: (schemaName, fieldName) =>
+      set((s) => ({ ir: deleteFieldReducer(s.ir, schemaName, fieldName) })),
   }));
 }
 
