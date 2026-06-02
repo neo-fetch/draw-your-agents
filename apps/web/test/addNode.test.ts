@@ -262,3 +262,24 @@ test("addNode is pure: input IR is not mutated and sibling nodes stay referentia
     assert.strictEqual(next.nodes[i], initial.nodes[i], `sibling ${i} referentially equal`);
   }
 });
+
+// --- (f) Drop-at-position (ADR-0034) -------------------------------------
+
+test("addNode places the node at an explicit drop position, else falls back to the stagger", () => {
+  const ir = cloneFixture(loadCityTime());
+
+  // Explicit position (drag-and-drop drop point) is written verbatim to ui.
+  const dropped = addNode(ir, "agent", { x: 137, y: -42 });
+  const droppedNode = dropped.ir.nodes[dropped.ir.nodes.length - 1]!;
+  assert.deepStrictEqual(droppedNode.ui, { x: 137, y: -42 });
+
+  // Omitting the position keeps the staggered default (click-to-add path):
+  // it must NOT collapse to the drop coords, and must sit right of the graph.
+  const staggered = addNode(ir, "agent");
+  const staggeredNode = staggered.ir.nodes[staggered.ir.nodes.length - 1]!;
+  const maxExistingX = Math.max(...ir.nodes.map((n) => n.ui?.x ?? 0));
+  assert.ok(
+    (staggeredNode.ui?.x ?? 0) > maxExistingX,
+    "staggered node sits to the right of the existing graph",
+  );
+});

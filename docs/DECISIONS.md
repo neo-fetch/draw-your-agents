@@ -1552,3 +1552,46 @@ change or risk to the verified Phase 0–2 core. New surfaces (e.g. the forthcom
 controls) inherit the design tokens in `:root`. Out of scope (noted, not regressions): the
 fixture's wide node spread still fits-to-view small; no dark mode; fonts are a runtime CDN
 dependency with graceful fallback.
+
+## ADR-0034 — Palette drag-and-drop: drop a node at the cursor
+**Context.** The palette was click-to-add only (ADR-0025): a new node landed at a staggered
+default position (`defaultPositionFor`, +280px right of the rightmost node). Node drag (ADR-0028)
+made positions first-class in the IR. The natural next gesture — *drag a palette item onto the
+canvas and have the node land where you drop it* — was the user's requested precursor to draw.io.
+
+**Decisions.**
+- **The store still owns the node; the only new capability is an explicit drop position.** The pure
+  reducer gains one optional param: `addNode(ir, type, position?: UiPosition)` —
+  `const ui = position ?? defaultPositionFor(ir)`. Click-to-add is unchanged (passes no position →
+  same stagger); drag passes the drop point. The store action mirrors it: `addNode(type, position?)`.
+  No new reducer, no new validation — the dropped node is unwired and Preview surfaces the same
+  honest `UNREACHABLE_NODE` finding as a clicked one (ADR-0025/0026 posture).
+- **Standard React Flow DnD, adapted to store-owns-everything.** The palette item is `draggable`
+  and sets the node type on a custom MIME (`application/ga-node-type`, exported as `NODE_DND_MIME`
+  so palette and canvas agree). The canvas wraps `<ReactFlow>` in a `.canvas-drop` target that
+  handles `onDragOver` (preventDefault + `dropEffect="move"`, gated on the MIME so unrelated drags
+  are ignored) and `onDrop` (read the type, `screenToFlowPosition({x,y})` → `addNode(type, pos)`).
+  The RF instance is captured via `onInit` into a **ref** (not state — it's read imperatively in
+  `onDrop`, nothing renders off it).
+- **Layout: the canvas pane became a flex column.** `.canvas-drop` is `flex:1; min-height:0` under
+  a `display:flex; flex-direction:column` canvas pane, so the drop hit-zone fills the whole canvas
+  area below the header and React Flow inherits a clean height. (Previously RF sized off the grid
+  cell with an `overflow:auto` quirk; this is tidier and removes it.)
+- **Click-to-add stays.** Dragging is additive — the click path remains for accessibility and
+  speed. The palette title now reads "Drag onto the canvas, or click to add…".
+
+**Headless oracle.** One test in `apps/web/test/addNode.test.ts`: `addNode(ir, type, {x,y})` writes
+the position verbatim to `node.ui`; omitting it keeps the staggered default (sits right of the
+graph) — pinning that the drop path and click path don't collapse into each other. (The DnD wiring
+itself — dataTransfer, `screenToFlowPosition` — is browser-only and has no headless oracle.)
+
+**Verification.** Default `npm test` 13+85+76 green (the +1 is the position test); `test:web:app`
+8/8; Vite build clean. Live browser pass: a real drag of the Tool palette item onto the canvas
+created `tool_1` at the drop point, auto-selected with the inspector open, Preview honestly flagged
+`UNREACHABLE_NODE`, and the validity pill flipped to "1 error" with Download auto-disabled — zero
+console errors. `packages/*` untouched.
+
+**Consequences.** The canvas is now a full drag-build surface. This also de-risks draw.io (Phase 3):
+the drop→`addNode(type, position)` path is the same shape an importer will use to materialize parsed
+nodes at their diagram coordinates. Out of scope: drag-to-reposition existing palette categories,
+drag-to-connect-on-drop, multi-drop.

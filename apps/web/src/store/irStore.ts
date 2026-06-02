@@ -72,7 +72,7 @@ export interface IRState {
    * fresh node is unwired by design; Preview will surface the expected
    * graph-shape findings until edges land in the next slice.
    */
-  addNode: (type: AddableNodeType) => void;
+  addNode: (type: AddableNodeType, position?: { x: number; y: number }) => void;
   /**
    * Append an edge. Optional `route` is for router out-edges (ADR-0027);
    * non-router edges leave it undefined.
@@ -133,9 +133,9 @@ export function createIRStore(initial: GraphIR): IRStore {
     setNodePosition: (nodeId, x, y) =>
       set((s) => ({ ir: applyNodePosition(s.ir, nodeId, x, y) })),
     replaceIR: (ir) => set({ ir, selectedNodeId: null, selectedEdge: null }),
-    addNode: (type) =>
+    addNode: (type, position) =>
       set((s) => {
-        const { ir, nodeId } = addNodeReducer(s.ir, type);
+        const { ir, nodeId } = addNodeReducer(s.ir, type, position);
         return { ir, selectedNodeId: nodeId, selectedEdge: null };
       }),
     connectEdge: (fromId, toId, route) =>

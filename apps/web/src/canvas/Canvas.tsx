@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -9,10 +9,13 @@ import {
   type EdgeChange,
   type Node as RFNode,
   type NodeChange,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { useIRStore } from "../store/irStore.ts";
 import { IRNode, type IRNodeData } from "./IRNode.tsx";
 import { StartNode } from "./StartNode.tsx";
+import { NODE_DND_MIME } from "../palette/Palette.tsx";
+import type { AddableNodeType } from "../store/addNode.ts";
 
 const nodeTypes = { ir: IRNode, "ir-start": StartNode };
 
@@ -54,6 +57,14 @@ export function Canvas() {
   const deleteNode = useIRStore((s) => s.deleteNode);
   const deleteEdge = useIRStore((s) => s.deleteEdge);
   const setNodePosition = useIRStore((s) => s.setNodePosition);
+  const addNode = useIRStore((s) => s.addNode);
+
+  // React Flow instance, captured on init so the drop handler can convert
+  // screen coordinates to flow coordinates (ADR-0034). A ref (not state)
+  // because nothing renders off it — it's read imperatively inside onDrop.
+  const rfInstance = useRef<ReactFlowInstance<RFNode<IRNodeData>, RFEdge> | null>(
+    null,
+  );
 
   // Map IR nodes to React Flow nodes, prepending the synthetic START node
   // so users can drag from it like any other source handle (ADR-0026).
@@ -167,7 +178,31 @@ export function Canvas() {
     connectEdge(conn.source, conn.target, route);
   };
 
+  // --- palette drag-and-drop (ADR-0034) ---
+  // The palette sets the node type on the drag's dataTransfer; the canvas is
+  // the drop target. `screenToFlowPosition` maps the cursor (client coords)
+  // to graph coords accounting for pan/zoom, so the node lands exactly under
+  // the pointer. The store still owns the node — `addNode(type, position)`
+  // mints it at the drop point (its only new capability this slice).
+  const onDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes(NODE_DND_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    const type = e.dataTransfer.getData(NODE_DND_MIME);
+    if (!type || !rfInstance.current) return;
+    e.preventDefault();
+    const position = rfInstance.current.screenToFlowPosition({
+      x: e.clientX,
+      y: e.clientY,
+    });
+    addNode(type as AddableNodeType, position);
+  };
+
   return (
+    <div className="canvas-drop" onDragOver={onDragOver} onDrop={onDrop}>
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
@@ -192,6 +227,9 @@ export function Canvas() {
       onEdgesDelete={(edges) => {
         for (const e of edges) deleteEdge(e.source, e.target);
       }}
+      onInit={(inst) => {
+        rfInstance.current = inst;
+      }}
       nodesDraggable={true}
       nodesConnectable={true}
       elementsSelectable
@@ -214,5 +252,6 @@ export function Canvas() {
       />
       <Controls />
     </ReactFlow>
+    </div>
   );
 }

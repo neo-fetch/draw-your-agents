@@ -231,9 +231,20 @@ html, body, #root {
 }
 .pane:first-child { border-left: none; }
 .pane:nth-child(1) { animation-delay: 0.02s; }
-.pane:nth-child(2) { animation-delay: 0.07s; background: transparent; }
+.pane:nth-child(2) {
+  animation-delay: 0.07s;
+  background: transparent;
+  /* canvas pane: column so the drop wrapper fills the area below the header */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 .pane:nth-child(3) { animation-delay: 0.12s; }
 .pane:nth-child(4) { animation-delay: 0.17s; }
+
+/* drop target wrapping React Flow (ADR-0034) — fills the canvas area so the
+   drop hit-zone covers the whole canvas and React Flow inherits a height. */
+.canvas-drop { flex: 1 1 auto; min-height: 0; position: relative; }
 
 @keyframes paneIn {
   from { opacity: 0; transform: translateY(8px); }

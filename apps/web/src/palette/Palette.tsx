@@ -15,6 +15,9 @@
 import type { NodeType } from "@graphical-agents/ir";
 import { useIRStore } from "../store/irStore.ts";
 
+/** Custom drag MIME carrying the node type from palette → canvas (ADR-0034). */
+export const NODE_DND_MIME = "application/ga-node-type";
+
 const ENTRIES: ReadonlyArray<{ type: NodeType; label: string }> = [
   { type: "agent", label: "Agent" },
   { type: "function", label: "Function" },
@@ -35,8 +38,13 @@ export function Palette() {
             type="button"
             className="palette-item"
             data-node-type={type}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(NODE_DND_MIME, type);
+              e.dataTransfer.effectAllowed = "move";
+            }}
             onClick={() => addNode(type)}
-            title={`Add a new ${label} node`}
+            title={`Drag onto the canvas, or click to add a ${label} node`}
           >
             {label}
           </button>

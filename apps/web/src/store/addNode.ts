@@ -268,10 +268,13 @@ function makeDefaultNode(
 export function addNode(
   ir: GraphIR,
   type: AddableNodeType,
+  position?: UiPosition,
 ): { ir: GraphIR; nodeId: string } {
   const id = makeNodeId(ir, type);
   const name = makeNodeName(ir, type);
-  const ui = defaultPositionFor(ir);
+  // Explicit position (drag-and-drop drop point, ADR-0034) wins; otherwise
+  // fall back to the staggered default used by click-to-add.
+  const ui = position ?? defaultPositionFor(ir);
   const node = makeDefaultNode(ir, type, id, name, ui);
   return {
     ir: { ...ir, nodes: [...ir.nodes, node] },
