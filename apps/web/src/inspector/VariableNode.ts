@@ -58,8 +58,13 @@ export class VariableNode extends TextNode {
     this.__schema = payload.schema;
     this.__field = payload.field;
     this.__source = payload.source;
-    // Token mode: atomic, single-backspace-delete, caret can't enter.
-    this.setMode("token");
+    // NOTE: token mode is set in `$createVariableNode`, NOT here. Calling the
+    // mutating `setMode()` from the constructor recurses infinitely: Lexical's
+    // `clone()` (invoked when an *attached* node is edited/deleted) calls
+    // `new VariableNode(...)` → `setMode()` → `getWritable()` →
+    // `$cloneWithProperties()` → `clone()` → … The framework copies `__mode`
+    // across clone via `$cloneWithProperties`, and `importJSON` restores it via
+    // `super.updateFromJSON(serialized)`, so the constructor must stay pure.
   }
 
   createDOM(...args: Parameters<TextNode["createDOM"]>): HTMLElement {
@@ -114,7 +119,12 @@ export class VariableNode extends TextNode {
 }
 
 export function $createVariableNode(payload: VariableNodePayload): VariableNode {
-  return $applyNodeReplacement(new VariableNode(payload));
+  // Set token mode here (not in the constructor — see the constructor note).
+  // The node is freshly created and not yet attached, so `setMode` resolves
+  // its writable as `this` without cloning: no recursion.
+  const node = new VariableNode(payload);
+  node.setMode("token");
+  return $applyNodeReplacement(node);
 }
 
 export function $isVariableNode(
