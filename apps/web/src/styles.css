@@ -161,6 +161,49 @@ html, body, #root {
 .palette-item:hover { background: #f0f0f0; border-color: #888; }
 .palette-item:active { background: #e6e6e6; }
 
+/* Lexical prompt editor — ADR-0029. */
+.ga-variable-editor {
+  position: relative;
+  border: 1px solid #c8c8c8;
+  border-radius: 4px;
+  background: #fff;
+  min-height: 96px;
+}
+
+.ga-variable-editor__input {
+  outline: none;
+  padding: 8px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  min-height: 80px;
+}
+
+.ga-variable-editor__placeholder {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  color: #aaa;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ga-variable-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  margin: 0 1px;
+  border-radius: 4px;
+  background: #dbeafe;
+  color: #1e3a8a;
+  border: 1px solid #93c5fd;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
 .start-node {
   padding: 6px 14px;
   border: 1px solid #4b5563;

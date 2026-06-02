@@ -26,6 +26,10 @@ import {
   cloneFixture,
 } from "../src/store/irReducer.ts";
 import { createIRStore } from "../src/store/irStore.ts";
+import {
+  editorStateToSegments,
+  segmentsToEditorState,
+} from "../src/inspector/segmentsBridge.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixturesDir = join(here, "..", "..", "..", "packages", "ir", "fixtures");
@@ -301,6 +305,44 @@ test("applyNodePosition no-ops when nodeId is unknown", () => {
   const ir = cloneFixture(loadFixture());
   const next = applyNodePosition(ir, "n_does_not_exist", 1, 2);
   assert.strictEqual(next, ir);
+});
+
+test("bridge-round-tripped instruction segments still validate + flow through to agents.py (ADR-0029)", () => {
+  // The slice integration check: take the report agent's segments through
+  // the editor bridge and back, dispatch via `updateNodeConfig`, and the
+  // resulting IR must (a) validate clean and (b) still emit the codegen
+  // source-bound form into agents.py. If a future bridge change drops or
+  // mangles a chip, this fails loud.
+  const ir = cloneFixture(loadFixture());
+  const report = ir.nodes.find((n) => n.id === "n_report") as AgentNode;
+  const original = report.config.instruction.segments;
+
+  const roundTripped = editorStateToSegments(segmentsToEditorState(original));
+  assert.deepStrictEqual(
+    roundTripped,
+    original,
+    "city-time report round-trips identity through the bridge",
+  );
+
+  const patched = applyNodeConfigPatch(ir, "n_report", {
+    instruction: { segments: roundTripped },
+  });
+  const result = validate(patched);
+  assert.strictEqual(
+    result.ok,
+    true,
+    `validate should be clean after bridge round-trip; got: ${JSON.stringify(result.findings)}`,
+  );
+
+  const agentsPy = compile(patched).get("agents.py") ?? "";
+  assert.ok(
+    agentsPy.includes("<CityTime.time_info from lookup_time>"),
+    "codegen still emits source-bound chip after round-trip",
+  );
+  assert.ok(
+    agentsPy.includes("<CityTime.city from lookup_time>"),
+    "codegen still emits second chip after round-trip",
+  );
 });
 
 test("store.setNodePosition persists into the IR and Save IR round-trips positions", () => {

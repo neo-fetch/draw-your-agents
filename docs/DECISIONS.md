@@ -1084,3 +1084,104 @@ lifts off this scaffold; none change its contracts.
 deferral ("free-positioning lands when canvas drag does") is closed. ADR-0027's "drag from
 router to each agent" manual step is now physically possible from the UI without
 `globalThis.__ga_useIRStore` shenanigans.
+
+## ADR-0029 — Phase 2a: editable agent prompt via Lexical + a pure segments↔editor-state bridge
+**Context:** Until this slice an agent's `instruction` was rendered **read-only** as a
+`<pre>` of `<schema.field from source>` in the inspector
+([apps/web/src/inspector/Inspector.tsx](../apps/web/src/inspector/Inspector.tsx) `AgentForm`).
+The IR already carried the structured `InstructionTemplate { segments }` model
+([packages/ir/src/types.ts](../packages/ir/src/types.ts)) and codegen + validator both spoke
+it ([ADR-0008](DECISIONS.md), invariant 6 in `validate.ts`), so the missing piece was a UI
+that *produced* segments. [docs/PHASE-2-DESIGN.md](PHASE-2-DESIGN.md) splits Phase 2 into
+**2a** (editable prompt, no new IR mutations) and **2b** (field insertion + the
+`inputSchemaRef` auto-wire). This ADR records 2a: a Lexical editor over the existing
+segment model, deliberately with **no insertion, no `inputSchemaRef` mutation, no schema
+authoring**. `packages/*` is frozen — no validator codes, no codegen changes.
+**Decision:**
+- **Segments ↔ Lexical = two PURE functions over plain JSON
+  ([apps/web/src/inspector/segmentsBridge.ts](../apps/web/src/inspector/segmentsBridge.ts)).**
+  This is the [ADR-0022](DECISIONS.md) reducer posture applied to the editor:
+  `segmentsToEditorState(segments)` and `editorStateToSegments(state)` operate on plain
+  object literals matching what `VariableNode.exportJSON()` emits. **The bridge must
+  not `import "lexical"`** — every existing `apps/web/test/*.test.ts` runs under
+  `node --test` with **no `npm install`** ([ADR-0011](DECISIONS.md) /
+  [ADR-0013](DECISIONS.md) cold-checkout posture), and the bridge joins
+  `irReducer`/`addNode`/`irEdges` in that install-free reducer family. The bridge is
+  what the headless round-trip oracle pins; the React shell is a thin consumer.
+  Rejected alternative: build editor nodes via Lexical's `$create*` helpers inside the
+  React component. That would push the round-trip logic into a `lexical`-importing
+  module and break the cold-checkout test gate.
+- **Chips are `VariableNode extends TextNode` in `"token"` mode**
+  ([apps/web/src/inspector/VariableNode.ts](../apps/web/src/inspector/VariableNode.ts)).
+  Token mode is Lexical's atomic-text mode — caret can't enter, one backspace deletes
+  the whole chip — and the Lexical "mentions" example uses the same pattern. The chip
+  carries `{schema, field, source}` in serialized state and overrides `getType()` to
+  `"variable"` so `super.exportJSON()` tags the node correctly. The pinned chip-JSON
+  shape (the test snapshot in
+  [apps/web/test/segmentsBridge.test.ts](../apps/web/test/segmentsBridge.test.ts)) is
+  the contract between the bridge and `VariableNode.exportJSON` — if a future Lexical
+  upgrade changes the required base shape, that snapshot fails loud and we update both
+  ends in lockstep. Rejected alternative: `DecoratorNode`. Heavier (a sub-React tree),
+  block-ish (less natural for inline atomic chips), and not what the mentions example
+  picked.
+- **Seed once per node via `key={node.id}` — IR is *never* pulled back into the editor
+  mid-edit.** The editor is the local authority while editing one agent; on change it
+  serializes via `OnChangePlugin → editorStateToSegments → onChange` and dispatches
+  one `updateNodeConfig(node.id, { instruction: { segments } })`. If the editor
+  re-seeded from the IR on every store update, we'd get the
+  `onChange → updateNodeConfig → re-render → re-seed → onChange` caret-fight feedback
+  loop — exactly the [ADR-0026](DECISIONS.md) "React-Flow-owns-edges" trap echoed for
+  contenteditable. `AgentForm` remounts `<VariableEditor>` with `key={node.id}` so a
+  fresh `initialConfig.editorState` runs once per agent (Lexical reads `editorState`
+  once at mount); within a node, no re-seed.
+- **PlainTextPlugin + `LineBreakNode`s for `\n`.** Newlines round-trip as line breaks
+  *within* a single paragraph — `text "a\nb"` → `[text "a", linebreak, text "b"]` →
+  back to `text "a\nb"`. RichTextPlugin would split on Enter into separate paragraphs;
+  the bridge defensively coalesces multi-paragraph state too, but the single-paragraph
+  posture avoids the ambiguity and keeps the editor scoped to what an agent
+  instruction actually needs.
+- **No `inputSchemaRef` touch, no insertion, no DnD, no schema authoring, no undo/redo.**
+  Every one of those is owned by a later slice (2b for insertion + auto-wire; future
+  slices for schema authoring). The point of 2a is the editable round-trip itself —
+  scope discipline keeps the slice to one hard problem.
+- **`packages/*` frozen.** No new validator codes; invariant 6 still lives in
+  `validate.ts` and surfaces in the Preview pane unchanged. Codegen golden files are
+  untouched (`renderInstruction` already consumes the segment model). `apps/web` is
+  the only `npm install` boundary; `lexical` + `@lexical/react` are added there.
+**Headless regression oracle
+([apps/web/test/segmentsBridge.test.ts](../apps/web/test/segmentsBridge.test.ts)).**
+Seven tests pin the bridge as the spec:
+- City-time report agent fixture: `segments → state → segments` is identity (chip +
+  text + chip interleaving + an embedded `\n`).
+- A multi-line text segment round-trips its `\n` characters.
+- Empty prompt: `segments: []` → an editor state with one empty paragraph (so
+  Lexical mounts cleanly) → back to `[]`.
+- Hand-written `[var, text, var]` round-trips losslessly (chip at start and end).
+- Adjacent text segments coalesce on the way out (documented behavior).
+- **Pinned chip-JSON shape:** literal snapshot of the `variable`-node shape (`type`,
+  `mode: "token"`, `schema`, `field`, `source`, `text` matching the source-bound
+  form). Fails loud if a Lexical upgrade silently changes the base.
+- Unknown editor-state node types are skipped, not crashed (forward-compat).
+Plus an integration check in
+[apps/web/test/irStore.test.ts](../apps/web/test/irStore.test.ts): after a
+`updateNodeConfig(n_report, { instruction: <round-tripped segments> })`,
+`validate(ir).ok` and `compile(ir).get("agents.py")` still contains both source-bound
+chips. Proves the bridge produces segments codegen can consume unchanged.
+**Manual verification (`apps/web && npm install && npm run dev`):**
+1. Load the city-time fixture, click `city_report` → the Inspector renders an
+   editable Lexical editor instead of the `<pre>`. Existing chips appear as inline
+   pills.
+2. Type plain text before/after a chip → Preview's `agents.py` `instruction=` string
+   updates live.
+3. Backspace once over a chip → the entire chip disappears in one keystroke
+   (token-mode contract); Preview reflects the new segments.
+4. Switch to `city_generator` → editor remounts with that agent's segments (seed
+   once per node).
+5. Save IR → Load IR round-trips the edited segments.
+**Consequences:** The headline variable-chip system is now half-shipped — agents have
+an editable prompt that round-trips chips losslessly, and the bridge is the
+install-free oracle future slices build against. **2b (next)** adds the insert palette,
+the single `inputSchemaRef` auto-mutation, and the single-schema rail — all on top of
+this bridge, with no further IR contract changes. Schema/field authoring, auto-edge
+inference from chip insertion, and non-adjacent (session-`state`) variables remain
+explicitly deferred (PHASE-2-DESIGN decisions 6 / 7, ARCHITECTURE roadmap Phase 3).

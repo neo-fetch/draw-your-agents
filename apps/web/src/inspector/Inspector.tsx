@@ -21,6 +21,7 @@ import type {
 } from "@graphical-agents/ir";
 import { useIRStore } from "../store/irStore.ts";
 import type { ModelParamKey } from "../store/irReducer.ts";
+import { VariableEditor } from "./VariableEditor.tsx";
 
 // ----- shared widgets -----------------------------------------------------
 
@@ -277,24 +278,23 @@ function AgentForm({ node }: { node: AgentNode }) {
 
       <div style={ROW}>
         <label>instruction</label>
-        <div style={HINT}>chip editor: Phase 2 — read-only here</div>
-        <pre
-          style={{
-            background: "#f5f5f5",
-            padding: 6,
-            fontSize: 11,
-            whiteSpace: "pre-wrap",
-            margin: 0,
-          }}
-        >
-          {node.config.instruction.segments
-            .map((seg) =>
-              seg.type === "text"
-                ? seg.value
-                : `<${seg.schema}.${seg.field} from ${seg.source}>`,
-            )
-            .join("")}
-        </pre>
+        <div style={HINT}>
+          editable prompt — existing variable chips are atomic
+          (backspace deletes a whole chip). Field insertion lands in 2b.
+        </div>
+        {/*
+          Seed-once-per-node: `key={node.id}` remounts the editor on node
+          switch so segments seed exactly once per agent. While editing one
+          agent the IR is never pulled back into the editor (ADR-0029
+          / [PHASE-2-DESIGN.md](../../../docs/PHASE-2-DESIGN.md) trap 1).
+        */}
+        <VariableEditor
+          key={node.id}
+          segments={node.config.instruction.segments}
+          onChange={(segments) =>
+            updateNodeConfig(node.id, { instruction: { segments } })
+          }
+        />
       </div>
     </div>
   );
