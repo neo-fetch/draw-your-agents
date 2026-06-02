@@ -15,6 +15,7 @@
     "test:codegen": "node --test \"packages/codegen/test/**/*.test.ts\"",
     "test:web": "node --test \"apps/web/test/**/*.test.ts\"",
     "test:web:app": "node --test \"apps/web/test-app/**/*.test.ts\"",
-    "test": "npm run check:ir && npm run test:ir && npm run test:codegen && npm run test:web"
+    "test": "npm run check:ir && npm run test:ir && npm run test:codegen && npm run test:web",
+    "build:pages": "npm run build --workspace=apps/web"
   }
 }
