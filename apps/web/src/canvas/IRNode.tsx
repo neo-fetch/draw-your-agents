@@ -10,7 +10,10 @@ export interface IRNodeData {
 export function IRNode({ data }: NodeProps) {
   const { node, selected } = data as IRNodeData;
   return (
-    <div className={selected ? "ir-node selected" : "ir-node"}>
+    <div
+      className={selected ? "ir-node selected" : "ir-node"}
+      data-node-type={node.type}
+    >
       <Handle type="target" position={Position.Left} />
       <div className="name">{node.name}</div>
       <div className="type">{node.type}</div>

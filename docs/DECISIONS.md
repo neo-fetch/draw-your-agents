@@ -1507,3 +1507,48 @@ contract. Tier 2's name no longer leaks its first-inhabitant
 history. The next time someone writes a test that imports a runtime
 dep, the choice is mechanical — `test-app/`, not "is this DOM
 enough to count as `test-dom/`?".
+
+## ADR-0033 — UI/UX pass: the "Drafting Table" visual system
+**Context.** Phase 0–2 built a *functional* but visually utilitarian builder (inline-ish CSS,
+default React Flow chrome, system sans). Before Phase 3 (draw.io) the user asked for a UI/UX
+polish. The product's essence — a hand-arranged visual graph that gets **manufactured into
+runnable Python** — suggested an engineer's-drafting-table metaphor, which this slice commits to.
+Presentation-only: **no store / IR / codegen / component-logic changes**; `packages/*` untouched.
+
+**Decisions.**
+- **Aesthetic: "Drafting Table."** Warm vellum paper (`--paper #f3efe6`), warm-black ink, and a
+  **single vermilion "red-pencil" accent** (`--accent #cf4d2c`) used for the primary action,
+  selection, handles, and prompt chips. One accent, used decisively, over a timid multi-color
+  palette. A faint drafting grid sits behind the shell; the canvas gets a real **blueprint grid**
+  (layered fine `Lines` + coarse `Cross` `<Background>` in paper-toned ink).
+- **Type system (distinctive, not Inter/Roboto):** `Fraunces` (characterful serif) for the
+  wordmark only — one memorable typographic moment; `IBM Plex Sans` for UI; `IBM Plex Mono` for
+  everything code-shaped (node identifiers, panel labels, chips, the preview, buttons) to reinforce
+  "this is a code tool." Loaded via Google Fonts with serif/system/mono fallback stacks, so the
+  layout degrades gracefully if the CDN is unreachable.
+- **Node-type color-coding (a UX win, not just paint):** seven earthy hues (agent/function/router/
+  tool/join/humanInput/workflow) applied **consistently** to the palette swatch tick *and* the
+  canvas node's left border + type label, via a `data-node-type` attribute the components emit
+  (`IRNode`, `Palette`). Recognizing a node's kind at a glance now works the same in both panes.
+- **UX additions surfaced from existing state:** a real **wordmark** (`graphical·agents` / `IR →
+  ADK`), an at-a-glance **validity pill** (green "valid" vs. red "N errors") driven by the
+  `errorCount` the Toolbar already computed, and the **Download .zip** payoff promoted to a
+  primary (vermilion) button. Panel headers became small-caps mono with a registration-tick glyph.
+  The preview renders into a dark "manufactured output" ink slab. One restrained page-load moment:
+  staggered pane reveal (`@keyframes paneIn`), disabled under `prefers-reduced-motion`.
+- **Touched files (6, presentation-only):** `index.html` (fonts, title, inline-SVG favicon —
+  also kills the prior favicon 404), `styles.css` (full design-system rewrite, same class names so
+  markup is undisturbed), `Toolbar.tsx` (wordmark + validity pill + primary class), `IRNode.tsx`
+  and `Palette.tsx` (`data-node-type` only), `Canvas.tsx` (`<Background>` props only). All handler
+  logic, store wiring, and the IR are byte-for-byte unchanged.
+
+**Verification.** No headless oracle for visuals (per the UI-slice norm). Vite production build
+clean; default `npm test` 13+85+75 green and `test:web:app` 8/8 green (unchanged — no test asserts
+on DOM markup); live browser pass (overview, inspector with the Lexical editor + chips, fit-view
+graph) confirmed the system renders cohesively with **zero console errors**.
+
+**Consequences.** The builder now has a distinctive, cohesive identity without any behavioral
+change or risk to the verified Phase 0–2 core. New surfaces (e.g. the forthcoming draw.io import
+controls) inherit the design tokens in `:root`. Out of scope (noted, not regressions): the
+fixture's wide node spread still fits-to-view small; no dark mode; fonts are a runtime CDN
+dependency with graceful fallback.

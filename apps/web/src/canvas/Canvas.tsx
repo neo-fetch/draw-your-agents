@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import {
   ReactFlow,
   Background,
+  BackgroundVariant,
   Controls,
   type Connection,
   type Edge as RFEdge,
@@ -196,7 +197,21 @@ export function Canvas() {
       elementsSelectable
       fitView
     >
-      <Background />
+      <Background
+        id="grid-fine"
+        variant={BackgroundVariant.Lines}
+        gap={22}
+        lineWidth={1}
+        color="rgba(33, 29, 24, 0.05)"
+      />
+      <Background
+        id="grid-coarse"
+        variant={BackgroundVariant.Cross}
+        gap={110}
+        size={8}
+        lineWidth={1.2}
+        color="rgba(33, 29, 24, 0.14)"
+      />
       <Controls />
     </ReactFlow>
   );

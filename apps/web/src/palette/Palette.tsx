@@ -34,6 +34,7 @@ export function Palette() {
           <button
             type="button"
             className="palette-item"
+            data-node-type={type}
             onClick={() => addNode(type)}
             title={`Add a new ${label} node`}
           >

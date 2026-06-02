@@ -115,24 +115,45 @@ export function Toolbar() {
 
   return (
     <>
-      <div className="toolbar">
-        <button type="button" onClick={onSave}>Save IR</button>
-        <button type="button" onClick={onLoadClick}>Load IR</button>
-        <button
-          type="button"
-          onClick={onDownloadZip}
-          disabled={zipDisabled}
-          title={zipDisabled ? `IR has ${errorCount} validation error(s)` : undefined}
-        >
-          Download .zip
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json,.agentgraph.json,application/json"
-          style={{ display: "none" }}
-          onChange={onFileChosen}
-        />
+      <div className="topbar">
+        <div className="wordmark">
+          <span className="wordmark__mark">
+            graphical<span className="dot">·</span>agents
+          </span>
+          <span className="wordmark__tag">IR → ADK</span>
+        </div>
+        <div className="toolbar">
+          <span
+            className={`validity ${zipDisabled ? "has-errors" : "is-valid"}`}
+            title={
+              zipDisabled
+                ? `IR has ${errorCount} validation error(s)`
+                : "IR is valid — ready to generate"
+            }
+          >
+            {zipDisabled
+              ? `${errorCount} error${errorCount === 1 ? "" : "s"}`
+              : "valid"}
+          </span>
+          <button type="button" onClick={onSave}>Save IR</button>
+          <button type="button" onClick={onLoadClick}>Load IR</button>
+          <button
+            type="button"
+            className="primary"
+            onClick={onDownloadZip}
+            disabled={zipDisabled}
+            title={zipDisabled ? `IR has ${errorCount} validation error(s)` : undefined}
+          >
+            Download .zip
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.agentgraph.json,application/json"
+            style={{ display: "none" }}
+            onChange={onFileChosen}
+          />
+        </div>
       </div>
       {banner.kind !== "none" && (
         <div className={`load-banner ${banner.kind}`}>
