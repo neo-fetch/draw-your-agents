@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "node --test \"test/**/*.test.ts\"",
+    "test:dom": "node --test \"test-dom/**/*.test.ts\""
   },
   "dependencies": {
     "@lexical/react": "^0.45.0",
@@ -19,6 +20,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@lexical/headless": "^0.45.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

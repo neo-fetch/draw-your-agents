@@ -1333,3 +1333,101 @@ authoring, auto-edge inference from chip insertion, and non-adjacent
 (session-`state`) variables remain explicitly deferred (PHASE-2-DESIGN
 decisions 6 / 7, ARCHITECTURE roadmap Phase 3). Draw.io import (Phase 3)
 is then the last major v1 piece.
+
+## ADR-0031 — Two-tier testing: install-required `test:web:dom` covers the Lexical layer; first test is the `907dea2` regression
+**Context:** The install-free cold-checkout posture ([ADR-0011](DECISIONS.md) /
+[ADR-0013](DECISIONS.md)) is what lets `git clone && npm test` go green
+without `npm install`. It works because every existing test file imports
+only IR types, Node builtins, and pure reducer / bridge modules — none of
+the `lexical`-importing surface. The deliberate consequence
+([ADR-0029](DECISIONS.md) decision 2 — "the bridge must NOT
+`import \"lexical\"`") was that
+[apps/web/src/inspector/VariableNode.ts](../apps/web/src/inspector/VariableNode.ts)
+and [VariableEditor.tsx](../apps/web/src/inspector/VariableEditor.tsx)
+ended up with **zero automated coverage**: anything behind `import "lexical"`
+was caught only by manual browser passes. Commit `907dea2` shipped that
+gap into prod: `VariableNode`'s constructor called the mutating
+`setMode("token")`, which on an *attached* node recurses
+`clone() → new VariableNode(...) → setMode() → getWritable() →
+$cloneWithProperties() → clone() → …` until the stack blows
+(`RangeError: Maximum call stack size exceeded`) and Lexical's error
+boundary trips on the first chip Backspace. The pure bridge tests had
+nothing to say, `npm test` was green, and the bug was only caught by a
+live browser pass.
+**Decision:** Introduce a **second test tier** in `apps/web`, explicitly
+**install-required**, sitting outside the default `npm test` glob:
+- **Tier 1 — default `npm test` = install-free cold-checkout gate.**
+  `check:ir` + `test:ir` + `test:codegen` + `test:web` over
+  `apps/web/test/**/*.test.ts`. Unchanged; still the gate for the IR
+  contract, codegen golden output, and the pure reducer / bridge family
+  ([ADR-0022](DECISIONS.md) / [ADR-0023](DECISIONS.md) /
+  [ADR-0024](DECISIONS.md) / [ADR-0025](DECISIONS.md) /
+  [ADR-0026](DECISIONS.md) / [ADR-0027](DECISIONS.md) /
+  [ADR-0028](DECISIONS.md) / [ADR-0029](DECISIONS.md) /
+  [ADR-0030](DECISIONS.md)).
+- **Tier 2 — `npm run test:web:dom` = install-required Lexical/DOM tests.**
+  New script in the root [package.json](../package.json):
+  `"test:web:dom": "node --test \"apps/web/test-dom/**/*.test.ts\""`,
+  plus a sibling `"test:dom"` in
+  [apps/web/package.json](../apps/web/package.json). Uses
+  `@lexical/headless` (added as an `apps/web` devDependency, pinned to
+  `^0.45.0` to match the already-pinned `lexical` /
+  `@lexical/react`). **Not** wired into the root `"test"` script — the
+  default gate stays install-free.
+- **Sibling `test-dom/` directory, deliberately not `test/dom/`.** The
+  default glob is `node --test "test/**/*.test.ts"` (in
+  [apps/web/package.json](../apps/web/package.json)); a nested
+  `test/dom/` would be matched by that glob and pull `lexical` into the
+  cold-checkout gate the moment a developer ran `npm test` without
+  installing first. The sibling name is invisible to the default glob.
+  Pinned as a trap in the slice prompt and verified by running the
+  default gate.
+- **First test is the `907dea2` regression.**
+  [apps/web/test-dom/variableNode.dom.test.ts](../apps/web/test-dom/variableNode.dom.test.ts):
+  (1) seeds a headless editor from
+  `segmentsToEditorState(cityTimeReportSegments)` so chips land in the
+  *attached* slot, then in a *separate* `editor.update` calls
+  `.remove()` on an attached chip (the path that triggers
+  `getWritable()` → `clone()`) and asserts no error was forwarded to
+  `onError`. With the buggy constructor reinstated, this test fails
+  with `Maximum call stack size exceeded` — sanity-checked at slice
+  time and reverted. (2) Real-Lexical round-trip: seeds the editor,
+  exports via `editor.getEditorState().toJSON()`, asserts
+  `editorStateToSegments(...)` equals the original segments. Catches
+  shape drift between `VariableNode.exportJSON()` and the bridge that
+  the pure bridge test cannot see. (3) Token mode preserved across an
+  attached-node clone — pins our dependency on Lexical's
+  `$cloneWithProperties` copying `__mode` for TextNodes, so a future
+  upstream change that loses that copy fails loud.
+- **`onError` captures, not thrown propagation.** Lexical wraps update
+  callbacks; a thrown error inside `editor.update` is forwarded to the
+  configured `onError`, not propagated past `editor.update(...)`. The
+  test helper collects errors in an array and asserts the array is
+  empty — that is the precise oracle the regression needs.
+- **No CI file added.** None exists in the repo today; the ADR is the
+  signpost. When CI is added it should run both tiers — the default
+  `npm test` for the cold-checkout posture and
+  `npm run test:web:dom` (after `npm install` in `apps/web`) for the
+  Lexical layer. Until then, `test:web:dom` is run manually as part of
+  a slice's verification when it touches the Lexical layer.
+- **Pre-existing cold-checkout drift, not addressed here.** With the
+  apps/web `node_modules` directory removed,
+  `apps/web/test/irStore.test.ts` already fails because
+  [irStore.ts](../apps/web/src/store/irStore.ts) imports `zustand` at
+  runtime (introduced by [ADR-0022](DECISIONS.md)'s store wrapper). This
+  predates this slice and is unaffected by it — the tier added here
+  does not widen the surface. Closing that gap properly (e.g. making
+  the store wrapper lazy, or moving the affected tests behind a tier)
+  is a focused follow-up; this slice's scope is the Lexical layer.
+- **`packages/*` frozen.** No validator codes added, no codegen behavior
+  change, no IR shape change. The slice is `apps/web`-only:
+  `apps/web/package.json` (devDep + `test:dom` script), root
+  `package.json` (`test:web:dom` script), and the new test file.
+**Consequences:** The Lexical/DOM layer now has automated coverage and a
+canonical regression test (`907dea2`). Manual browser passes remain
+valuable for styling, real DOM events, and full editor UX, but they are
+no longer the only safety net for the chip atom invariants. Future
+Lexical-touching slices (e.g. DnD chip insertion, deferred from
+[ADR-0030](DECISIONS.md)) can extend `apps/web/test-dom/` without
+re-architecting either tier. The cold-checkout posture for the IR /
+codegen / bridge surfaces stays exactly as it was.
