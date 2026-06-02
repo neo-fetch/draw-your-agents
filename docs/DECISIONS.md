@@ -1431,3 +1431,79 @@ Lexical-touching slices (e.g. DnD chip insertion, deferred from
 [ADR-0030](DECISIONS.md)) can extend `apps/web/test-dom/` without
 re-architecting either tier. The cold-checkout posture for the IR /
 codegen / bridge surfaces stays exactly as it was.
+
+## ADR-0032 — Restore install-free `npm test`; generalize the install-required tier from `test-dom/` to `test-app/`
+**Context:** [CLAUDE.md](../CLAUDE.md) declares as a keystone that
+`npm test` runs from a cold checkout with no `npm install`. That is
+the invariant [ADR-0011](DECISIONS.md) / [ADR-0013](DECISIONS.md)
+established, and it is what makes the default gate a true
+cold-checkout proof. [ADR-0031](DECISIONS.md) — the slice that
+introduced the install-required `test:web:dom` second tier — flagged
+a pre-existing drift from this invariant: `apps/web/test/irStore.test.ts`
+imports `createIRStore` from
+[apps/web/src/store/irStore.ts](../apps/web/src/store/irStore.ts),
+which imports `zustand` at runtime ([ADR-0022](DECISIONS.md) store
+wrapper). With root `node_modules` absent, `npm test` failed loud on
+`Cannot find package 'zustand'`. ADR-0031 explicitly deferred this
+fix; this slice is the deferred fix.
+**Decision:** Three coordinated changes, all in `apps/web` and root
+`package.json`. `packages/*` untouched.
+- **Tier 2 generalized.**
+  `apps/web/test-dom/` → `apps/web/test-app/`. The tier introduced by
+  ADR-0031 was named after its first inhabitant (Lexical/DOM tests),
+  but its real defining property is "needs `apps/web` deps." Renaming
+  while the tier still holds one file is cheap; deferring would
+  entrench the misnomer. Scripts renamed in lockstep:
+  `"test:web:dom"` → `"test:web:app"` in root [package.json](../package.json)
+  with glob `node --test "apps/web/test-app/**/*.test.ts"`; sibling
+  `"test:dom"` → `"test:app"` in
+  [apps/web/package.json](../apps/web/package.json). Still NOT chained
+  into the default `"test"` script — Tier 2 is run on demand or by CI
+  after `npm install`, never by the cold-checkout gate. ADR-0031's
+  body is left as historical record of the original `test-dom/`
+  naming.
+- **`irStore.test.ts` split by import surface.** The original file
+  mixed pure-reducer tests (which only import
+  [irReducer.ts](../apps/web/src/store/irReducer.ts) +
+  [segmentsBridge.ts](../apps/web/src/inspector/segmentsBridge.ts) +
+  the validator/codegen) with store-action tests (which import
+  `createIRStore` and therefore `zustand`). Split into two files,
+  same tests, no behavior change:
+  - **`apps/web/test/irReducer.test.ts`** (install-free; renamed from
+    `irStore.test.ts` because the file no longer touches the store):
+    `applyModelParamPatch`, the two `applyNodeConfigPatch` cases
+    (function `outputType`, router `routes`), all three
+    `applyNodePosition` cases, and the ADR-0029 bridge
+    round-trip + codegen test.
+  - **`apps/web/test-app/irStore.test.ts`** (install-required, Tier 2):
+    the two `updateNodeConfig(...)` flows-through tests (titled after
+    the store action they prove) plus the three `createIRStore`
+    tests — `store.deleteNode` clears selection, `replaceIR` swaps
+    + clears selection, `store.setNodePosition` Save-IR round-trip.
+- **`test-app/` is a sibling of `test/`, never `test/app/`.** The
+  `apps/web` default `"test"` glob is `test/**/*.test.ts`; a nested
+  `test/app/` would be re-pulled into the cold-checkout gate and
+  re-break the invariant this slice restores. Pinned as a trap in
+  the slice prompt; the sibling layout is what makes the rule crisp.
+- **The crisp rule.** `test/** = install-free; test-app/** = install-required`.
+  Anything that imports `zustand`, `lexical`, React, `react-dom`, or
+  any other `apps/web` runtime dep lives in `test-app/`. Anything
+  that imports only IR types, Node builtins, and pure reducer /
+  bridge modules lives in `test/`. New Lexical-touching slices
+  (e.g. DnD chip insertion, deferred from [ADR-0030](DECISIONS.md))
+  extend `test-app/` directly.
+- **Verified by cold-checkout sim.** Acceptance test was running
+  `npm test` with both root and `apps/web` `node_modules` moved
+  aside: 75 tests passed, zero failures. (`apps/web/node_modules`
+  in this workspace only ever held vite caches — npm workspaces
+  hoist all real deps to root — but the sim moves both for
+  belt-and-braces.) With deps restored: `npm run test:web:app`
+  green (8 tests — 5 store-action + 3 Lexical), default `npm test`
+  green (75 tests). `git diff --name-only main -- packages/` empty.
+**Consequences:** The cold-checkout invariant declared by CLAUDE.md
+is now true again — not just for `packages/*` but for the full
+default `npm test`. The two-tier rule is crisp: file location is the
+contract. Tier 2's name no longer leaks its first-inhabitant
+history. The next time someone writes a test that imports a runtime
+dep, the choice is mechanical — `test-app/`, not "is this DOM
+enough to count as `test-dom/`?".

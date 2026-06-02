@@ -1,15 +1,14 @@
 /**
- * Headless reducer test for the IR store (ADR-0022).
+ * Pure reducer + bridge tests for the IR layer used by the inspector
+ * (ADR-0022/0023/0028/0029). Lives under `apps/web/test/` so the default
+ * install-free `npm test` gate (ADR-0011 / ADR-0013) keeps covering it.
  *
- * The UI has no golden oracle, so this test pins the round-trip the slice was
- * built to prove: apply `updateNodeConfig` to the in-memory IR, and the
- * mutation must (a) keep the IR valid and (b) flow through `compile()` into
- * the generated `agents.py`. If a later inspector edit silently breaks this
- * contract, the test fails loud.
+ * Store-action tests that require `createIRStore` (and therefore `zustand`)
+ * live in the install-required tier at `apps/web/test-app/irStore.test.ts`
+ * (ADR-0031 / ADR-0032).
  *
  * Runs under `node --test` against the native TS loader — no `npm install`,
- * no browser, no React tree. The store's pure reducer is in `irReducer.ts`
- * specifically so this file can exercise it without pulling in `zustand`.
+ * no browser, no React tree.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,7 +24,6 @@ import {
   applyNodePosition,
   cloneFixture,
 } from "../src/store/irReducer.ts";
-import { createIRStore } from "../src/store/irStore.ts";
 import {
   editorStateToSegments,
   segmentsToEditorState,
@@ -42,61 +40,6 @@ function loadFixture(): GraphIR {
 function loadRoutingFixture(): GraphIR {
   return JSON.parse(readFileSync(routingFixturePath, "utf8")) as GraphIR;
 }
-
-test("updateNodeConfig({model}) keeps IR valid and flows through to agents.py", () => {
-  const initial = cloneFixture(loadFixture());
-  const original = compile(initial);
-  const originalAgents = original.get("agents.py") ?? "";
-  assert.ok(
-    originalAgents.includes("gemini-flash-latest"),
-    "fixture invariant: city-time uses gemini-flash-latest",
-  );
-
-  const next = applyNodeConfigPatch(initial, "n_city_gen", {
-    model: "gemini-pro-latest",
-  });
-
-  // The reducer is pure: original is untouched.
-  assert.notStrictEqual(next, initial);
-  assert.strictEqual(initial.nodes[0]?.id, "n_city_gen");
-  const initialAgent = initial.nodes[0];
-  assert.ok(initialAgent && initialAgent.type === "agent");
-  assert.strictEqual(initialAgent.config.model, "gemini-flash-latest");
-
-  // The patched node carries the new model; other nodes are referentially equal.
-  const patchedAgent = next.nodes[0];
-  assert.ok(patchedAgent && patchedAgent.type === "agent");
-  assert.strictEqual(patchedAgent.config.model, "gemini-pro-latest");
-  assert.strictEqual(next.nodes[1], initial.nodes[1]);
-
-  // Round-trip through the validator + codegen.
-  const result = validate(next);
-  assert.strictEqual(result.ok, true, `validate must stay clean: ${JSON.stringify(result.errors)}`);
-
-  const project = compile(next);
-  const agents = project.get("agents.py") ?? "";
-  assert.ok(
-    agents.includes("gemini-pro-latest"),
-    "patched model must appear in agents.py",
-  );
-
-  // city_report still uses the original model — only n_city_gen was patched.
-  const flashCount = (agents.match(/gemini-flash-latest/g) ?? []).length;
-  const proCount = (agents.match(/gemini-pro-latest/g) ?? []).length;
-  assert.strictEqual(flashCount, 1, "city_report still uses gemini-flash-latest");
-  assert.strictEqual(proCount, 1, "patched city_generator uses gemini-pro-latest");
-});
-
-test("updateNodeConfig({model: ''}) surfaces a validation finding via compile", () => {
-  const initial = cloneFixture(loadFixture());
-  const broken = applyNodeConfigPatch(initial, "n_city_gen", { model: "" });
-  const result = validate(broken);
-  assert.strictEqual(result.ok, false);
-  assert.ok(
-    result.errors.some((f) => f.code === "AGENT_MISSING_MODEL"),
-    `expected AGENT_MISSING_MODEL, got: ${result.errors.map((f) => f.code).join(", ")}`,
-  );
-});
 
 // ---- Widened inspector surface (ADR-0023) -------------------------------
 
@@ -215,57 +158,6 @@ test("applyNodeConfigPatch on router.routes — matched routes validate, mismatc
   assert.deepStrictEqual(origRouter.config.routes, ["BUG", "CUSTOMER_SUPPORT", "LOGISTICS"]);
 });
 
-// ---- Save / load slice (ADR-0024) ---------------------------------------
-
-// ---- Canvas topology slice (ADR-0026) -----------------------------------
-
-test("store.deleteNode clears selectedNodeId when it matched the removed node", () => {
-  const ir = cloneFixture(loadFixture());
-  const store = createIRStore(ir);
-
-  store.getState().setSelectedNode("n_lookup");
-  assert.strictEqual(store.getState().selectedNodeId, "n_lookup");
-
-  store.getState().deleteNode("n_lookup");
-
-  assert.strictEqual(
-    store.getState().selectedNodeId,
-    null,
-    "selection must clear when the selected node is deleted",
-  );
-  assert.ok(
-    !store.getState().ir.nodes.some((n) => n.id === "n_lookup"),
-    "node must be gone from the store IR",
-  );
-
-  // Deleting a different node leaves the (now-null) selection alone, and
-  // deleting nothing leaves a non-matching selection alone.
-  store.getState().setSelectedNode("n_city_gen");
-  store.getState().deleteNode("n_done");
-  assert.strictEqual(
-    store.getState().selectedNodeId,
-    "n_city_gen",
-    "deleting a different node must not clear the selection",
-  );
-});
-
-test("replaceIR swaps the entire IR and clears the selection", () => {
-  const a = cloneFixture(loadFixture());
-  const b = cloneFixture(loadRoutingFixture());
-  const store = createIRStore(a);
-  store.getState().setSelectedNode("n_city_gen");
-  assert.strictEqual(store.getState().selectedNodeId, "n_city_gen");
-
-  store.getState().replaceIR(b);
-
-  assert.strictEqual(store.getState().ir, b, "store now holds the loaded IR");
-  assert.strictEqual(
-    store.getState().selectedNodeId,
-    null,
-    "selection clears — ids from the loaded IR don't match the previous graph",
-  );
-});
-
 // ---- applyNodePosition (ADR-0028) --------------------------------------
 
 test("applyNodePosition writes node.ui.{x,y} and preserves sibling identity", () => {
@@ -343,24 +235,4 @@ test("bridge-round-tripped instruction segments still validate + flow through to
     agentsPy.includes("<CityTime.city from lookup_time>"),
     "codegen still emits second chip after round-trip",
   );
-});
-
-test("store.setNodePosition persists into the IR and Save IR round-trips positions", () => {
-  const store = createIRStore(cloneFixture(loadFixture()));
-
-  store.getState().setNodePosition("n_city_gen", 999, 333);
-  const moved = store
-    .getState()
-    .ir.nodes.find((n) => n.id === "n_city_gen")!;
-  assert.deepStrictEqual(moved.ui, { x: 999, y: 333 });
-
-  // Mimic the Save IR round-trip — JSON.stringify ↔ JSON.parse — and
-  // confirm the position survives. This is the gate against a future
-  // change that, say, stops persisting `ui` to disk.
-  const serialized = JSON.stringify(store.getState().ir);
-  const roundTripped = JSON.parse(serialized) as typeof store.getState.prototype;
-  const after = (roundTripped as GraphIR).nodes.find(
-    (n) => n.id === "n_city_gen",
-  )!;
-  assert.deepStrictEqual(after.ui, { x: 999, y: 333 });
 });

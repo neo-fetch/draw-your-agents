@@ -14,7 +14,7 @@
     "test:ir": "node --test \"packages/ir/test/**/*.test.ts\"",
     "test:codegen": "node --test \"packages/codegen/test/**/*.test.ts\"",
     "test:web": "node --test \"apps/web/test/**/*.test.ts\"",
-    "test:web:dom": "node --test \"apps/web/test-dom/**/*.test.ts\"",
+    "test:web:app": "node --test \"apps/web/test-app/**/*.test.ts\"",
     "test": "npm run check:ir && npm run test:ir && npm run test:codegen && npm run test:web"
   }
 }

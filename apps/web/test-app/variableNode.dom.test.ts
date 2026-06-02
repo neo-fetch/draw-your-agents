@@ -2,7 +2,7 @@
  * Install-required `VariableNode` tests against the real Lexical runtime
  * (ADR-0031). This file is deliberately NOT under `apps/web/test/` so the
  * default `node --test "test/**\/*.test.ts"` glob — the cold-checkout gate
- * (ADR-0011 / ADR-0013) — never picks it up. Run via `npm run test:web:dom`
+ * (ADR-0011 / ADR-0013) — never picks it up. Run via `npm run test:web:app`
  * from the repo root, after `npm install` inside `apps/web/`.
  *
  * The first test is the `907dea2` regression: `VariableNode`'s constructor

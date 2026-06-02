@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test \"test/**/*.test.ts\"",
-    "test:dom": "node --test \"test-dom/**/*.test.ts\""
+    "test:app": "node --test \"test-app/**/*.test.ts\""
   },
   "dependencies": {
     "@lexical/react": "^0.45.0",
