@@ -1185,3 +1185,151 @@ the single `inputSchemaRef` auto-mutation, and the single-schema rail — all on
 this bridge, with no further IR contract changes. Schema/field authoring, auto-edge
 inference from chip insertion, and non-adjacent (session-`state`) variables remain
 explicitly deferred (PHASE-2-DESIGN decisions 6 / 7, ARCHITECTURE roadmap Phase 3).
+
+## ADR-0030 — Phase 2b: insert variable chip + auto-wire `inputSchemaRef`
+**Context:** [ADR-0029](DECISIONS.md) shipped 2a — the agent prompt is editable and
+round-trips existing chips through the install-free `segmentsBridge.ts`, but the
+user had no way to *produce* a new `VarSegment`. The IR already carried the full
+variable contract (invariant 6 in
+[packages/ir/src/validate.ts](../packages/ir/src/validate.ts); codegen emits the
+source-bound form via `renderInstruction` in
+[packages/codegen/src/fragments.ts](../packages/codegen/src/fragments.ts)); the only
+missing piece was the UI that *yields* well-formed chips and auto-wires the
+companion `inputSchemaRef`. [docs/PHASE-2-DESIGN.md](PHASE-2-DESIGN.md) reserved
+this for slice 2b and pinned the design's spine: because invariant-6 clause (d)
+forces `inputSchemaRef` to equal every chip's `schema`, an agent can reference
+variables from exactly one schema — that fact becomes the **single-schema rail**
+in the palette UX. This ADR records 2b: the insert palette, the click-to-insert
+caret flow, the single `inputSchemaRef` auto-mutation, and the not-upstream
+advisory. `packages/*` stays frozen — no new validator codes, no codegen changes.
+**Decision:**
+- **Pure helper `insertVariable(ir, agentId, ref): GraphIR`
+  ([apps/web/src/store/insertVariable.ts](../apps/web/src/store/insertVariable.ts)).**
+  Appends a `VarSegment` to the agent's `instruction.segments` AND sets
+  `agent.config.inputSchemaRef = ref.schema` when not already equal — one
+  immutable patch, sibling node identity preserved. Joins the install-free
+  reducer family alongside `irReducer.ts` / `addNode.ts` / `irEdges.ts`
+  (ADR-0011 / ADR-0013 / ADR-0022 posture). The same module also exports the
+  palette's pure candidate logic — `candidateVariables`, `chipSchemas`,
+  `upstreamProducers` — so the React shell stays trivial and the rules are
+  pinned by headless tests. Rejected alternative: drive insertion through the
+  existing `updateNodeConfig` reducer with two separate dispatches at the
+  helper layer. That spreads the "what does insertion mean?" semantic across
+  caller sites; collapsing it into one helper gives 2b a single oracle the
+  tests can pin.
+- **`inputSchemaRef` is the only auto-mutation.** No schema authoring, no
+  auto-edge creation, no chip-rewriting, no non-adjacent-variable (session-
+  `state`) support. PHASE-2-DESIGN decision 4 explicitly bounds the slice
+  here; widening it would require a chip-rewrite story we don't have yet
+  (e.g. what happens to existing CityTime chips if a user inserts a Foo
+  chip? — we sidestep via the single-schema rail). The helper's
+  no-op-when-equal short-circuit also keeps the inspector dropdown from
+  seeing a spurious change event on every chip insert.
+- **Single-schema rail in the palette
+  ([apps/web/src/inspector/VariablePalette.tsx](../apps/web/src/inspector/VariablePalette.tsx)).**
+  Keys off the schema(s) of *existing chips* on the agent — not
+  `inputSchemaRef`. PHASE-2-DESIGN decision 5 calls out the deliberate
+  corner: an agent with `inputSchemaRef` set but no chips is offered all
+  candidate schemas (the rail is about "preserve what you've already
+  inserted," not "advertise the declared input"). The rail is enforced in
+  `candidateVariables` so the UI is a pure render of the helper's output
+  — easy to test, hard to mis-style.
+- **Advisory, not validator code.** When the chosen `source` is not in the
+  agent's upstream set (computed by `upstreamProducers` via reverse-BFS on
+  `ir.edges`), the palette button gains a ⚠ marker and an `:hover` title
+  warning. Insertion still works; codegen still emits the chip. PHASE-2-
+  DESIGN decision 7 explicitly chose this over adding a new validator code
+  — that would touch frozen `packages/*` and conflate "didn't wire the
+  edge" (a graph topology gap) with "chip is malformed" (an IR contract
+  violation). v1 accepts the gap, flagged in the UI. Rejected alternative:
+  silently auto-create the `source → agent` edge on insert. That mutates
+  graph topology from a prompt edit — surprising, and breaks the "one
+  focused mutation per action" posture above.
+- **Selection-capture in `InsertVariablePlugin`
+  ([apps/web/src/inspector/VariableEditor.tsx](../apps/web/src/inspector/VariableEditor.tsx)).**
+  PHASE-2-DESIGN trap: a palette-button click moves focus out of the
+  `contenteditable`, so "insert at caret" has no caret by the time the
+  handler runs. Fix: an inner Lexical plugin (must live inside
+  `<LexicalComposer>` to use `useLexicalComposerContext`) registers a
+  `SELECTION_CHANGE_COMMAND` listener and snapshots the last `RangeSelection`
+  via `selection.clone()`. The exposed `insertVariable(ref)` method runs
+  `editor.update(() => { $setSelection(saved.clone()); $insertNodes([...]) })`,
+  falling back to `$getRoot().selectEnd()` if no selection was ever
+  captured (e.g. user clicks the palette without ever focusing the
+  editor). The plugin populates a parent-owned `apiRef` so `AgentForm`
+  (which holds the palette) can drive the editor imperatively — a
+  forwarded ref is the bridge between two siblings inside the same
+  Composer. ADR-0029's "seed once per node" invariant still holds:
+  insertion is via `editor.update` + `$insertNodes`, not a re-seed of
+  `initialConfig.editorState`.
+- **Two-dispatch UI flow, one user-perceived action.** The palette click
+  handler does (1) `editorApiRef.current?.insertVariable(ref)` — the
+  editor's `OnChangePlugin` fires synchronously, runs the existing
+  `editorStateToSegments` path, and dispatches
+  `updateNodeConfig({instruction})`; then (2)
+  `updateNodeConfig({inputSchemaRef: ref.schema})` — skipped when already
+  equal. Two zustand updates, but they collapse into one user-perceived
+  change because React batches the resulting renders. Rejected alternative:
+  drive both via a single `store.insertVariable(agentId, ref)` action that
+  reads the editor's *output* segments. That couples the store to the
+  editor's serialization timing and duplicates the helper's append
+  semantic — the current shape uses the editor as the position oracle
+  (caret-aware) and the helper as the IR-semantic oracle (headless-
+  tested), without overlapping responsibilities.
+- **DnD deferred within 2b.** PHASE-2-DESIGN decision (slice plan)
+  reserved DnD as an enhancement that may be deferred if caret-placement
+  proves flaky. Click-to-insert is the primary, reliable path and ships
+  here; DnD lands later if needed. The `VariableEditorAPI` is the
+  extension point — a future DnD handler can call the same
+  `insertVariable(ref)` after computing the caret from the drop event.
+- **`packages/*` frozen.** No new validator codes; invariant 6 still owns
+  the IR spec and surfaces in the Preview pane. Codegen goldens are
+  untouched. `apps/web` is the only `npm install` boundary; no new
+  dependencies beyond what 2a added.
+**Headless regression oracle.** Two new test files under
+[apps/web/test/](../apps/web/test/), both running install-free under
+`node --test`:
+- [insertVariable.test.ts](../apps/web/test/insertVariable.test.ts) — six
+  tests pin the pure helper:
+  1. Sensible case: insert `CityTime.time_info` into a chip-free
+     `n_report` → `validate(next).ok === true` and
+     `compile(next).get("agents.py")` includes
+     `<CityTime.time_info from lookup_time>`.
+  2. Auto-wires `inputSchemaRef` from `null` → `"CityTime"`.
+  3. Leaves `inputSchemaRef` alone when already equal (no spurious
+     mutation).
+  4. Purity: original IR + sibling nodes preserve referential identity.
+  5. Unknown `agentId` is a no-op (returns input IR ref).
+  6. Non-agent target (a function node id) is a no-op.
+- [insertVariable.candidates.test.ts](../apps/web/test/insertVariable.candidates.test.ts)
+  — four tests pin the palette logic:
+  1. Single-schema rail blocks a second schema once any chip is locked
+     (synthetic `Foo`-producing function added on top of city-time).
+  2. No chips ⇒ all structured candidates offered (rail disengaged).
+  3. Excludes `"str"` / `null` producers and the consuming agent itself.
+  4. `upstreamProducers` walks reverse `ir.edges`; with the producer →
+     agent edge removed, every candidate is flagged `isUpstream: false`
+     (drives the UI advisory).
+**Manual verification (`apps/web && npm install && npm run dev`):**
+1. Load the city-time fixture, click `city_report` → the Variable Palette
+   appears below the instruction editor, listing `lookup_time.city` and
+   `lookup_time.time_info` (CityTime — the single-schema rail is engaged
+   because chips already exist).
+2. Place the caret inside the prompt between two text runs, click a
+   palette button → chip lands at the caret; Preview's `agents.py`
+   `instruction=` updates with the new source-bound string.
+3. Clear chips manually, dropdown-set `inputSchemaRef` to `null`, insert a
+   CityTime field → `inputSchemaRef` flips back to `"CityTime"` in the
+   inspector dropdown and Preview validates clean.
+4. Click a palette button without first focusing the editor → chip
+   appends at the end of the prompt (the `selectEnd()` fallback).
+5. Delete the `lookup_time → city_report` edge in the canvas → palette
+   buttons get a ⚠ marker; insertion still works; validator stays silent
+   (advisory only — deliberate per design decision 7).
+**Consequences:** Phase 2 ships end-to-end — the headline variable-chip
+system is now reachable from the UI with one focused auto-mutation.
+DnD is the only enhancement left within Phase 2's scope. Schema/field
+authoring, auto-edge inference from chip insertion, and non-adjacent
+(session-`state`) variables remain explicitly deferred (PHASE-2-DESIGN
+decisions 6 / 7, ARCHITECTURE roadmap Phase 3). Draw.io import (Phase 3)
+is then the last major v1 piece.

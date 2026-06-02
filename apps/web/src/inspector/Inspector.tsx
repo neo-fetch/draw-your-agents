@@ -19,9 +19,11 @@ import type {
   ToolNode,
   WorkflowNode,
 } from "@graphical-agents/ir";
+import { useRef } from "react";
 import { useIRStore } from "../store/irStore.ts";
 import type { ModelParamKey } from "../store/irReducer.ts";
-import { VariableEditor } from "./VariableEditor.tsx";
+import { VariableEditor, type VariableEditorAPI } from "./VariableEditor.tsx";
+import { VariablePalette } from "./VariablePalette.tsx";
 
 // ----- shared widgets -----------------------------------------------------
 
@@ -193,6 +195,14 @@ function AgentForm({ node }: { node: AgentNode }) {
   const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
   const params = node.config.modelParams ?? {};
 
+  // Imperative handle into the Lexical editor for chip insertion (ADR-0030).
+  // The palette button click blurs the editor and collapses the selection,
+  // so `VariableEditor` snapshots the last RangeSelection and the insert
+  // call restores it; fallback is `selectEnd()` (PHASE-2-DESIGN trap).
+  // Per-node ref — `key={node.id}` remounts the editor and clears any
+  // stale handle on agent switch.
+  const editorApiRef = useRef<VariableEditorAPI | null>(null);
+
   const paramRow = (key: ModelParamKey, label: string, step = "0.01") => (
     <div style={ROW}>
       <label htmlFor={`agent-${key}`}>{label}</label>
@@ -280,7 +290,8 @@ function AgentForm({ node }: { node: AgentNode }) {
         <label>instruction</label>
         <div style={HINT}>
           editable prompt — existing variable chips are atomic
-          (backspace deletes a whole chip). Field insertion lands in 2b.
+          (backspace deletes a whole chip). Use the palette below to
+          insert a producer field at the caret.
         </div>
         {/*
           Seed-once-per-node: `key={node.id}` remounts the editor on node
@@ -291,9 +302,27 @@ function AgentForm({ node }: { node: AgentNode }) {
         <VariableEditor
           key={node.id}
           segments={node.config.instruction.segments}
+          apiRef={editorApiRef}
           onChange={(segments) =>
             updateNodeConfig(node.id, { instruction: { segments } })
           }
+        />
+        <VariablePalette
+          agent={node}
+          onInsert={(ref) => {
+            // 1. Insert the chip at the captured caret (or end). The
+            //    editor's OnChangePlugin fires synchronously and
+            //    dispatches `updateNodeConfig({instruction})` with the
+            //    new segments.
+            editorApiRef.current?.insertVariable(ref);
+            // 2. Auto-wire `inputSchemaRef` — the slice's ONLY auto-
+            //    mutation beyond the segment append (PHASE-2-DESIGN
+            //    decision 4). Skipped when already equal so the
+            //    inspector dropdown doesn't see a no-op change event.
+            if (node.config.inputSchemaRef !== ref.schema) {
+              updateNodeConfig(node.id, { inputSchemaRef: ref.schema });
+            }
+          }}
         />
       </div>
     </div>
