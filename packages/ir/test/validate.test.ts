@@ -120,6 +120,13 @@ test("nested fixture validates with zero errors and zero warnings", () => {
   assert.equal(r.ok, true);
 });
 
+test("showcase-all-nodes fixture (every node type) validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/showcase-all-nodes.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
 test("workflow node missing config.graph emits WORKFLOW_MISSING_GRAPH", () => {
   const ir = {
     irVersion: "0.1.0",

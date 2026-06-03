@@ -1,0 +1,197 @@
+{
+  "irVersion": "0.1.0",
+  "name": "showcase_all_nodes",
+  "description": "End-to-end article pipeline that exercises every IR node type in one functional graph: START → ask_topic (humanInput) → fetch_article (tool, emits a structured Article) → summarize (agent, consumes Article via a prompt var) → expand_sections (nested workflow: parallel function fan-out → join → function) → classify (router) → {publish (function), request_revision (agent)}. The router branches are terminal and the join lives inside the nested workflow, since a router picks one branch while a join waits for all upstreams.",
+  "schemas": [
+    {
+      "name": "Article",
+      "fields": [
+        { "name": "title", "type": "str" },
+        { "name": "body", "type": "str" }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_ask_topic",
+      "type": "humanInput",
+      "name": "ask_topic",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "message": "Enter a topic to write an article about:",
+        "payloadRef": null,
+        "responseSchemaRef": null
+      }
+    },
+    {
+      "id": "n_fetch_article",
+      "type": "tool",
+      "name": "fetch_article",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Fetch a source article for the requested topic.",
+        "inputType": "str",
+        "outputType": "Article",
+        "body": null
+      }
+    },
+    {
+      "id": "n_summarize",
+      "type": "agent",
+      "name": "summarize",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Summarize the following article in one sentence:\n" },
+            { "type": "var", "schema": "Article", "field": "body", "source": "fetch_article" }
+          ]
+        },
+        "modelParams": { "temperature": 0.2, "topP": 0.95, "topK": 40, "maxOutputTokens": 1024 },
+        "mode": "task",
+        "tools": [],
+        "inputSchemaRef": "Article",
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_expand",
+      "type": "workflow",
+      "name": "expand_sections",
+      "ui": { "x": 780, "y": 0 },
+      "config": {
+        "description": "Nested sub-graph: draft three sections in parallel, join them, then assemble a full draft.",
+        "graph": {
+          "irVersion": "0.1.0",
+          "name": "expand_sections",
+          "description": "Parallel section drafting with a JoinNode.",
+          "schemas": [],
+          "nodes": [
+            {
+              "id": "n_draft_intro",
+              "type": "function",
+              "name": "draft_intro",
+              "ui": { "x": 0, "y": -120 },
+              "config": {
+                "description": "Draft the introduction section.",
+                "inputType": "str",
+                "outputType": "str",
+                "emits": "output",
+                "body": null
+              }
+            },
+            {
+              "id": "n_draft_body",
+              "type": "function",
+              "name": "draft_body",
+              "ui": { "x": 0, "y": 0 },
+              "config": {
+                "description": "Draft the body section.",
+                "inputType": "str",
+                "outputType": "str",
+                "emits": "output",
+                "body": null
+              }
+            },
+            {
+              "id": "n_draft_conclusion",
+              "type": "function",
+              "name": "draft_conclusion",
+              "ui": { "x": 0, "y": 120 },
+              "config": {
+                "description": "Draft the conclusion section.",
+                "inputType": "str",
+                "outputType": "str",
+                "emits": "output",
+                "body": null
+              }
+            },
+            {
+              "id": "n_merge_sections",
+              "type": "join",
+              "name": "merge_sections",
+              "ui": { "x": 260, "y": 0 },
+              "config": {
+                "description": "Wait for all three section drafts to complete."
+              }
+            },
+            {
+              "id": "n_assemble_draft",
+              "type": "function",
+              "name": "assemble_draft",
+              "ui": { "x": 520, "y": 0 },
+              "config": {
+                "description": "Assemble the merged sections into a single draft.",
+                "inputType": "str",
+                "outputType": "str",
+                "emits": "output",
+                "body": null
+              }
+            }
+          ],
+          "edges": [
+            { "from": "START", "to": "n_draft_intro" },
+            { "from": "START", "to": "n_draft_body" },
+            { "from": "START", "to": "n_draft_conclusion" },
+            { "from": "n_draft_intro", "to": "n_merge_sections" },
+            { "from": "n_draft_body", "to": "n_merge_sections" },
+            { "from": "n_draft_conclusion", "to": "n_merge_sections" },
+            { "from": "n_merge_sections", "to": "n_assemble_draft" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n_classify",
+      "type": "router",
+      "name": "classify",
+      "ui": { "x": 1040, "y": 0 },
+      "config": {
+        "description": "Decide whether the assembled draft is ready to publish or needs revision.",
+        "routes": ["PUBLISH", "REVISE"],
+        "inputType": "str",
+        "body": null
+      }
+    },
+    {
+      "id": "n_publish",
+      "type": "function",
+      "name": "publish",
+      "ui": { "x": 1300, "y": -80 },
+      "config": {
+        "description": "Publish the finished article.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_request_revision",
+      "type": "agent",
+      "name": "request_revision",
+      "ui": { "x": 1300, "y": 80 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Explain what should be revised before this article can be published." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_ask_topic" },
+    { "from": "n_ask_topic", "to": "n_fetch_article" },
+    { "from": "n_fetch_article", "to": "n_summarize" },
+    { "from": "n_summarize", "to": "n_expand" },
+    { "from": "n_expand", "to": "n_classify" },
+    { "from": "n_classify", "to": "n_publish", "route": "PUBLISH" },
+    { "from": "n_classify", "to": "n_request_revision", "route": "REVISE" }
+  ]
+}
