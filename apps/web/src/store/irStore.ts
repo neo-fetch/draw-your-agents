@@ -17,6 +17,7 @@ import {
   applyNodeConfigPatch,
   applyNodePosition,
   cloneFixture,
+  renameNode as renameNodeReducer,
   type ModelParamKey,
 } from "./irReducer.ts";
 import { addNode as addNodeReducer, type AddableNodeType } from "./addNode.ts";
@@ -69,6 +70,15 @@ export interface IRState {
    * re-renders don't churn.
    */
   setNodePosition: (nodeId: string, x: number, y: number) => void;
+  /**
+   * Rename a top-level node and cascade every top-level reference to its old
+   * name (ADR-0036): var-segment `source` in every agent's
+   * `instruction.segments` and every entry of every agent's `config.tools[]`.
+   * Edges are id-keyed and left alone. No-op when the id is unknown or the
+   * name is unchanged. Identifier validity / uniqueness is the validator's
+   * job (invariant 1); Preview surfaces findings honestly.
+   */
+  renameNode: (nodeId: string, newName: string) => void;
   /**
    * Swap the entire IR (used by Load IR — ADR-0024). Clears the selection
    * because node ids from the loaded IR don't match the previous graph.
@@ -164,6 +174,8 @@ export function createIRStore(initial: GraphIR): IRStore {
       set((s) => ({ ir: applyModelParamPatch(s.ir, nodeId, key, value) })),
     setNodePosition: (nodeId, x, y) =>
       set((s) => ({ ir: applyNodePosition(s.ir, nodeId, x, y) })),
+    renameNode: (nodeId, newName) =>
+      set((s) => ({ ir: renameNodeReducer(s.ir, nodeId, newName) })),
     replaceIR: (ir) => set({ ir, selectedNodeId: null, selectedEdge: null }),
     addNode: (type, position) =>
       set((s) => {

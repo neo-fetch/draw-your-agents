@@ -1685,3 +1685,75 @@ fields show up as draggable chips on a downstream agent. The deliberate gaps tha
 reordering, drag-and-drop reorder — each have a sentence in this ADR or in the codebase guarding
 the boundary; none changes this slice's contracts. Phase 2 is now complete; the only remaining v1
 piece is Phase 3 (draw.io import).
+
+## ADR-0036 — Editable node names: `renameNode` pure reducer + cascade closes the canvas-rename gap (node analog of ADR-0035 `renameSchema`)
+**Context.** [ADR-0025](DECISIONS.md) made every v1 node addable from the palette, [ADR-0023](DECISIONS.md)
+opened the per-type config form, and [ADR-0035](DECISIONS.md) made `ir.schemas` graphically authorable.
+But `node.name` itself — the codegen symbol AND the `<Schema.field from name>` source binding
+([docs/IR-SCHEMA.md](IR-SCHEMA.md) invariant 1) — was still **read-only** post-`addNode`. The
+inspector `Header` rendered `node.name` as a static `<div>`
+([apps/web/src/inspector/Inspector.tsx](../apps/web/src/inspector/Inspector.tsx)) and the only way
+to change a name was Load IR JSON. The prime motivator is **producer renames**: every consumer
+agent's var chip stores `source: "<producer name>"`, so renaming a producer without a cascade
+silently breaks codegen and rains `VAR_*` findings. This slice closes that gap as the node analog
+of [ADR-0035](DECISIONS.md)'s `renameSchema` cascade.
+**Decisions.**
+- **Single pure reducer `renameNode(ir, nodeId, newName)` in
+  [apps/web/src/store/irReducer.ts](../apps/web/src/store/irReducer.ts).** Lives next to the other
+  per-node patches (`applyNodeConfigPatch`, `applyModelParamPatch`, `applyNodePosition`) rather
+  than getting its own module — it has none of `addNode.ts`'s namespace-minting complexity, so
+  sibling-to-other-reducers reads cleaner and avoids growing the store-import surface. Install-free
+  per [ADR-0011](DECISIONS.md) / [ADR-0013](DECISIONS.md) / [ADR-0022](DECISIONS.md) /
+  [ADR-0032](DECISIONS.md): React-free, zustand-free, IR types type-only. Pure: new IR, original
+  untouched, unaffected sibling nodes preserve referential identity so React Flow doesn't churn
+  unrelated cards.
+- **Cascade scope = var-segment `source` + agent `config.tools[]` only.** Renaming a producer
+  rewrites every agent's `instruction.segments[].source === oldName` to `newName`, and every
+  agent's `config.tools[]` entry equal to `oldName` to `newName`. Without the cascade, every
+  affected chip would render `<...from <stale>>` until the user manually edited each agent — the
+  same paper-cut [ADR-0035](DECISIONS.md) eliminated for schema refs. **Edges are NOT touched**:
+  `Edge.from` / `Edge.to` are node `id`s, not names ([docs/IR-SCHEMA.md](IR-SCHEMA.md) Edges
+  section), so they survive a rename unchanged. **Top-level only — nested
+  `workflow.config.graph.nodes` are out of scope**, consistent with the nested-graph editing
+  deferral across [ADR-0017](DECISIONS.md) / [ADR-0023](DECISIONS.md) / [ADR-0026](DECISIONS.md) /
+  [ADR-0029](DECISIONS.md) / [ADR-0035](DECISIONS.md). When sub-graph editing lands, the same
+  reducer will need to recurse (or the sub-graph slice picks it up as a sibling concern).
+- **Validator left alone (mirror-the-validator).** `renameNode` does NOT re-check identifier
+  validity, uniqueness, or python-keyword rules — invariant 1 stays in
+  [packages/ir/src/validate.ts](../packages/ir/src/validate.ts) and Preview surfaces
+  `INVALID_NODE_NAME` / `DUPLICATE_NODE_NAME` honestly if the user types something illegal
+  ([ADR-0023](DECISIONS.md) mirror-the-validator posture). The IR accepts whatever string the user
+  typed; the findings list tells them what's wrong.
+- **Inspector commit-on-blur via a local-buffer `NodeNameInput`.** The Inspector `Header` now
+  renders a text input bound to the node's name, with a local buffer that commits on blur / Enter
+  and reverts on Esc — same posture as [ADR-0035](DECISIONS.md)'s `NameInput`. Per-keystroke
+  dispatch would fire a rename cascade plus a parade of `INVALID_NODE_NAME` findings for half-typed
+  names like `lookup_tim`. Rejected: extracting `NameInput` from `SchemaPanel.tsx` into a shared
+  module — currently a 30-line local helper with only two callers; extraction is busy-work until a
+  third caller appears.
+- **No store-side selection housekeeping.** `selectedNodeId` is the `id` (stable across rename),
+  so the inspector and canvas continue to address the same node after a rename without any
+  cross-cutting cleanup. The canvas card already reads `node.name` from the IR
+  ([apps/web/src/canvas/IRNode.tsx](../apps/web/src/canvas/IRNode.tsx)), so the label updates live
+  with no edit.
+- **`packages/*` unchanged.** No new validator codes, no codegen change. The slice is a pure
+  consumer of the existing IR contract.
+**Headless oracle.** [apps/web/test/renameNode.test.ts](../apps/web/test/renameNode.test.ts) pins
+the reducer under `node --test` install-free
+([ADR-0032](DECISIONS.md) `test/**` = install-free tier): producer rename cascades to every
+consumer agent's chip `source`, validates clean, and codegen emits `<CityTime.time_info from <new>>`
+with no stale `from <old>` anywhere; agent `tools[]` rewrites the matching entry while
+unrelated tools[] entries pass through unchanged; same-name and unknown-id calls return the input
+IR ref; unaffected sibling nodes preserve referential identity while the consumer agent (which
+references the renamed producer) is rebuilt.
+**Verification.** Default `npm test` 93 green (88 → 93: +5 new tests).
+`npm run test:web:app` 8/8 unchanged. Vite production build clean. `git diff --name-only main --
+packages/` empty.
+**Consequences.** The canvas-rename gap is closed: a user can now drop a node and immediately give
+it a meaningful name without leaving the inspector; producer renames cascade into every consumer
+agent automatically. One known minor: editing agent A's prompt while renaming a *different*
+producer node B that A's chip references won't re-seed A's open Lexical editor until the user
+re-selects A. This is the same seed-once-per-node trade-off [ADR-0029](DECISIONS.md) already pins
+via `key={node.id}` on `<VariableEditor>` — the IR + codegen are correct; only the *open* editor
+view lags. The deliberate gaps that remain — nested `workflow.config.graph.nodes` rename + their
+sub-graph cascade — track the same boundary as [ADR-0035](DECISIONS.md) for schemas.

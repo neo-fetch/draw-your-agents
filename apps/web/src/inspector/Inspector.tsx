@@ -19,7 +19,7 @@ import type {
   ToolNode,
   WorkflowNode,
 } from "@graphical-agents/ir";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useIRStore } from "../store/irStore.ts";
 import type { ModelParamKey } from "../store/irReducer.ts";
 import { VariableEditor, type VariableEditorAPI } from "./VariableEditor.tsx";
@@ -176,10 +176,51 @@ function TextArea({ id, value, onChange, rows = 6 }: TextAreaProps) {
 
 // ----- header -------------------------------------------------------------
 
+/**
+ * Commit-on-blur name editor for the selected node (ADR-0036). Local buffer
+ * so a half-typed name like "lookup_tim" doesn't dispatch a rename cascade +
+ * a parade of `INVALID_NODE_NAME` findings on every keystroke — same posture
+ * as the schema panel's `NameInput` (ADR-0035). Parent keys the wrapper on
+ * `node.id` so a node-selection switch remounts with fresh `initial`.
+ */
+function NodeNameInput({
+  initial,
+  onCommit,
+}: {
+  initial: string;
+  onCommit: (next: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  return (
+    <input
+      type="text"
+      aria-label="node name"
+      value={value}
+      style={{ fontWeight: 600, width: "100%" }}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => {
+        if (value !== initial) onCommit(value);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        else if (e.key === "Escape") {
+          setValue(initial);
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+    />
+  );
+}
+
 function Header({ node }: { node: GraphNode }) {
+  const renameNode = useIRStore((s) => s.renameNode);
   return (
     <div style={ROW}>
-      <div style={{ fontWeight: 600 }}>{node.name}</div>
+      <NodeNameInput
+        key={node.id}
+        initial={node.name}
+        onCommit={(next) => renameNode(node.id, next)}
+      />
       <div style={HINT}>
         {node.id} · {node.type}
       </div>
