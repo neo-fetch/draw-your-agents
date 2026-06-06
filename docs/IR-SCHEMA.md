@@ -20,12 +20,14 @@ Worked example: [`packages/ir/fixtures/city-time.ir.json`](../packages/ir/fixtur
 ## Schemas (pydantic models)
 ```jsonc
 { "name": "CityTime", "fields": [
-  { "name": "time_info", "type": "str" },          // type ∈ str|int|float|bool|date|datetime
+  { "name": "time_info", "type": "str" },          // type ∈ scalar | declared schema name
   { "name": "city", "type": "str", "optional": false }
 ]}
 ```
-A **type reference** anywhere (`inputType`, `outputType`, `inputSchemaRef`, `outputSchemaRef`) is
-either the literal `"str"` or the `name` of a declared schema. `inputSchemaRef` may also be `null`.
+A **type reference** anywhere (`field.type`, `inputType`, `outputType`, `inputSchemaRef`,
+`outputSchemaRef`) is a scalar (`str|int|float|bool|date|datetime`) or the `name` of a
+declared schema (ADR-0037 — field types may now nest one schema inside another, e.g.
+`{"name":"customer","type":"Customer"}`). `inputSchemaRef` may also be `null`.
 
 ## Nodes
 Common: `id` (unique, stable), `type`, `name` (unique python identifier — used as the codegen
@@ -99,7 +101,7 @@ across parent + every nested sub-graph (invariant 1 holds across nesting).
 2. `"START"` is reserved; it may appear only as an edge `from`, never as a node name or edge `to`.
 3. Every edge endpoint exists; at least one `START` edge; all nodes reachable from START.
 4. The graph is a DAG (no cycles in v1).
-5. Every type reference resolves to `"str"`, `null` (where allowed), or a declared schema.
+5. Every type reference resolves to a scalar, `null` (where allowed), or a declared schema. Schema-typed field references must form a DAG — `SchemaField.type` may name another declared schema, but cycles (including self-reference) are rejected (ADR-0037).
 6. For each prompt `var` segment: `source` is a node; its output is the structured `schema`
    (not `str`); the schema has `field`; the consuming agent's `inputSchemaRef` equals `schema`.
 7. Router: declared `routes` ⇔ out-edge `route` labels (no missing, no extra, none unlabeled).

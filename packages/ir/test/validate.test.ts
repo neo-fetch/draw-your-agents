@@ -180,6 +180,91 @@ test("nested sub-IR findings are located with a parent-id path prefix", () => {
   assert.equal(f!.nodeId, "n_outer/n_inner");
 });
 
+// -- nested pydantic schemas (ADR-0037) --
+
+test("nested-schema fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/nested-schema.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("UNKNOWN_FIELD_TYPE for a field type that is neither a scalar nor a declared schema", () => {
+  const ir = {
+    irVersion: "0.1.0",
+    name: "bad_field_type",
+    schemas: [
+      { name: "Order", fields: [{ name: "ghost", type: "Mystery" }] },
+    ],
+    nodes: [
+      {
+        id: "n_fn",
+        type: "function",
+        name: "fn",
+        config: { inputType: "str", outputType: "str", body: null },
+      },
+    ],
+    edges: [{ from: "START", to: "n_fn" }],
+  } as unknown as GraphIR;
+  const r = validate(ir);
+  const codes = new Set(r.errors.map((f) => f.code));
+  assert.ok(codes.has(ValidationCode.UNKNOWN_FIELD_TYPE));
+});
+
+test("scalar and forward-referenced schema field types pass without UNKNOWN_FIELD_TYPE", () => {
+  // Order declared BEFORE Customer in the array, but field types to Customer.
+  // Must not flag UNKNOWN_FIELD_TYPE — declared-schema names are valid types
+  // regardless of array position; the cycle check is what enforces emit order.
+  const r = validate(loadIR("../fixtures/nested-schema.ir.json"));
+  const codes = new Set(r.errors.map((f) => f.code));
+  assert.ok(!codes.has(ValidationCode.UNKNOWN_FIELD_TYPE));
+});
+
+test("SCHEMA_FIELD_CYCLE on A ↔ B mutual reference", () => {
+  const ir = {
+    irVersion: "0.1.0",
+    name: "mutual_cycle",
+    schemas: [
+      { name: "A", fields: [{ name: "b", type: "B" }] },
+      { name: "B", fields: [{ name: "a", type: "A" }] },
+    ],
+    nodes: [
+      {
+        id: "n_fn",
+        type: "function",
+        name: "fn",
+        config: { inputType: "str", outputType: "str", body: null },
+      },
+    ],
+    edges: [{ from: "START", to: "n_fn" }],
+  } as unknown as GraphIR;
+  const r = validate(ir);
+  assert.equal(r.ok, false);
+  const codes = new Set(r.errors.map((f) => f.code));
+  assert.ok(codes.has(ValidationCode.SCHEMA_FIELD_CYCLE));
+});
+
+test("SCHEMA_FIELD_CYCLE on self-reference", () => {
+  const ir = {
+    irVersion: "0.1.0",
+    name: "self_cycle",
+    schemas: [{ name: "Tree", fields: [{ name: "child", type: "Tree" }] }],
+    nodes: [
+      {
+        id: "n_fn",
+        type: "function",
+        name: "fn",
+        config: { inputType: "str", outputType: "str", body: null },
+      },
+    ],
+    edges: [{ from: "START", to: "n_fn" }],
+  } as unknown as GraphIR;
+  const r = validate(ir);
+  assert.equal(r.ok, false);
+  const codes = new Set(r.errors.map((f) => f.code));
+  assert.ok(codes.has(ValidationCode.SCHEMA_FIELD_CYCLE));
+});
+
 test("duplicate node name across parent + nested levels fires DUPLICATE_NODE_NAME", () => {
   // The flat global namespace (ADR-0017): parent has a function named `shared`;
   // a nested sub-graph reuses the same name → flagged at the child.

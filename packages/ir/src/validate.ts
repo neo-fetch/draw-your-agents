@@ -43,7 +43,8 @@ export const ValidationCode = {
   INVALID_SCHEMA_NAME: "INVALID_SCHEMA_NAME",
   DUPLICATE_SCHEMA_NAME: "DUPLICATE_SCHEMA_NAME",
   INVALID_FIELD_NAME: "INVALID_FIELD_NAME",
-  INVALID_FIELD_TYPE: "INVALID_FIELD_TYPE",
+  UNKNOWN_FIELD_TYPE: "UNKNOWN_FIELD_TYPE",
+  SCHEMA_FIELD_CYCLE: "SCHEMA_FIELD_CYCLE",
   // Nodes
   NODE_MISSING_ID: "NODE_MISSING_ID",
   DUPLICATE_NODE_ID: "DUPLICATE_NODE_ID",
@@ -186,7 +187,21 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
   const edgeList: Loose[] = Array.isArray(doc.edges) ? doc.edges : [];
 
   // -- index schemas --
+  // Pre-collect declared schema names so the field-type check below sees forward
+  // references (a field on schema A may legitimately type to schema B that's
+  // declared later in the array, as long as the dependency DAG is acyclic).
+  const declaredSchemaNames = new Set<string>();
+  for (const s of schemaList) {
+    if (typeof s?.name === "string") declaredSchemaNames.add(s.name);
+  }
+  const fieldTypeOk = (t: unknown): boolean =>
+    typeof t === "string" && (SCALARS.has(t) || declaredSchemaNames.has(t));
+
   const schemaFields = new Map<string, Set<string>>(); // schema name -> field names
+  // schema name -> the names of other declared schemas its fields reference.
+  // Used to detect SCHEMA_FIELD_CYCLE (self-ref or A↔B). Scoped to this level
+  // (same as refOk) — flat-global names live in globalSchemas separately.
+  const schemaDeps = new Map<string, string[]>();
   for (const s of schemaList) {
     const name = s?.name;
     if (!isIdent(name)) {
@@ -202,6 +217,7 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
     }
     const fields: Loose[] = Array.isArray(s?.fields) ? s.fields : [];
     const fieldSet = new Set<string>();
+    const deps: string[] = [];
     for (const f of fields) {
       const fname = f?.name;
       if (!isIdent(fname)) {
@@ -209,11 +225,44 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
       } else {
         fieldSet.add(fname);
       }
-      if (!SCALARS.has(f?.type)) {
-        err(ValidationCode.INVALID_FIELD_TYPE, `schema ${name}.${fname}: bad type ${repr(f?.type)}`);
+      if (!fieldTypeOk(f?.type)) {
+        err(ValidationCode.UNKNOWN_FIELD_TYPE, `schema ${name}.${fname}: bad type ${repr(f?.type)}`);
+      } else if (declaredSchemaNames.has(f.type)) {
+        deps.push(f.type);
       }
     }
-    if (typeof name === "string") schemaFields.set(name, fieldSet);
+    if (typeof name === "string") {
+      schemaFields.set(name, fieldSet);
+      schemaDeps.set(name, deps);
+    }
+  }
+
+  // Schema-to-schema field-reference DAG (per validateGraph level). v1 rejects
+  // any cycle (including self-reference): without forward-ref + model_rebuild
+  // codegen, declared-before-used emission would otherwise be unsatisfiable.
+  // Mirrors the edge-cycle DFS below — same WHITE/GREY/BLACK colouring.
+  {
+    const WHITE = 0, GREY = 1, BLACK = 2;
+    const color = new Map<string, number>();
+    for (const n of schemaDeps.keys()) color.set(n, WHITE);
+    const dfs = (u: string): void => {
+      color.set(u, GREY);
+      for (const v of schemaDeps.get(u) ?? []) {
+        if (!color.has(v)) continue;
+        if (color.get(v) === GREY) {
+          err(
+            ValidationCode.SCHEMA_FIELD_CYCLE,
+            `schema field-reference cycle through ${v}`,
+          );
+        } else if (color.get(v) === WHITE) {
+          dfs(v);
+        }
+      }
+      color.set(u, BLACK);
+    };
+    for (const n of schemaDeps.keys()) {
+      if (color.get(n) === WHITE) dfs(n);
+    }
   }
 
   const refOk = (ref: unknown, allowNull = false): boolean => {

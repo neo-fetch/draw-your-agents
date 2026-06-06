@@ -47,6 +47,7 @@ const PROJECTS = [
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json" },
   { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json" },
   { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json" },
+  { name: "nested-schema", fixture: "packages/ir/fixtures/nested-schema.ir.json" },
 ];
 
 for (const { name, fixture } of PROJECTS) {

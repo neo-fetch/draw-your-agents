@@ -11,7 +11,9 @@ export type ScalarType = "str" | "int" | "float" | "bool" | "date" | "datetime";
 
 export interface SchemaField {
   name: string;
-  type: ScalarType;
+  /** Scalar **or** the `name` of another declared SchemaDef — same TypeRef shape
+   *  as `inputType` / `outputType` / `inputSchemaRef` / `outputSchemaRef`. */
+  type: TypeRef;
   optional?: boolean;
   default?: unknown;
 }

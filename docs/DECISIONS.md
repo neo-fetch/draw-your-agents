@@ -1757,3 +1757,87 @@ re-selects A. This is the same seed-once-per-node trade-off [ADR-0029](DECISIONS
 via `key={node.id}` on `<VariableEditor>` — the IR + codegen are correct; only the *open* editor
 view lags. The deliberate gaps that remain — nested `workflow.config.graph.nodes` rename + their
 sub-graph cascade — track the same boundary as [ADR-0035](DECISIONS.md) for schemas.
+
+## ADR-0037 — Nested pydantic models in schemas: `SchemaField.type` widens to `TypeRef`, validator gains `UNKNOWN_FIELD_TYPE` + `SCHEMA_FIELD_CYCLE`, schemas emit topologically
+**Context.** Slice 2-A of the nested-schemas design
+([docs/PHASE-NESTED-SCHEMAS-DESIGN.md](PHASE-NESTED-SCHEMAS-DESIGN.md)). Before this slice,
+`SchemaField.type` was the six-scalar `ScalarType` only ([packages/ir/src/types.ts](../packages/ir/src/types.ts)),
+so the common `class Order(BaseModel): customer: Customer` shape was unbuildable from the IR.
+`inputType` / `outputType` / `inputSchemaRef` / `outputSchemaRef` already meant "scalar OR a
+declared schema name" — fields lagged behind. This slice closes that asymmetry inside the
+otherwise-frozen `packages/*` core; the editor `<select>` follow-up is Slice 2-B (`apps/web`).
+**Decisions.**
+- **`SchemaField.type` becomes a `TypeRef`** ([packages/ir/src/types.ts](../packages/ir/src/types.ts)).
+  `ScalarType` stays exported — the validator and codegen still key off the scalar set. JSON
+  schema ([packages/ir/schema/ir.schema.json](../packages/ir/schema/ir.schema.json)) widens
+  `definitions.field.type` from `{$ref: scalarType}` to `{anyOf: [scalarType, identifier]}`.
+  No new field; the existing `type` string carries the wider meaning, mirroring the existing
+  TypeRef slots. Backwards compatible — every existing fixture still validates byte-for-byte.
+- **Validator gains two codes** ([packages/ir/src/validate.ts](../packages/ir/src/validate.ts)).
+  `INVALID_FIELD_TYPE` is **renamed in place** to `UNKNOWN_FIELD_TYPE` (no production caller
+  yet — the field-loop is the only emitter, and `apps/web` doesn't key off the code). The
+  field-type check now runs through a `fieldTypeOk(t) = SCALARS.has(t) || declaredSchemaNames.has(t)`
+  helper. To support forward references (Order declared before Customer in the array but
+  referencing it), declared schema names are pre-collected in a first pass; field-type
+  validation happens in a second pass over the same loop. `SCHEMA_FIELD_CYCLE` is the new
+  cycle code: a per-level schema→schema DAG is built from schema-typed field references and
+  WHITE/GREY/BLACK DFS — same colouring as the existing edge-cycle check — rejects every
+  cycle, including the degenerate self-reference (`A.x: A`). Scoped to the current
+  `validateGraph` level (same posture as `refOk`), so nested sub-graphs each get their own
+  cycle check; the flat-global names in `globalSchemas` are only used for the
+  `DUPLICATE_SCHEMA_NAME` check.
+- **Rejected: forward-ref + `model_rebuild()`.** Pydantic supports recursive models via
+  string annotations and `model_rebuild()`, which would let v1 accept `A↔B` and `A→A`. We
+  rejected this for the slice: emit-order would still need to thread forward-refs, the
+  generated `schemas.py` would lose its declared-before-used readability, and no fixture
+  needs it. Cycles can be unblocked later by a single ADR + codegen change without touching
+  the IR contract.
+- **Codegen `renderSchema` gains the schemas map**
+  ([packages/codegen/src/fragments.ts](../packages/codegen/src/fragments.ts)). Signature
+  becomes `renderSchema(schema, schemas)`. A field whose `type` resolves to a declared schema
+  renders as the **bare class name** (no import — both classes live in the same `schemas.py`
+  module); a scalar resolves as today. `Optional[X] = None` composes naturally
+  (`Optional[Customer] = None`).
+- **Topological schemas emission** ([packages/codegen/src/project.ts](../packages/codegen/src/project.ts)).
+  `schemasModule` now sorts schemas in dependency-first order via a post-order DFS
+  (`topologicalSchemas`) — a schema is emitted only after every schema it references. The
+  validator has already rejected cycles, so termination is guaranteed; the post-order walk
+  preserves original array order for non-dependency siblings (deterministic golden output).
+  This is the one genuinely new codegen behavior of the slice and is pinned by the
+  `nested-schema` golden: `Order` precedes `Customer` in the IR array, but `Customer` is
+  declared first in the generated `schemas.py`.
+- **No `apps/web` change.** The schema-editor type `<select>` is Slice 2-B
+  ([docs/PHASE-NESTED-SCHEMAS-DESIGN.md](PHASE-NESTED-SCHEMAS-DESIGN.md)); 2-A must land
+  first because the editor can't offer a capability the IR/codegen don't yet support.
+**Fixture.** New golden fixture
+[packages/ir/fixtures/nested-schema.ir.json](../packages/ir/fixtures/nested-schema.ir.json):
+two schemas (Order then Customer in array order — the reverse of dependency order), with
+`Order.customer: Customer` (required) and `Order.shipping_address: Customer` (optional → the
+`Optional[Customer] = None` pin), plus a minimal `agent → function` graph that uses
+`Order` as the agent's `outputSchemaRef` so the IR is a complete runnable example.
+Golden directory at [packages/codegen/test/golden/nested-schema/](../packages/codegen/test/golden/nested-schema/);
+added to `PROJECTS` in [packages/codegen/test/project.test.ts](../packages/codegen/test/project.test.ts).
+**Spec tests** ([packages/ir/test/validate.test.ts](../packages/ir/test/validate.test.ts)):
+- `nested-schema fixture validates with zero errors and zero warnings`.
+- `UNKNOWN_FIELD_TYPE` for a bogus type.
+- Forward-referenced schema field types pass (no false `UNKNOWN_FIELD_TYPE`).
+- `SCHEMA_FIELD_CYCLE` for `A↔B` mutual reference and for `Tree.child: Tree` self-reference.
+**Verification.** Default `npm test`: 19 IR-validator tests (+5), 94 codegen tests (+9 for the
+nested-schema golden incl. the topo-order assertion and `python3 -m py_compile`), 93
+`apps/web` tests unchanged. `npm run check:ir` PASS across 8 fixtures (city-time, human-input,
+nested, nested-schema, parallel, routing, showcase-all-nodes, tool). `git diff --name-only main --
+apps/web/` empty — the type widening is backwards-compatible at the TS level (every existing
+`ScalarType` is a valid `TypeRef`), so the web app didn't need a recompile.
+**Follow-up — manual fidelity (user runs).** Standard nested pydantic is low risk, so we did
+not gate `npm test` on a real ADK import. Procedure to confirm (extends [ADR-0021](DECISIONS.md)):
+in a clean venv, `pip install google-adk==2.0.0`, generate the nested-schema project, then
+`python -c "from schemas import Order, Customer; o = Order(order_id='x', customer=Customer(name='a', email='b@c')); print(o)"`.
+Record the result in this ADR once run.
+**Consequences.** Users can now build `class Order(BaseModel): customer: Customer` graphically
+once Slice 2-B (the editor `<select>`) lands. The IR keystone, validator, and codegen are all
+consistent: a TypeRef means the same thing in every slot. Cycles are rejected with a clear
+code, so the editor can surface them in Preview rather than letting them reach codegen.
+Out-of-scope and intentional: `list[...]`, `dict`, unions, recursive/forward-ref models, and
+nested-schema authoring inside `workflow.config.graph.schemas` beyond what `validateGraph`
+already supports per-level.
+

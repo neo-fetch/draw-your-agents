@@ -63,12 +63,28 @@ function resolveRef(
   return { py: ref, imports: [{ module: "schemas", names: [ref] }] };
 }
 
-/** schemas.py: one pydantic BaseModel per IR schema. */
-export function renderSchema(schema: SchemaDef): Fragment {
+/**
+ * schemas.py: one pydantic BaseModel per IR schema.
+ *
+ * A field's `type` is a TypeRef (ADR-0037): a scalar OR the name of another
+ * declared schema. A schema-typed field renders as the bare class name (no
+ * import — both classes live in the same `schemas.py` module); `project.ts`
+ * guarantees declared-before-referenced emission via topological order.
+ */
+export function renderSchema(
+  schema: SchemaDef,
+  schemas: ReadonlyMap<string, SchemaDef>,
+): Fragment {
   const imports: ImportReq[] = [{ module: "pydantic", names: ["BaseModel"] }];
   const lines = schema.fields.map((field) => {
-    const { py, imports: fieldImports } = scalarType(field.type);
-    imports.push(...fieldImports);
+    let py: string;
+    if (schemas.has(field.type)) {
+      py = field.type; // nested schema — same module, no import needed
+    } else {
+      const resolved = scalarType(field.type as ScalarType);
+      py = resolved.py;
+      imports.push(...resolved.imports);
+    }
     let annotation = py;
     let suffix = "";
     if (field.optional) {

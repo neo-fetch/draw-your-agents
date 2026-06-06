@@ -254,16 +254,44 @@ function joinModule(
   return `${prefix}${gap}${body}\n`;
 }
 
+/**
+ * Topologically sort schemas so a nested-schema field's class is declared
+ * before any schema that references it (ADR-0037). The validator has already
+ * rejected cycles via `SCHEMA_FIELD_CYCLE`; this is a post-order DFS with a
+ * stable secondary order — non-dependency siblings keep their original array
+ * order, so the golden output is deterministic.
+ */
+function topologicalSchemas(
+  schemaDefs: readonly SchemaDef[],
+): readonly SchemaDef[] {
+  const byName = new Map<string, SchemaDef>();
+  for (const s of schemaDefs) byName.set(s.name, s);
+  const out: SchemaDef[] = [];
+  const seen = new Set<string>();
+  const visit = (s: SchemaDef): void => {
+    if (seen.has(s.name)) return;
+    seen.add(s.name);
+    for (const f of s.fields) {
+      const dep = byName.get(f.type);
+      if (dep) visit(dep);
+    }
+    out.push(s);
+  };
+  for (const s of schemaDefs) visit(s);
+  return out;
+}
+
 function schemasModule(
   ir: GraphIR,
   schemaDefs: readonly SchemaDef[],
-  _schemas: ReadonlyMap<string, SchemaDef>,
+  schemas: ReadonlyMap<string, SchemaDef>,
 ): string {
   const head = header("Pydantic schemas", ir);
   if (schemaDefs.length === 0) {
     return `${head}\n\n# No schemas declared in the IR.\n`;
   }
-  const frags = schemaDefs.map(renderSchema);
+  const ordered = topologicalSchemas(schemaDefs);
+  const frags = ordered.map((s) => renderSchema(s, schemas));
   return joinModule(head, frags.flatMap((f) => f.imports), frags.map((f) => f.code), "def");
 }
 

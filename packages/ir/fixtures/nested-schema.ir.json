@@ -1,0 +1,58 @@
+{
+  "irVersion": "0.1.0",
+  "name": "nested_schema_workflow",
+  "description": "Exercises nested pydantic models in schemas (ADR-0037): an Order whose fields type to another declared schema (Customer). In the array Order appears before Customer, but schemas.py must emit Customer first via topological order.",
+  "schemas": [
+    {
+      "name": "Order",
+      "fields": [
+        { "name": "order_id", "type": "str" },
+        { "name": "customer", "type": "Customer" },
+        { "name": "shipping_address", "type": "Customer", "optional": true }
+      ]
+    },
+    {
+      "name": "Customer",
+      "fields": [
+        { "name": "name", "type": "str" },
+        { "name": "email", "type": "str" }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_make_order",
+      "type": "agent",
+      "name": "make_order",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Produce a sample Order with a customer and an optional shipping_address." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "Order"
+      }
+    },
+    {
+      "id": "n_summarize",
+      "type": "function",
+      "name": "summarize_order",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Render the order as a one-line human-readable string.",
+        "inputType": "Order",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_make_order" },
+    { "from": "n_make_order", "to": "n_summarize" }
+  ]
+}
