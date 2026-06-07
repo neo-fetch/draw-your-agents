@@ -4,7 +4,7 @@
 
 A visual builder that compiles drag-and-drop agent graphs into runnable **[Google ADK](https://adk.dev/) (Python, v2.0.0) graph-workflow** projects. Also imports **draw.io** XML diagrams into the same graph.
 
-> **Status:** Phase 0 (headless codegen pipeline) ✅ — Phase 1 (visual builder MVP) ✅ — Phase 2 (variable-chip system) ✅ — Phase 3 (draw.io import) 🔜
+> **Status:** Phase 0 (headless codegen) ✅ — Phase 1 (visual builder) ✅ — Phase 2 (variable chips + schema editor) ✅ — Critic/reviser **loop node**, **nested pydantic models**, **editable node names** ✅ — draw.io import 🔜
 
 ---
 
@@ -12,16 +12,24 @@ A visual builder that compiles drag-and-drop agent graphs into runnable **[Googl
 ![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%201.png?raw=true)
 
 ### Visual Graph Builder
-- **Drag-and-drop canvas** — Add, connect, and arrange agent nodes on a React Flow canvas
+- **Drag-and-drop canvas** — Drag node types from the palette onto a React Flow canvas (drops at the cursor), then connect and freely arrange them
+- **Editable node names** — Rename any node in place; references (prompt-variable sources, tool lists) cascade automatically
 - **Full config inspector** — Edit every node property (model, instruction, schemas, routes, tools, etc.) with type-dispatched forms
 - **Live code preview** — See the generated ADK Python project update in real time as you edit the graph
 - **One-click export** — Download a runnable `.zip` project scaffold ready for `pip install && python -m workflow`
+- **"Drafting Table" UI** — A distinctive vellum-and-ink design: blueprint canvas grid, per-type color-coding, at-a-glance graph-validity pill
 
 ### Variable-Chip System (Phase 2 — Headline Feature)
 - **Inline prompt variables** — Drag schema fields into an agent's prompt as chips rendered `<Schema.field from node>`
 - **Auto-wiring** — Inserting a chip automatically sets the agent's `inputSchemaRef`
 - **Single-schema rail** — The palette intelligently filters to one schema per agent, enforcing ADK's data-flow constraints
 - **Schema CRUD** — Create, rename, and delete schemas and fields directly in the UI; references cascade on rename
+- **Nested pydantic models** — A schema field's type can be another declared schema (`customer: Customer`); the validator rejects cycles and codegen emits the models in dependency order
+
+### Iterative Refinement — Critic/Reviser Loop
+- **Loop node** — A self-contained *generate → critique → revise* loop that iterates until an LLM critic approves (or a max-iteration cap)
+- **Compiles to a real ADK dynamic workflow** — Codegen emits an `@node` orchestrator (`ctx.run_node` + a bounded Python loop) modeled on a verified working example, placed as one node so the outer graph stays an acyclic DAG
+- **Typed payloads** — Generator/critic/reviser exchange pydantic-typed I/O (composes with nested schemas); a canonical `{status, feedback}` critic output drives termination
 
 ### Code Generation Pipeline
 - **Full v1 declarative coverage** — Agent, Function, Router, JoinNode, HumanInput, nested Workflow, and Tool nodes all compile end to end
@@ -53,6 +61,7 @@ my_workflow/
   workflow.py        # root_agent = Workflow(edges=[...])
   agents.py          # Agent(...) with model params + instruction
   functions.py       # function / router / join / humanInput bodies
+  loops.py           # @node critic/reviser orchestrators (emitted when loop nodes exist)
   schemas.py         # Pydantic BaseModels for every input/output schema
   requirements.txt   # google-adk==2.0.0
   .env.example
@@ -70,6 +79,7 @@ my_workflow/
 | `join`        | `JoinNode`           | waits for all upstreams                           |
 | `humanInput`  | `RequestInput`       | message, payloadRef, responseSchemaRef            |
 | `workflow`    | nested `Workflow`    | sub-IR in `config.graph`                          |
+| `loop`        | `@node` orchestrator | maxIterations, approvalPhrase, input/payload types, generator + critic + reviser sub-agents |
 
 ---
 
@@ -132,10 +142,12 @@ graphical-agents/
 │   └── check_ir.py            # Superseded Python validator (historical reference)
 │
 ├── docs/
-│   ├── ARCHITECTURE.md        # Architecture blueprint
-│   ├── DECISIONS.md           # Append-only ADR log (ADR-0001 through ADR-0033)
-│   ├── IR-SCHEMA.md           # IR contract documentation
-│   └── PHASE-2-DESIGN.md      # Variable-chip system design
+│   ├── ARCHITECTURE.md                # Architecture blueprint
+│   ├── DECISIONS.md                   # Append-only ADR log (ADR-0001 through ADR-0040)
+│   ├── IR-SCHEMA.md                   # IR contract documentation
+│   ├── PHASE-2-DESIGN.md             # Variable-chip system design
+│   ├── PHASE-NESTED-SCHEMAS-DESIGN.md # Nested pydantic models design
+│   └── PHASE-SUBAGENTS-DESIGN.md     # Critic/reviser loop node design
 │
 ├── CLAUDE.md                  # Project brief & session rules
 ├── package.json               # Monorepo root (npm workspaces)
@@ -266,6 +278,7 @@ pip install black
 | **Phase 0** | ✅ Complete | IR schema + edges compiler + templates + golden tests (headless) |
 | **Phase 1** | ✅ Complete | Visual builder MVP (canvas, inspector, live preview, save/load, .zip download) |
 | **Phase 2** | ✅ Complete | Variable-chip system (Lexical editor, insert palette, auto-wire, schema CRUD) |
+| **Phase 2.5** | ✅ Complete | Editable node names, nested pydantic models, critic/reviser **loop node** (contained dynamic workflow) |
 | **Phase 3** | 🔜 Next | draw.io XML ingestion (`mxGraph XML → IR`) |
 | **Phase 4** | 📋 Planned | Python fidelity service (`black` + `compile()` + dry-run `Workflow(...)`) |
 | **Phase 5** | 📋 Planned | Polish, session-state variables, undo/redo |
@@ -286,9 +299,11 @@ pip install black
 ## 📄 Documentation
 
 - [Architecture Blueprint](docs/ARCHITECTURE.md) — Full system design
-- [Decision Log (ADRs)](docs/DECISIONS.md) — Append-only architectural decision records (ADR-0001 through ADR-0033)
+- [Decision Log (ADRs)](docs/DECISIONS.md) — Append-only architectural decision records (ADR-0001 through ADR-0040)
 - [IR Schema Contract](docs/IR-SCHEMA.md) — Graph IR format specification
 - [Phase 2 Design](docs/PHASE-2-DESIGN.md) — Variable-chip system design & slice plan
+- [Nested Schemas Design](docs/PHASE-NESTED-SCHEMAS-DESIGN.md) — Nested pydantic models design & slice plan
+- [Loop Node Design](docs/PHASE-SUBAGENTS-DESIGN.md) — Critic/reviser loop (dynamic workflow) design & slice plan
 
 ---
 
