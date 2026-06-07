@@ -21,6 +21,7 @@ import type {
   GraphNode,
   HumanInputNode,
   JoinNode,
+  LoopNode,
   NodeType,
   RouterNode,
   ToolNode,
@@ -38,6 +39,7 @@ const ID_PREFIX: Record<NodeType, string> = {
   join: "n_join",
   humanInput: "n_human_input",
   workflow: "n_workflow",
+  loop: "n_loop",
 };
 
 const NAME_PREFIX: Record<NodeType, string> = {
@@ -48,6 +50,7 @@ const NAME_PREFIX: Record<NodeType, string> = {
   join: "join",
   humanInput: "human_input",
   workflow: "workflow",
+  loop: "loop",
 };
 
 /**
@@ -254,6 +257,21 @@ function makeDefaultNode(
         config: {
           description: "",
           graph: minimalSubIR(parentIR, name, id),
+        },
+      };
+      return node;
+    }
+    case "loop": {
+      const node: LoopNode = {
+        id, type, name, ui,
+        config: {
+          maxIterations: 5,
+          approvalPhrase: "APPROVED",
+          inputType: "str",
+          payloadType: "str",
+          generator: { model: "gemini-flash-latest", instruction: "" },
+          critic: { model: "gemini-flash-latest", instruction: "" },
+          reviser: { model: "gemini-flash-latest", instruction: "" },
         },
       };
       return node;

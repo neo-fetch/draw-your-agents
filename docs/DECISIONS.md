@@ -1998,3 +1998,79 @@ generated module. Out-of-scope and intentional: variable chips inside loop sub-a
 instructions, configurable critic-output schema, mid-graph dynamic input passing into the
 orchestrator, the deterministic-compile hook, and any `apps/web` work (the Loop inspector is
 Slice 3-C).
+
+
+## ADR-0040 — Loop node editor: palette + `LoopForm` + canvas ↻ badge close feature #3
+**Context.** [ADR-0039](#adr-0039) (Slice 3-B) landed the `loop` node end-to-end in IR + codegen
+— `LoopNode`/`LoopConfig`, `LOOP_*` validator codes, the `@node`-orchestrator `loops.py`
+emitter, and the `rowSymbol` shim that wires the orchestrator into the outer
+`Workflow(edges=…)`. But the builder had no surface for it: a user could not create, edit, or
+even see a loop node from `apps/web`. Slice 3-C closes feature #3 end-to-end with palette,
+inspector, and canvas wiring — `packages/*` stays frozen (every behavior surfaced here already
+exists in the IR and codegen).
+**Decisions.**
+- **Palette + minting extend through the existing `addNode` plumbing**
+  ([apps/web/src/store/addNode.ts](../apps/web/src/store/addNode.ts),
+  [apps/web/src/palette/Palette.tsx](../apps/web/src/palette/Palette.tsx)). `"loop"` is added to
+  `ID_PREFIX`/`NAME_PREFIX` and a `case "loop":` branch returns a **valid-by-construction**
+  default `LoopConfig` — `maxIterations: 5`, `approvalPhrase: "APPROVED"`, `inputType: "str"`,
+  `payloadType: "str"`, and three sub-agents with `"gemini-flash-latest"` (parity with the
+  existing `agent` default) + empty instructions. This satisfies the `LOOP_*` validator rules
+  ([packages/ir/src/validate.ts](../packages/ir/src/validate.ts)) so a freshly dropped loop
+  yields only `UNREACHABLE_NODE` ([ADR-0025](#adr-0025--node-palette-click-to-add-pure-addnode-reducer-global-namespace-minting)
+  invariant). One `Palette` `ENTRIES` line picks up click-to-add + drag-and-drop
+  ([ADR-0034](#adr-0034--palette-drag-and-drop-drop-a-node-at-the-cursor)) automatically.
+- **`LoopForm` is a thin per-type inspector**
+  ([apps/web/src/inspector/Inspector.tsx](../apps/web/src/inspector/Inspector.tsx)) dispatched
+  from the existing type switch — added next to `WorkflowForm`, with the trailing
+  `_exhaustive: never` line statically proving the union member is covered. Fields:
+  `maxIterations` (`NumberOrEmpty`, default-on-empty back to `1`), `approvalPhrase` (text),
+  `inputType` + `payloadType` via the reused `TypeRefSelect` (so nested schemas declared via
+  [ADR-0038](#adr-0038)'s panel are first-class options here for free), and three sub-agent
+  blocks (`generator`/`critic`/`reviser`) each with a `model` input and a **plain `<textarea>`**
+  for `instruction` (deliberately *not* the Lexical chip editor —
+  [ADR-0039](#adr-0039) already established sub-agents are not graph nodes so cannot bind
+  `<schema.field from source>` chips in v1). Validator is mirrored only as hint text; never
+  blocks input — Preview surfaces `LOOP_*` findings ([ADR-0023](#adr-0023) /
+  [ADR-0026](#adr-0026) mirror-the-validator).
+- **Nested sub-agent edits re-supply the full sub-object.** `updateNodeConfig` is a shallow
+  config merge ([apps/web/src/store/irReducer.ts](../apps/web/src/store/irReducer.ts) —
+  `applyNodeConfigPatch`), so each sub-agent edit dispatches
+  `{ generator: { ...cfg.generator, instruction: v } }` etc. Same pattern `AgentForm` uses for
+  `{ instruction: { segments } }`; no new reducer required.
+- **Canvas piggybacks on the `data-node-type` hook.** A `--t-loop` hue (`#a85a2b`, rust —
+  distinct from `tool`'s `#7d4a8c`) plus the existing `.ir-node[data-node-type="loop"]` and
+  `.palette-item[data-node-type="loop"]` slots in
+  [apps/web/src/styles.css](../apps/web/src/styles.css). The ↻ badge is a one-line CSS
+  `::after` on the existing `<div class="type">` — no JSX edit to
+  [apps/web/src/canvas/IRNode.tsx](../apps/web/src/canvas/IRNode.tsx).
+- **Two-line extension to the existing `addNode` oracle**
+  ([apps/web/test/addNode.test.ts](../apps/web/test/addNode.test.ts)) — `"loop"` joins
+  `ALL_TYPES` and `EXPECTED_FRESH_ERROR_CODES`, automatically picking up the default-validity,
+  pairwise-distinct-ids, cross-graph-collision, drop-position, and purity assertions iterated
+  over every type.
+**Spec tests** ([apps/web/test/loopNode.test.ts](../apps/web/test/loopNode.test.ts), three new):
+default `addNode("loop")` + `START → loop` validates clean and `compile()` emits `loops.py`
+with `async def <name>_orchestrator`, all four canonical wrapper schemas
+(`<name>_GenInput`/`_CriticInput`/`_CriticOutput`/`_ReviserInput`), `range(5)`, and `APPROVED`
+— plus `workflow.py` references `("START", <name>_orchestrator)` (proves `rowSymbol`);
+`applyNodeConfigPatch` with the nested-merge pattern flows `maxIterations: 9` and a swapped
+`generator.model` through to `loops.py`; `LoopConfig` (incl. all three sub-agents) round-trips
+byte-for-byte through `JSON.parse(JSON.stringify(ir))` (Save IR / Load IR posture,
+[ADR-0024](#adr-0024)).
+**Verification.** Default `npm test`: 102 tests green (+3 loop oracle, +1 extended
+`addNode.test.ts` iteration that covers the multiple `ALL_TYPES` loops). `npm run test:web:app`:
+8 DOM tests green. `vite build`: clean. `git diff --stat main -- packages/`: empty —
+`packages/*` untouched, as required.
+**Browser smoke (manual).** Drag a **Loop** from the palette: it renders with the rust hue and
+the ↻ badge after the type label; Preview shows only `UNREACHABLE_NODE`. Inspector edits to
+`maxIterations`, `approvalPhrase`, `payloadType`, and each sub-agent prompt flow into the
+`loops.py` panel live. Connecting `START → loop` clears the finding and `workflow.py` shows
+`("START", <name>_orchestrator)`. Save IR → Load IR round-trips the full `LoopConfig`,
+sub-agents included.
+**Consequences.** Feature #3 is now end-to-end through the UI — a user can build the
+generator/critic/reviser pattern entirely graphically and watch the compiler emit the same
+`@node`-orchestrator `loops.py` ADR-0039 pinned. Out-of-scope and intentional (carried forward
+from 3-B): variable chips inside loop sub-agent instructions, per-sub-agent input/output schema
+overrides (the wrappers are canonical), a deterministic-check UI, sub-graph editing inside
+`workflow.config.graph` for nested loops, and any change to `packages/*`.

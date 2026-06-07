@@ -15,6 +15,8 @@ import type {
   GraphNode,
   HumanInputNode,
   JoinNode,
+  LoopNode,
+  LoopSubAgent,
   RouterNode,
   ToolNode,
   WorkflowNode,
@@ -634,6 +636,114 @@ function WorkflowForm({ node }: { node: WorkflowNode }) {
   );
 }
 
+/**
+ * LoopForm — `loop` node (ADR-0039 / ADR-0040). Three sub-agents
+ * (generator/critic/reviser) are NOT graph nodes — they're rendered as
+ * inline blocks here and codegenned into the `<name>_orchestrator` body.
+ * Sub-agent instructions are plain text in v1 (no Lexical chip editor):
+ * variable wiring is implicit via `inputType`/`payloadType` + the
+ * canonical wrapper schemas the codegen emits.
+ *
+ * Nested edits re-supply the full sub-agent object since
+ * `updateNodeConfig` is a shallow config merge.
+ */
+function LoopForm({ node }: { node: LoopNode }) {
+  const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
+  const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
+  const cfg = node.config;
+
+  const subAgentRow = (
+    key: "generator" | "critic" | "reviser",
+    label: string,
+  ) => {
+    const sub: LoopSubAgent = cfg[key];
+    return (
+      <div style={ROW} key={key}>
+        <label>{label}</label>
+        <div style={ROW}>
+          <label htmlFor={`loop-${key}-model`} style={HINT}>model</label>
+          <input
+            id={`loop-${key}-model`}
+            type="text"
+            value={sub.model}
+            onChange={(e) =>
+              updateNodeConfig(node.id, {
+                [key]: { ...sub, model: e.target.value },
+              })
+            }
+          />
+        </div>
+        <div style={ROW}>
+          <label htmlFor={`loop-${key}-instruction`} style={HINT}>instruction</label>
+          <textarea
+            id={`loop-${key}-instruction`}
+            rows={4}
+            value={sub.instruction}
+            onChange={(e) =>
+              updateNodeConfig(node.id, {
+                [key]: { ...sub, instruction: e.target.value },
+              })
+            }
+            style={{ width: "100%", fontFamily: "monospace", fontSize: 12 }}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <Header node={node} />
+      <div style={ROW}>
+        <label htmlFor="loop-max">maxIterations</label>
+        <NumberOrEmpty
+          id="loop-max"
+          value={cfg.maxIterations}
+          step="1"
+          onChange={(v) =>
+            updateNodeConfig(node.id, { maxIterations: v === undefined ? 1 : v })
+          }
+        />
+        <div style={HINT}>must be ≥ 1</div>
+      </div>
+      <div style={ROW}>
+        <label htmlFor="loop-approval">approvalPhrase</label>
+        <input
+          id="loop-approval"
+          type="text"
+          value={cfg.approvalPhrase}
+          onChange={(e) =>
+            updateNodeConfig(node.id, { approvalPhrase: e.target.value })
+          }
+        />
+      </div>
+      <div style={ROW}>
+        <label htmlFor="loop-input-type">inputType</label>
+        <TypeRefSelect
+          id="loop-input-type"
+          value={cfg.inputType}
+          schemas={schemas}
+          allowStr
+          onChange={(v) => updateNodeConfig(node.id, { inputType: v ?? "str" })}
+        />
+      </div>
+      <div style={ROW}>
+        <label htmlFor="loop-payload-type">payloadType</label>
+        <TypeRefSelect
+          id="loop-payload-type"
+          value={cfg.payloadType}
+          schemas={schemas}
+          allowStr
+          onChange={(v) => updateNodeConfig(node.id, { payloadType: v ?? "str" })}
+        />
+      </div>
+      {subAgentRow("generator", "generator")}
+      {subAgentRow("critic", "critic")}
+      {subAgentRow("reviser", "reviser")}
+    </div>
+  );
+}
+
 // ----- edge form ----------------------------------------------------------
 
 /**
@@ -753,6 +863,8 @@ export function Inspector() {
       return <HumanInputForm node={node} />;
     case "workflow":
       return <WorkflowForm node={node} />;
+    case "loop":
+      return <LoopForm node={node} />;
     default: {
       const _exhaustive: never = node;
       void _exhaustive;

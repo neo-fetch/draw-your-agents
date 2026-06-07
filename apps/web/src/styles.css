@@ -37,6 +37,7 @@
   --t-join: #5b6770;
   --t-humanInput: #b3506b;
   --t-workflow: #5a7d2f;
+  --t-loop: #a85a2b;
 
   --font-display: "Fraunces", Georgia, "Times New Roman", serif;
   --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
@@ -321,6 +322,8 @@ html, body, #root {
 .ir-node[data-node-type="join"]       { --type: var(--t-join); }
 .ir-node[data-node-type="humanInput"] { --type: var(--t-humanInput); }
 .ir-node[data-node-type="workflow"]   { --type: var(--t-workflow); }
+.ir-node[data-node-type="loop"]       { --type: var(--t-loop); }
+.ir-node[data-node-type="loop"] .type::after { content: " ↻"; }
 
 .start-node {
   display: inline-flex;
@@ -586,6 +589,7 @@ html, body, #root {
 .palette-item[data-node-type="join"]       { --type: var(--t-join); }
 .palette-item[data-node-type="humanInput"] { --type: var(--t-humanInput); }
 .palette-item[data-node-type="workflow"]   { --type: var(--t-workflow); }
+.palette-item[data-node-type="loop"]       { --type: var(--t-loop); }
 
 /* ----------------------------------------------------------- inspector */
 

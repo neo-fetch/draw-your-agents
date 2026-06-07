@@ -52,6 +52,7 @@ const ALL_TYPES: NodeType[] = [
   "join",
   "humanInput",
   "workflow",
+  "loop",
 ];
 
 /**
@@ -71,6 +72,7 @@ const EXPECTED_FRESH_ERROR_CODES: Record<NodeType, ReadonlyArray<string>> = {
   join: ["UNREACHABLE_NODE"],
   humanInput: ["UNREACHABLE_NODE"],
   workflow: ["UNREACHABLE_NODE"],
+  loop: ["UNREACHABLE_NODE"],
 };
 
 // --- (a) Default-config validity for every type --------------------------

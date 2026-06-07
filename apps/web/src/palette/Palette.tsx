@@ -26,6 +26,7 @@ const ENTRIES: ReadonlyArray<{ type: NodeType; label: string }> = [
   { type: "join", label: "Join" },
   { type: "humanInput", label: "Human Input" },
   { type: "workflow", label: "Workflow" },
+  { type: "loop", label: "Loop" },
 ];
 
 export function Palette() {
