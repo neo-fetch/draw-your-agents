@@ -1841,3 +1841,60 @@ Out-of-scope and intentional: `list[...]`, `dict`, unions, recursive/forward-ref
 nested-schema authoring inside `workflow.config.graph.schemas` beyond what `validateGraph`
 already supports per-level.
 
+## ADR-0038 — Schema-typed field option in the editor: `SchemaPanel` type `<select>` offers declared schemas, closing feature #2 end to end
+**Context.** ADR-0037 (Slice 2-A) widened `SchemaField.type` to `TypeRef` and taught the
+validator + codegen about nested pydantic models. But the graphical editor's per-field type
+`<select>` ([apps/web/src/schemas/SchemaPanel.tsx](../apps/web/src/schemas/SchemaPanel.tsx)) still
+listed only the six scalars, so a user could not actually build
+`class Order(BaseModel): customer: Customer` through the canvas — the capability shipped at the
+IR/codegen layer but had no UI surface. Slice 2-B
+([docs/PHASE-NESTED-SCHEMAS-DESIGN.md](PHASE-NESTED-SCHEMAS-DESIGN.md) §4) closes that gap.
+`packages/*` stays frozen — the IR already accepts a schema name as a field type.
+**Decisions.**
+- **`FieldRow` type `<select>` lists scalars + foreign declared schemas, self excluded**
+  ([apps/web/src/schemas/SchemaPanel.tsx](../apps/web/src/schemas/SchemaPanel.tsx)). Two
+  `<optgroup>`s (`scalar`, `schema`) keep the distinction visible without inventing new field
+  kinds. The `schema` group is omitted entirely when no foreign schemas exist, so a single-schema
+  IR shows the dropdown exactly as before. The existing `updateField(schemaName, fieldName, {type})`
+  reducer is reused unchanged in shape — only its argument type widens.
+- **UI guards only the degenerate self-cycle.** Deeper cycles (`A → B → A`) surface honestly via
+  the validator's `SCHEMA_FIELD_CYCLE` in Preview (mirror-the-validator, [ADR-0023](#adr-0023--validator-first-everywhere-no-react-side-rule-mirrors)
+  / [ADR-0026](#adr-0026)). We do not re-implement DAG detection in the panel.
+- **`FieldPatch.type` widens from `ScalarType` to `TypeRef`** ([apps/web/src/store/schemas.ts](../apps/web/src/store/schemas.ts)).
+  Type-only widening to match the IR post-2-A; the reducer body's plain `next.type = patch.type`
+  assignment is unchanged. `FieldRow`'s local prop type also widens from the inline
+  `{ name; type: ScalarType; optional? }` to the `SchemaField` IR type — a small post-2-A loose
+  end tidied along the way.
+- **Pure `fieldTypeCandidates(schemas, selfName)` helper** ([apps/web/src/store/schemas.ts](../apps/web/src/store/schemas.ts))
+  — scalars followed by every schema name except `selfName`. Factoring it out keeps the React
+  shell thin (consistent with [ADR-0035](#adr-0035--graphical-schema-authoring-six-pure-crud-reducers--rename-cascade-closes-the-variable-chip-loop)'s
+  "thin React over pure reducers" posture) and lets the headless oracle pin candidate logic
+  without a DOM.
+- **No DOM/jsdom test for the panel.** The candidate helper is pure and testable headlessly,
+  consistent with the install-free posture ([ADR-0011](#adr-0011) / [ADR-0022](#adr-0022) /
+  [ADR-0032](#adr-0032)). The existing `apps/web/test-app/` suite is re-run as a regression gate
+  but not extended this slice.
+**Spec tests** ([apps/web/test/schemas.test.ts](../apps/web/test/schemas.test.ts)):
+- `fieldTypeCandidates` lists all six scalars + every foreign schema name and excludes self
+  (symmetric across both schemas; empty-schema-list case returns just the scalars).
+- `updateField → type = otherSchemaName` validates clean and `compile()` emits `id: Customer`
+  with `Customer` declared before `Order` (topological emission from 2-A pinned at the
+  integration boundary).
+- `A ↔ B` cycle built via two `updateField` calls surfaces `SCHEMA_FIELD_CYCLE` — proves the
+  panel can defer to the validator rather than re-implementing cycle detection.
+- `updateField` with a schema-name `type` stays a no-op on unknown schema/field (pins the
+  `FieldPatch.type` widening hasn't broken the identity path).
+**Verification.** Default `npm test`: 97 tests (+4 oracle cases) green. `npm run test:web:app`:
+8 DOM tests green. `vite build`: clean. `git diff --stat main -- packages/`: empty — `packages/*`
+untouched, as required.
+**Browser smoke (manual).** With two schemas `Customer` and `Order` on the canvas: opening
+`Order.field1`'s type dropdown shows scalars **plus** `Customer` (under a `schema` group) and
+does **not** list `Order`; picking `Customer` reaches Preview's `schemas.py` as
+`field1: Customer` with `Customer` declared first; flipping `Customer.field1` to `Order`
+surfaces `SCHEMA_FIELD_CYCLE` in Preview (no UI crash, no silent acceptance).
+**Consequences.** Feature #2 (nested pydantic models in schemas) is now end-to-end through the
+UI. A user can build the `Order { customer: Customer }` graph entirely graphically and watch the
+generator emit a clean topologically-ordered `schemas.py`. Out-of-scope and intentional (carried
+forward from 2-A): `list[X]` / `dict` / unions, recursive/forward-ref models, and nested-schema
+authoring inside `workflow.config.graph.schemas`.
+

@@ -24,6 +24,7 @@ import type {
   SchemaDef,
   SchemaField,
   ToolNode,
+  TypeRef,
 } from "@graphical-agents/ir";
 
 const SCALAR_TYPES: readonly ScalarType[] = [
@@ -37,6 +38,26 @@ const SCALAR_TYPES: readonly ScalarType[] = [
 
 export function scalarTypes(): readonly ScalarType[] {
   return SCALAR_TYPES;
+}
+
+/**
+ * Options for a field's type `<select>` in `SchemaPanel` (ADR-0038 / #2-B):
+ * the six scalars followed by every declared schema name, **excluding
+ * `selfName`** to block the degenerate self-cycle at the UI level. Deeper
+ * cycles (`A → B → A`) are surfaced honestly by the validator's
+ * `SCHEMA_FIELD_CYCLE` in Preview — we do not re-implement DAG detection here
+ * (mirror-the-validator, ADR-0023 / ADR-0026).
+ *
+ * Pure helper so the headless oracle can pin candidate logic without a DOM.
+ */
+export function fieldTypeCandidates(
+  schemas: readonly SchemaDef[],
+  selfName: string,
+): readonly TypeRef[] {
+  return [
+    ...SCALAR_TYPES,
+    ...schemas.map((s) => s.name).filter((n) => n !== selfName),
+  ];
 }
 
 function nextFree(prefix: string, taken: ReadonlySet<string>): string {
@@ -214,7 +235,9 @@ export function addField(ir: GraphIR, schemaName: string): GraphIR {
 
 export interface FieldPatch {
   name?: string;
-  type?: ScalarType;
+  // TypeRef = scalar OR a declared schema name (ADR-0037). Runtime logic
+  // unchanged from the ScalarType era — assignment is plain copy.
+  type?: TypeRef;
   optional?: boolean;
 }
 

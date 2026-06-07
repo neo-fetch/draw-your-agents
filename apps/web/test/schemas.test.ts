@@ -26,7 +26,9 @@ import {
   addSchema,
   deleteField,
   deleteSchema,
+  fieldTypeCandidates,
   renameSchema,
+  scalarTypes,
   updateField,
 } from "../src/store/schemas.ts";
 
@@ -35,6 +37,64 @@ const fixturesDir = join(here, "..", "..", "..", "packages", "ir", "fixtures");
 
 function loadCityTime(): GraphIR {
   return JSON.parse(readFileSync(join(fixturesDir, "city-time.ir.json"), "utf8")) as GraphIR;
+}
+
+/**
+ * Minimal two-schema IR for the schema-typed-field oracle (ADR-0038 / #2-B).
+ * A single agent → function chain produces `Order`, the second schema, so the
+ * graph is a complete runnable example. Both schemas start with scalar-only
+ * fields so cycle tests can flip a single field via `updateField`.
+ */
+function twoSchemaIR(): GraphIR {
+  return {
+    irVersion: "0.1.0",
+    name: "two_schema",
+    schemas: [
+      {
+        name: "Customer",
+        fields: [
+          { name: "name", type: "str" },
+          { name: "email", type: "str" },
+        ],
+      },
+      {
+        name: "Order",
+        fields: [{ name: "id", type: "str" }],
+      },
+    ],
+    nodes: [
+      {
+        id: "n_make",
+        type: "agent",
+        name: "make_order",
+        ui: { x: 0, y: 0 },
+        config: {
+          model: "gemini-flash-latest",
+          instruction: { segments: [{ type: "text", value: "make an order" }] },
+          mode: "task",
+          inputSchemaRef: null,
+          outputSchemaRef: "Order",
+        },
+      },
+      {
+        id: "n_sum",
+        type: "function",
+        name: "summarize",
+        ui: { x: 260, y: 0 },
+        config: {
+          description: "summarize",
+          inputType: "Order",
+          outputType: "str",
+          emits: "output",
+          body: null,
+        },
+      },
+    ],
+    edges: [
+      { from: "START", to: "n_make" },
+      { from: "n_make", to: "n_sum" },
+    ],
+  } as GraphIR;
 }
 
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -329,4 +389,78 @@ test("all six reducers leave the input IR + sibling identity untouched", () => {
   assert.strictEqual(ir.schemas, snapshotSchemas);
   assert.strictEqual(ir.schemas[0], snapshotSchema0);
   assert.strictEqual(ir.schemas[0]!.fields.length, 2);
+});
+
+// --- schema-typed fields (ADR-0038 / #2-B) -------------------------------
+
+test("fieldTypeCandidates lists scalars + foreign schemas, excludes self", () => {
+  const ir = twoSchemaIR();
+
+  const forOrder = fieldTypeCandidates(ir.schemas, "Order");
+  for (const s of scalarTypes()) {
+    assert.ok(forOrder.includes(s), `scalar ${s} must appear`);
+  }
+  assert.ok(forOrder.includes("Customer"), "foreign schema must appear");
+  assert.ok(!forOrder.includes("Order"), "self must be excluded");
+
+  // Symmetric: from Customer's perspective, Order is the foreign schema.
+  const forCustomer = fieldTypeCandidates(ir.schemas, "Customer");
+  assert.ok(forCustomer.includes("Order"));
+  assert.ok(!forCustomer.includes("Customer"));
+
+  // No schemas at all → just the scalars.
+  assert.deepStrictEqual(
+    [...fieldTypeCandidates([], "anything")],
+    [...scalarTypes()],
+  );
+});
+
+test("updateField → type = otherSchemaName: validates clean and reaches schemas.py in topological order", () => {
+  const ir = twoSchemaIR();
+
+  // Point Order.id at Customer — a schema-typed field.
+  const next = updateField(ir, "Order", "id", { type: "Customer" });
+
+  const result = validate(next);
+  assert.strictEqual(result.ok, true, JSON.stringify(result.errors));
+
+  const schemasPy = compile(next).get("schemas.py") ?? "";
+  assert.ok(
+    schemasPy.includes("id: Customer"),
+    `nested annotation must reach schemas.py: ${schemasPy}`,
+  );
+  // #2-A topological emission: Customer is declared before Order even though
+  // Customer appears second in ir.schemas — pinned here at the integration
+  // boundary so the panel can trust the codegen contract.
+  const customerAt = schemasPy.indexOf("class Customer(BaseModel):");
+  const orderAt = schemasPy.indexOf("class Order(BaseModel):");
+  assert.ok(customerAt !== -1 && orderAt !== -1, "both classes emitted");
+  assert.ok(
+    customerAt < orderAt,
+    `Customer must precede Order (topological): ${schemasPy}`,
+  );
+});
+
+test("A → B → A cycle built via updateField surfaces SCHEMA_FIELD_CYCLE", () => {
+  // Start with two scalar-only schemas (twoSchemaIR seeds Customer/Order),
+  // then flip one field in each to point at the other.
+  let ir = twoSchemaIR();
+  ir = updateField(ir, "Order", "id", { type: "Customer" });
+  ir = updateField(ir, "Customer", "name", { type: "Order" });
+
+  const result = validate(ir);
+  assert.strictEqual(result.ok, false, "cycle must be rejected");
+  const codes = new Set(result.errors.map((f) => f.code));
+  assert.ok(
+    codes.has("SCHEMA_FIELD_CYCLE"),
+    `expected SCHEMA_FIELD_CYCLE, got: ${JSON.stringify([...codes])}`,
+  );
+});
+
+test("updateField with a schema-name type stays a no-op on unknown schema/field", () => {
+  // Pins that the FieldPatch.type widening to TypeRef hasn't broken the
+  // existing no-op identity path.
+  const ir = twoSchemaIR();
+  assert.strictEqual(updateField(ir, "Nope", "id", { type: "Customer" }), ir);
+  assert.strictEqual(updateField(ir, "Order", "nope", { type: "Customer" }), ir);
 });

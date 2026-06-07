@@ -11,9 +11,9 @@
  */
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import type { ScalarType, SchemaDef } from "@graphical-agents/ir";
+import type { SchemaDef, SchemaField } from "@graphical-agents/ir";
 import { useIRStore } from "../store/irStore.ts";
-import { scalarTypes } from "../store/schemas.ts";
+import { fieldTypeCandidates, scalarTypes } from "../store/schemas.ts";
 
 const ROW: CSSProperties = { marginBottom: 8 };
 
@@ -56,10 +56,16 @@ function FieldRow({
   field,
 }: {
   schemaName: string;
-  field: { name: string; type: ScalarType; optional?: boolean };
+  field: SchemaField;
 }) {
+  const schemas = useIRStore((s) => s.ir.schemas);
   const updateField = useIRStore((s) => s.updateField);
   const deleteField = useIRStore((s) => s.deleteField);
+  // Scalars stay listed under the `scalar` group; foreign schema names appear
+  // under `schema` (self excluded — see fieldTypeCandidates / ADR-0038).
+  const schemaCandidates = fieldTypeCandidates(schemas, schemaName).slice(
+    scalarTypes().length,
+  );
   return (
     <div className="schema-field-row">
       <NameInput
@@ -71,16 +77,25 @@ function FieldRow({
         aria-label={`field type ${schemaName}.${field.name}`}
         value={field.type}
         onChange={(e) =>
-          updateField(schemaName, field.name, {
-            type: e.target.value as ScalarType,
-          })
+          updateField(schemaName, field.name, { type: e.target.value })
         }
       >
-        {scalarTypes().map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
+        <optgroup label="scalar">
+          {scalarTypes().map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </optgroup>
+        {schemaCandidates.length > 0 && (
+          <optgroup label="schema">
+            {schemaCandidates.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </optgroup>
+        )}
       </select>
       <label className="schema-field-opt" title="optional (Optional[…] = None)">
         <input
