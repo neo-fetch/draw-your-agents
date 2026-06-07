@@ -13,6 +13,7 @@ import type {
   HumanInputNode,
   InstructionTemplate,
   JoinNode,
+  LoopNode,
   ModelParams,
   RouterNode,
   ScalarType,
@@ -325,4 +326,191 @@ export function indexSchemas(ir: GraphIR): ReadonlyMap<string, SchemaDef> {
   const map = new Map<string, SchemaDef>();
   for (const schema of ir.schemas) map.set(schema.name, schema);
   return map;
+}
+
+// --- Loop node (ADR-0039) ------------------------------------------------
+
+/** The exported Python symbol for a loop node's `@node` orchestrator. */
+export function loopOrchestratorName(node: LoopNode): string {
+  return `${node.name}_orchestrator`;
+}
+
+/**
+ * Canonical wrapper schemas a loop node's orchestrator passes to its three
+ * sub-agents (ADR-0039). Returned as plain `SchemaDef`s so the existing
+ * `topologicalSchemas` path in [project.ts] emits them after the user's
+ * `payloadType`/`inputType` schemas (declared-before-used).
+ *
+ * `<N>_CriticOutput` is the canonical critic contract `{status, feedback}` —
+ * not user-configurable in v1.
+ */
+export function loopWrapperSchemas(node: LoopNode): SchemaDef[] {
+  const cfg = node.config;
+  return [
+    {
+      name: `${node.name}_GenInput`,
+      fields: [{ name: "specifications", type: cfg.inputType }],
+    },
+    {
+      name: `${node.name}_CriticInput`,
+      fields: [
+        { name: "current", type: cfg.payloadType },
+        { name: "specifications", type: cfg.inputType },
+      ],
+    },
+    {
+      name: `${node.name}_ReviserInput`,
+      fields: [
+        { name: "current", type: cfg.payloadType },
+        { name: "revision_feedback", type: "str" },
+      ],
+    },
+    {
+      name: `${node.name}_CriticOutput`,
+      fields: [
+        { name: "status", type: "str" },
+        { name: "feedback", type: "str" },
+      ],
+    },
+  ];
+}
+
+/**
+ * `loops.py`: the project-wide `validate_node_output` helper — one copy per
+ * project, regardless of how many loop nodes there are. Mirrors the helper in
+ * `exploring/generic-workflow.py` 1:1.
+ */
+export function renderValidateNodeOutputHelper(): Fragment {
+  const imports: ImportReq[] = [
+    { module: "typing", names: ["Any"] },
+    { module: "pydantic", names: ["BaseModel"] },
+  ];
+  const code = [
+    `def validate_node_output(schema_cls: type[BaseModel], raw_output: Any) -> BaseModel:`,
+    `    if isinstance(raw_output, schema_cls):`,
+    `        return raw_output`,
+    `    if isinstance(raw_output, dict):`,
+    `        return schema_cls.model_validate(raw_output)`,
+    `    if isinstance(raw_output, BaseModel):`,
+    `        return schema_cls.model_validate(raw_output.model_dump())`,
+    `    raise ValueError(f"Cannot validate {type(raw_output)} into {schema_cls}")`,
+    ``,
+  ].join("\n");
+  return { imports, code };
+}
+
+/**
+ * `loops.py`: one `@node(rerun_on_resume=True) async def <N>_orchestrator(ctx)`
+ * per loop node (ADR-0039). The body is parameterized straight from
+ * `exploring/generic-workflow.py`:
+ *  - build the three `LlmAgent`s (model + instruction + typed I/O schemas);
+ *  - read the spec from `ctx.state.get("<N>_input", "")` (canonical key —
+ *    user wires upstream by writing to that state slot);
+ *  - run the generator once, validate output via `validate_node_output`;
+ *  - `for _ in range(<maxIterations>)`: critic → approval check → reviser;
+ *  - exhaustion → `raise RuntimeError(...)`.
+ */
+export function renderLoopOrchestrator(
+  node: LoopNode,
+  schemas: ReadonlyMap<string, SchemaDef>,
+): Fragment {
+  const cfg = node.config;
+  const orchName = loopOrchestratorName(node);
+  const inputName = `${node.name}_input`;
+  const outputKey = `${node.name}_output`;
+
+  const payload = resolveRef(cfg.payloadType, schemas);
+
+  const imports: ImportReq[] = [
+    { module: "google.adk", names: ["Context"] },
+    { module: "google.adk.agents", names: ["LlmAgent"] },
+    { module: "google.adk.workflow", names: ["node"] },
+    {
+      module: "schemas",
+      names: [
+        `${node.name}_GenInput`,
+        `${node.name}_CriticInput`,
+        `${node.name}_ReviserInput`,
+        `${node.name}_CriticOutput`,
+      ],
+    },
+    ...payload.imports,
+  ];
+
+  const subAgentBlock = (
+    varName: string,
+    role: "generator" | "critic" | "reviser",
+    inputSchemaName: string,
+    outputSchemaName: string,
+    outputKeyName: string,
+  ): string => {
+    const sub = cfg[role];
+    return [
+      `${varName} = LlmAgent(`,
+      `    model=${pyStr(sub.model)},`,
+      `    name=${pyStr(`${node.name}_${role}`)},`,
+      `    instruction=${pyStr(sub.instruction)},`,
+      `    input_schema=${inputSchemaName},`,
+      `    output_schema=${outputSchemaName},`,
+      `    output_key=${pyStr(outputKeyName)},`,
+      `)`,
+    ].join("\n");
+  };
+
+  const body = [
+    `@node(rerun_on_resume=True)`,
+    `async def ${orchName}(ctx: Context):`,
+    indent(
+      subAgentBlock(
+        "generator",
+        "generator",
+        `${node.name}_GenInput`,
+        payload.py,
+        `${node.name}_generated`,
+      ),
+    ),
+    indent(
+      subAgentBlock(
+        "critic",
+        "critic",
+        `${node.name}_CriticInput`,
+        `${node.name}_CriticOutput`,
+        `${node.name}_critic_feedback`,
+      ),
+    ),
+    indent(
+      subAgentBlock(
+        "reviser",
+        "reviser",
+        `${node.name}_ReviserInput`,
+        payload.py,
+        `${node.name}_revised`,
+      ),
+    ),
+    indent(`specs = ctx.state.get(${pyStr(inputName)}, "")`),
+    indent(
+      `raw = await ctx.run_node(generator, ${node.name}_GenInput(specifications=specs))`,
+    ),
+    indent(`current = validate_node_output(${payload.py}, raw)`),
+    indent(`for _ in range(${cfg.maxIterations}):`),
+    indent(
+      `    critic_raw = await ctx.run_node(critic, ${node.name}_CriticInput(current=current, specifications=specs))`,
+    ),
+    indent(
+      `    crit = validate_node_output(${node.name}_CriticOutput, critic_raw)`,
+    ),
+    indent(`    if crit.status == ${pyStr(cfg.approvalPhrase)}:`),
+    indent(`        ctx.state[${pyStr(outputKey)}] = current.model_dump()`),
+    indent(`        return`),
+    indent(
+      `    revised_raw = await ctx.run_node(reviser, ${node.name}_ReviserInput(current=current, revision_feedback=crit.feedback))`,
+    ),
+    indent(`    current = validate_node_output(${payload.py}, revised_raw)`),
+    indent(
+      `raise RuntimeError(${pyStr(`${node.name} failed to produce valid output after ${cfg.maxIterations} rounds`)})`,
+    ),
+    ``,
+  ].join("\n");
+
+  return { imports, code: body };
 }

@@ -1,0 +1,50 @@
+{
+  "irVersion": "0.1.0",
+  "name": "critic_loop_workflow",
+  "description": "Self-contained generate→critic→revise loop (ADR-0039). The single `code_loop` node compiles to a `@node` async orchestrator that runs three internal LlmAgents until the critic returns the approval phrase. payloadType is a nested schema (Files → FileItem) to also exercise ADR-0037 topological schema emission.",
+  "schemas": [
+    {
+      "name": "Files",
+      "fields": [
+        { "name": "items", "type": "FileItem" }
+      ]
+    },
+    {
+      "name": "FileItem",
+      "fields": [
+        { "name": "filename", "type": "str" },
+        { "name": "content", "type": "str" }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_loop",
+      "type": "loop",
+      "name": "code_loop",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "description": "Generate code, then loop critic+reviser until the critic approves.",
+        "maxIterations": 5,
+        "approvalPhrase": "APPROVED",
+        "inputType": "str",
+        "payloadType": "Files",
+        "generator": {
+          "model": "gemini-2.5-flash",
+          "instruction": "You are an expert developer. Generate code based on the provided specifications."
+        },
+        "critic": {
+          "model": "gemini-2.5-flash",
+          "instruction": "Review the code against the specifications. If it meets all requirements, return status 'APPROVED'. Otherwise, return detailed feedback."
+        },
+        "reviser": {
+          "model": "gemini-2.5-pro",
+          "instruction": "Fix the provided code based on the critic feedback."
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_loop" }
+  ]
+}

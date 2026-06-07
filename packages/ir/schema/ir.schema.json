@@ -172,13 +172,45 @@
         "body": { "type": ["string", "null"] }
       }
     },
+    "loopSubAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "instruction"],
+      "properties": {
+        "model": { "type": "string" },
+        "instruction": { "type": "string" }
+      }
+    },
+    "loopConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxIterations",
+        "approvalPhrase",
+        "inputType",
+        "payloadType",
+        "generator",
+        "critic",
+        "reviser"
+      ],
+      "properties": {
+        "description": { "type": "string" },
+        "maxIterations": { "type": "integer", "minimum": 1 },
+        "approvalPhrase": { "type": "string", "minLength": 1 },
+        "inputType": { "type": "string" },
+        "payloadType": { "type": "string" },
+        "generator": { "$ref": "#/definitions/loopSubAgent" },
+        "critic": { "$ref": "#/definitions/loopSubAgent" },
+        "reviser": { "$ref": "#/definitions/loopSubAgent" }
+      }
+    },
 
     "node": {
       "type": "object",
       "required": ["id", "type", "name", "config"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "type": { "enum": ["agent", "function", "router", "tool", "join", "humanInput", "workflow"] },
+        "type": { "enum": ["agent", "function", "router", "tool", "join", "humanInput", "workflow", "loop"] },
         "name": { "$ref": "#/definitions/identifier" },
         "config": { "type": "object" },
         "ui": {
@@ -201,7 +233,9 @@
         { "if": { "properties": { "type": { "const": "workflow" } } },
           "then": { "properties": { "config": { "$ref": "#/definitions/workflowConfig" } } } },
         { "if": { "properties": { "type": { "const": "tool" } } },
-          "then": { "properties": { "config": { "$ref": "#/definitions/toolConfig" } } } }
+          "then": { "properties": { "config": { "$ref": "#/definitions/toolConfig" } } } },
+        { "if": { "properties": { "type": { "const": "loop" } } },
+          "then": { "properties": { "config": { "$ref": "#/definitions/loopConfig" } } } }
       ]
     }
   }

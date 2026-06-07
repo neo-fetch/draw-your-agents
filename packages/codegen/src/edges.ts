@@ -29,6 +29,15 @@ import type { Edge, GraphIR, GraphNode } from "@graphical-agents/ir";
 /** The literal START sentinel that opens a graph entry row. */
 export const START = "START";
 
+/**
+ * Python symbol a node contributes to the `edges=[…]` row. Most node types
+ * use the IR `name` directly; `loop` nodes expose `<name>_orchestrator` from
+ * `loops.py` (ADR-0039), so the edge row references that symbol instead.
+ */
+function rowSymbol(node: GraphNode): string {
+  return node.type === "loop" ? `${node.name}_orchestrator` : node.name;
+}
+
 /** One route→target entry in a router's ADK route map. */
 export interface RouteEntry {
   readonly route: string;
@@ -97,7 +106,7 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
   let cur = startTargets[0];
   for (;;) {
     const node = nodeOf(cur);
-    members.push({ kind: "node", name: node.name });
+    members.push({ kind: "node", name: rowSymbol(node) });
     if (node.type === "router") {
       rows.push(buildRouteMapRow(node, outEdges.get(cur) ?? [], outEdges, nodeOf));
       break; // the router closes the entry chain; branches live in its route row
@@ -153,7 +162,7 @@ function compileParallel(
     let cur = target;
     for (;;) {
       const node = nodeOf(cur);
-      members.push({ kind: "node", name: node.name });
+      members.push({ kind: "node", name: rowSymbol(node) });
       if (node.type === "join") {
         // This branch terminates at the join.
         if (joinNodeId === undefined) {
@@ -193,11 +202,11 @@ function compileParallel(
             "multi-out after join is not handled by this slice",
         );
       }
-      const contMembers: RowMember[] = [{ kind: "node", name: nodeOf(joinNodeId).name }];
+      const contMembers: RowMember[] = [{ kind: "node", name: rowSymbol(nodeOf(joinNodeId)) }];
       let cur = joinOuts[0].to;
       for (;;) {
         const node = nodeOf(cur);
-        contMembers.push({ kind: "node", name: node.name });
+        contMembers.push({ kind: "node", name: rowSymbol(node) });
         const outs = outEdges.get(cur) ?? [];
         if (outs.length === 0) break;
         if (outs.length > 1) {
@@ -246,10 +255,10 @@ function buildRouteMapRow(
           "out-edges; branch continuations are not handled by this slice",
       );
     }
-    return { route, target: nodeOf(targetId).name };
+    return { route, target: rowSymbol(nodeOf(targetId)) };
   });
 
-  return [{ kind: "node", name: router.name }, { kind: "routeMap", entries }];
+  return [{ kind: "node", name: rowSymbol(router) }, { kind: "routeMap", entries }];
 }
 
 /** Render compiled rows as the Python `edges=[...]` source fragment. */

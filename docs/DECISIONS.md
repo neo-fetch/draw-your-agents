@@ -1898,3 +1898,103 @@ generator emit a clean topologically-ordered `schemas.py`. Out-of-scope and inte
 forward from 2-A): `list[X]` / `dict` / unions, recursive/forward-ref models, and nested-schema
 authoring inside `workflow.config.graph.schemas`.
 
+
+## ADR-0039 — Loop node (generate → critic → revise): self-contained `@node` orchestrator, encapsulated dynamic workflow inside the otherwise-DAG graph
+**Context.** [docs/PHASE-SUBAGENTS-DESIGN.md](PHASE-SUBAGENTS-DESIGN.md) (the rewritten "ground
+truth, what actually works" version) and [exploring/generic-workflow.py](../exploring/generic-workflow.py)
+— a file the user already ran under real `google-adk==2.0.0` — describe a generator + LLM-critic
++ reviser loop driven by ADK's **dynamic-workflow API** (`@node` + `ctx.run_node` + a Python
+`for`-loop). That API is the one explicitly scoped *out* by [ADR-0002](#adr-0002--scope-out-adk-dynamic-workflows).
+Slice 3-B deliberately makes a narrow, contained exception: a single new declarative IR node
+type `loop` compiles to one `@node async def <N>_orchestrator(ctx)` that owns the three
+`LlmAgent`s and the `for`-loop inside. The dynamic construct is hidden behind one node — the
+**outer graph stays a DAG** (invariant 4 from IR-SCHEMA.md still holds), so the visual surface,
+edges compiler, joins, parallel, and routers are all unaffected.
+**Decisions.**
+- **New IR node type `loop` with `LoopConfig`** ([packages/ir/src/types.ts](../packages/ir/src/types.ts),
+  [packages/ir/schema/ir.schema.json](../packages/ir/schema/ir.schema.json)). Config fields:
+  `maxIterations` (int ≥ 1), `approvalPhrase` (non-empty string), `inputType` and `payloadType`
+  (both `TypeRef`s — scalar or declared schema), plus three sub-agents
+  (`generator`/`critic`/`reviser`) each `{ model, instruction }`. `instruction` is a **plain
+  string** here, deliberately — sub-agents are not graph nodes, so they cannot bind
+  `<schema.field from source>` variable chips in v1 (the existing chip system points at IR node
+  outputs, which loop sub-agents are not).
+- **The critic output schema is canonical, not user-configurable.** `<N>_CriticOutput` is always
+  `{ status: str, feedback: str }`. The termination contract is `status == approvalPhrase`. This
+  matches the working file and avoids exposing a third "schema" slot to v1 users.
+- **Sub-agents are encapsulated, not graph nodes** ([packages/codegen/src/fragments.ts](../packages/codegen/src/fragments.ts)).
+  The generator/critic/reviser are `LlmAgent(...)` instances built inside the orchestrator body —
+  they do **not** appear in `agents.py`, are not referenced by any edge row, and the
+  `Agent` ↔ `LlmAgent` divergence stays contained. The outer graph sees one node.
+- **New `loops.py` module** ([packages/codegen/src/project.ts](../packages/codegen/src/project.ts)).
+  Holds the single project-wide `validate_node_output(schema_cls, raw_output)` helper (one copy
+  per project regardless of loop count) plus one `<N>_orchestrator` per loop node. `workflow.py`
+  imports the orchestrator symbols from `loops`. `python.ts`'s `LOCAL` import-grouping set gains
+  `"loops"`. `loops.py` is only written when the IR has ≥ 1 loop node; the existing seven-file
+  set is otherwise unchanged ([packages/codegen/test/project.test.ts](../packages/codegen/test/project.test.ts)
+  now keys expected files off a per-project `extras` array rather than a single constant).
+- **Edges compiler renders loops as `<name>_orchestrator`** ([packages/codegen/src/edges.ts](../packages/codegen/src/edges.ts)).
+  A tiny `rowSymbol(node)` helper centralizes the "what symbol does this node contribute to a
+  Python edge tuple?" question — `loop` → `<name>_orchestrator`, everything else → `name`. No
+  new `RowMember.kind`; routers/joins/parallel/humanInput stay untouched.
+- **Canonical wrapper schemas flow through the existing topological emission path**
+  ([packages/codegen/src/project.ts](../packages/codegen/src/project.ts), `walkAllSchemas`).
+  Per loop node, four synthetic `SchemaDef`s — `<N>_GenInput { specifications: <inputType> }`,
+  `<N>_CriticInput { current: <payloadType>; specifications: <inputType> }`,
+  `<N>_ReviserInput { current: <payloadType>; revision_feedback: str }`,
+  `<N>_CriticOutput { status: str; feedback: str }` — are injected at the node's walk position.
+  They reference `payloadType`/`inputType`, so [ADR-0037](#adr-0037)'s `topologicalSchemas`
+  already orders them after the user's payload schema (declared-before-referenced is free).
+- **Canonical state-key wiring, self-contained loop.** The orchestrator reads its spec from
+  `ctx.state.get("<N>_input", "")` and writes the approved payload to
+  `ctx.state["<N>_output"]` — the file's `specifications` / `final_files` convention
+  parameterized by the node name. Mid-graph dynamic input passing is **out of scope** for v1;
+  the orchestrator is a self-contained unit, and the user is expected to seed `ctx.state` (or
+  refine the generator to read elsewhere) when integrating downstream nodes. Confirmed
+  working-shape in the proven file.
+- **Validator (`packages/ir/src/validate.ts`) gains five codes.** `LOOP_BAD_MAX_ITERATIONS` (int
+  ≥ 1), `LOOP_MISSING_APPROVAL_PHRASE`, `LOOP_SUBAGENT_MISSING_MODEL` (reused across all three
+  roles, role named in the message), `LOOP_UNKNOWN_INPUT_TYPE`, `LOOP_UNKNOWN_PAYLOAD_TYPE`.
+  The four generated symbols (`<N>_orchestrator`, `<N>_GenInput`, `<N>_CriticInput`,
+  `<N>_ReviserInput`, `<N>_CriticOutput`) are registered in the flat global
+  `globalNames`/`globalSchemas` sets ([ADR-0017](#adr-0017)) so user-declared schemas/nodes
+  cannot shadow them — collisions surface as `DUPLICATE_NODE_NAME` /
+  `DUPLICATE_SCHEMA_NAME`, the existing codes.
+- **Rejected: `LoopAgent` templated variant.** The earlier design draft proposed wrapping the
+  loop in an `LoopAgent`; the rewritten design doc supersedes it because `LoopAgent` is not what
+  the proven file uses. Implementing what already works under real ADK beats inventing a parallel
+  surface.
+- **Rejected: deterministic-compile hook.** The proven file has a stub
+  `run_deterministic_compile_test`. v1 is LLM-critic only; the hook is a future ADR.
+**Fixture.** [packages/ir/fixtures/critic-loop.ir.json](../packages/ir/fixtures/critic-loop.ir.json)
+— one `loop` node `code_loop` with `payloadType` a nested `Files { items: FileItem }` schema,
+which also exercises ADR-0037 topological emission inside `schemas.py` (`FileItem` before
+`Files`, then the four `code_loop_*` wrappers). Golden directory:
+[packages/codegen/test/golden/critic-loop/](../packages/codegen/test/golden/critic-loop/) (full
+eight-file set including `loops.py`). Registered in
+[packages/codegen/test/project.test.ts](../packages/codegen/test/project.test.ts) with
+`extras: ["loops.py"]`.
+**Spec tests** ([packages/ir/test/validate.test.ts](../packages/ir/test/validate.test.ts), six new):
+`critic-loop` zero errors; `LOOP_BAD_MAX_ITERATIONS` across `0`, `-2`, `3.5`, and non-number
+input; `LOOP_MISSING_APPROVAL_PHRASE` for empty string; `LOOP_SUBAGENT_MISSING_MODEL` across
+all three roles; `LOOP_UNKNOWN_PAYLOAD_TYPE` for an unresolved ref; `LOOP_UNKNOWN_INPUT_TYPE`
+for an unresolved ref; and a `DUPLICATE_SCHEMA_NAME` collision when a user schema shadows the
+reserved `<N>_CriticOutput`.
+**Verification.** Default `npm test`: IR validator 25 tests (+6), codegen 104 tests (+10 for the
+`critic-loop` project incl. byte-for-byte golden + `python3 -m py_compile`), `apps/web` 97 tests
+unchanged. `npm run check:ir` PASS across nine fixtures (the previous eight + `critic-loop`).
+**Follow-up — manual fidelity (user runs).** Extends [ADR-0021](#adr-0021). The codegen is
+parameterized from a file the user already ran under real `google-adk==2.0.0`, so risk is low.
+Procedure: in a clean venv, `pip install google-adk==2.0.0`, generate the `critic-loop` project,
+then `python -c "from loops import code_loop_orchestrator; from workflow import root_agent;
+print(root_agent)"`. Confirms `LlmAgent`, `from google.adk.workflow import node`,
+`from google.adk import Context`, and the `@node` / `Workflow(edges=…)` shape all resolve under
+the real wheel. Record the result in this ADR once run.
+**Consequences.** A user can now express a "keep generating + revising until an LLM critic
+approves" pattern as one IR node and round-trip it through validate → codegen → a runnable ADK
+project that matches a working real-ADK file 1:1. The DAG / declarative posture is preserved at
+the IR/graph level — the dynamic-workflow construct is contained to a single `@node` inside one
+generated module. Out-of-scope and intentional: variable chips inside loop sub-agent
+instructions, configurable critic-output schema, mid-graph dynamic input passing into the
+orchestrator, the deterministic-compile hook, and any `apps/web` work (the Loop inspector is
+Slice 3-C).

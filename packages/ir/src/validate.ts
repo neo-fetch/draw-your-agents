@@ -65,6 +65,11 @@ export const ValidationCode = {
   UNKNOWN_HUMANINPUT_PAYLOAD_REF: "UNKNOWN_HUMANINPUT_PAYLOAD_REF",
   UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF: "UNKNOWN_HUMANINPUT_RESPONSE_SCHEMA_REF",
   WORKFLOW_MISSING_GRAPH: "WORKFLOW_MISSING_GRAPH",
+  LOOP_BAD_MAX_ITERATIONS: "LOOP_BAD_MAX_ITERATIONS",
+  LOOP_MISSING_APPROVAL_PHRASE: "LOOP_MISSING_APPROVAL_PHRASE",
+  LOOP_SUBAGENT_MISSING_MODEL: "LOOP_SUBAGENT_MISSING_MODEL",
+  LOOP_UNKNOWN_INPUT_TYPE: "LOOP_UNKNOWN_INPUT_TYPE",
+  LOOP_UNKNOWN_PAYLOAD_TYPE: "LOOP_UNKNOWN_PAYLOAD_TYPE",
   // Prompt-variable provenance (IR-SCHEMA invariant 6)
   VAR_SOURCE_NOT_NODE: "VAR_SOURCE_NOT_NODE",
   VAR_SOURCE_NOT_STRUCTURED: "VAR_SOURCE_NOT_STRUCTURED",
@@ -101,6 +106,7 @@ const NODE_TYPES = new Set([
   "join",
   "humanInput",
   "workflow",
+  "loop",
 ]);
 // Hard keywords only — mirrors Python's `keyword.iskeyword` (soft keywords like
 // `match`/`case`/`type` are not reserved and remain valid identifiers).
@@ -398,6 +404,75 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
             `${ctx}: unknown responseSchemaRef ${repr(c.responseSchemaRef)}`,
             n.id,
           );
+        }
+        break;
+      }
+      case "loop": {
+        const ctx = `loop ${n.name}`;
+        const maxIter = c.maxIterations;
+        if (typeof maxIter !== "number" || !Number.isInteger(maxIter) || maxIter < 1) {
+          err(
+            ValidationCode.LOOP_BAD_MAX_ITERATIONS,
+            `${ctx}: maxIterations must be an integer ≥ 1, got ${repr(maxIter)}`,
+            n.id,
+          );
+        }
+        if (typeof c.approvalPhrase !== "string" || c.approvalPhrase.length === 0) {
+          err(
+            ValidationCode.LOOP_MISSING_APPROVAL_PHRASE,
+            `${ctx}: approvalPhrase must be a non-empty string`,
+            n.id,
+          );
+        }
+        if (!refOk(c.inputType)) {
+          err(
+            ValidationCode.LOOP_UNKNOWN_INPUT_TYPE,
+            `${ctx}: unknown inputType ${repr(c.inputType)}`,
+            n.id,
+          );
+        }
+        if (!refOk(c.payloadType)) {
+          err(
+            ValidationCode.LOOP_UNKNOWN_PAYLOAD_TYPE,
+            `${ctx}: unknown payloadType ${repr(c.payloadType)}`,
+            n.id,
+          );
+        }
+        for (const role of ["generator", "critic", "reviser"] as const) {
+          const sub = (c as Loose)[role];
+          if (!sub || typeof sub.model !== "string" || sub.model.length === 0) {
+            err(
+              ValidationCode.LOOP_SUBAGENT_MISSING_MODEL,
+              `${ctx}: ${role} sub-agent missing model`,
+              n.id,
+            );
+          }
+        }
+        // Reserve the symbols the codegen will emit for this loop, so a sibling
+        // schema/node can't shadow them (flat global namespace — ADR-0017).
+        if (typeof n.name === "string" && isIdent(n.name)) {
+          const orch = `${n.name}_orchestrator`;
+          if (globalNames.has(orch) || nameToId.has(orch)) {
+            err(
+              ValidationCode.DUPLICATE_NODE_NAME,
+              `duplicate node name ${repr(orch)} (reserved for loop ${n.name}'s orchestrator)`,
+              n.id,
+            );
+          } else {
+            globalNames.add(orch);
+          }
+          for (const suffix of ["GenInput", "CriticInput", "ReviserInput", "CriticOutput"]) {
+            const sname = `${n.name}_${suffix}`;
+            if (globalSchemas.has(sname) || schemaFields.has(sname)) {
+              err(
+                ValidationCode.DUPLICATE_SCHEMA_NAME,
+                `duplicate schema name ${repr(sname)} (reserved for loop ${n.name})`,
+                n.id,
+              );
+            } else {
+              globalSchemas.add(sname);
+            }
+          }
         }
         break;
       }

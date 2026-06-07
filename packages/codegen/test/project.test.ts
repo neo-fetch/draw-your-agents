@@ -29,7 +29,7 @@ function loadGolden(project: string, file: string): string {
   return readFileSync(join(here, "golden", project, file), "utf8");
 }
 
-const EXPECTED_FILES = [
+const BASE_FILES = [
   "schemas.py",
   "functions.py",
   "agents.py",
@@ -39,24 +39,28 @@ const EXPECTED_FILES = [
   "README.md",
 ];
 
-// Each golden project: the fixture IR and the golden directory under golden/.
+// Each golden project: the fixture IR, the golden directory under golden/, and
+// any extra emitted files beyond `BASE_FILES` (ADR-0039: `loops.py` for graphs
+// with any loop node).
 const PROJECTS = [
-  { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json" },
-  { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
-  { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json" },
-  { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json" },
-  { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json" },
-  { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json" },
-  { name: "nested-schema", fixture: "packages/ir/fixtures/nested-schema.ir.json" },
+  { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json", extras: [] },
+  { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json", extras: [] },
+  { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json", extras: [] },
+  { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json", extras: [] },
+  { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json", extras: [] },
+  { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json", extras: [] },
+  { name: "nested-schema", fixture: "packages/ir/fixtures/nested-schema.ir.json", extras: [] },
+  { name: "critic-loop", fixture: "packages/ir/fixtures/critic-loop.ir.json", extras: ["loops.py"] },
 ];
 
-for (const { name, fixture } of PROJECTS) {
+for (const { name, fixture, extras } of PROJECTS) {
+  const expectedFiles = [...BASE_FILES, ...extras];
   test(`${name}: generates exactly the ARCHITECTURE §5 file set`, () => {
     const files = generateProject(loadIR(fixture));
-    assert.deepEqual([...files.keys()].sort(), [...EXPECTED_FILES].sort());
+    assert.deepEqual([...files.keys()].sort(), [...expectedFiles].sort());
   });
 
-  for (const file of EXPECTED_FILES) {
+  for (const file of expectedFiles) {
     test(`${name}: ${file} matches golden`, () => {
       const files = generateProject(loadIR(fixture));
       assert.equal(files.get(file), loadGolden(name, file));

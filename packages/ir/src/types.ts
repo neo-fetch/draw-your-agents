@@ -102,6 +102,39 @@ export interface ToolConfig {
   body?: string | null;
 }
 
+/**
+ * One sub-agent of a `loop` node (ADR-0039). Sub-agents are not graph nodes —
+ * they are `LlmAgent(...)` instances built inside the `<N>_orchestrator`
+ * `@node` body. Instruction is a plain string (no `<schema.field from source>`
+ * variable chips in v1).
+ */
+export interface LoopSubAgent {
+  model: string;
+  instruction: string;
+}
+
+/**
+ * Self-contained generator → critic → reviser loop (ADR-0039). Codegens to a
+ * single `@node async def <name>_orchestrator(ctx)` that runs three internal
+ * `LlmAgent`s in a Python `for`-loop bounded by `maxIterations`, terminating
+ * when the critic's `status` equals `approvalPhrase`. The outer graph still
+ * sees one node.
+ */
+export interface LoopConfig {
+  description?: string;
+  /** Integer ≥ 1. Bound on critic-revise rounds. */
+  maxIterations: number;
+  /** Critic `status` string that ends the loop (typically "APPROVED"). */
+  approvalPhrase: string;
+  /** Type of the "specifications" the orchestrator consumes. */
+  inputType: TypeRef;
+  /** Type of the generated/refined payload. */
+  payloadType: TypeRef;
+  generator: LoopSubAgent;
+  critic: LoopSubAgent;
+  reviser: LoopSubAgent;
+}
+
 // --- Nodes ---
 export type NodeType =
   | "agent"
@@ -110,7 +143,8 @@ export type NodeType =
   | "tool"
   | "join"
   | "humanInput"
-  | "workflow";
+  | "workflow"
+  | "loop";
 
 export interface UiPosition {
   x: number;
@@ -133,6 +167,7 @@ export type JoinNode = BaseNode<"join", JoinConfig>;
 export type HumanInputNode = BaseNode<"humanInput", HumanInputConfig>;
 export type WorkflowNode = BaseNode<"workflow", WorkflowConfig>;
 export type ToolNode = BaseNode<"tool", ToolConfig>;
+export type LoopNode = BaseNode<"loop", LoopConfig>;
 
 export type GraphNode =
   | AgentNode
@@ -141,7 +176,8 @@ export type GraphNode =
   | JoinNode
   | HumanInputNode
   | WorkflowNode
-  | ToolNode;
+  | ToolNode
+  | LoopNode;
 
 // --- Edges & graph ---
 /** Edge `from` may be this sentinel to mark a graph entry point. */

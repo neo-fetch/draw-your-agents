@@ -25,6 +25,7 @@ import type {
   GraphNode,
   HumanInputNode,
   JoinNode,
+  LoopNode,
   RouterNode,
   SchemaDef,
   ToolNode,
@@ -32,14 +33,18 @@ import type {
 import { compileEdges, renderEdgeRows, type EdgeRow, type RowMember } from "./edges.ts";
 import {
   indexSchemas,
+  loopOrchestratorName,
+  loopWrapperSchemas,
   renderAgent,
   renderFunction,
   renderHumanInput,
   renderJoin,
+  renderLoopOrchestrator,
   renderRouter,
   renderSchema,
   renderToolImpl,
   renderToolWrapper,
+  renderValidateNodeOutputHelper,
   toolImplName,
   type Fragment,
 } from "./fragments.ts";
@@ -91,12 +96,21 @@ function walkAllNodes(ir: GraphIR): GraphNode[] {
   return out;
 }
 
-/** Same walk, but yielding the schema declarations of every level. */
+/**
+ * Same walk, but yielding the schema declarations of every level. Loop nodes
+ * (ADR-0039) contribute four canonical wrapper schemas inline at the point
+ * they appear — `<N>_GenInput`, `<N>_CriticInput`, `<N>_ReviserInput`,
+ * `<N>_CriticOutput` — so the existing `topologicalSchemas` path emits them
+ * after the user's `payloadType`/`inputType` schemas.
+ */
 function walkAllSchemas(ir: GraphIR): SchemaDef[] {
   const out: SchemaDef[] = [];
   const visit = (g: GraphIR): void => {
     for (const s of g.schemas) out.push(s);
-    for (const n of g.nodes) if (n.type === "workflow") visit(n.config.graph);
+    for (const n of g.nodes) {
+      if (n.type === "workflow") visit(n.config.graph);
+      else if (n.type === "loop") out.push(...loopWrapperSchemas(n));
+    }
   };
   visit(ir);
   return out;
@@ -144,7 +158,8 @@ export function generateProject(ir: GraphIR): GeneratedProject {
       node.type !== "join" &&
       node.type !== "humanInput" &&
       node.type !== "workflow" &&
-      node.type !== "tool"
+      node.type !== "tool" &&
+      node.type !== "loop"
     ) {
       throw new CodegenError(
         `node "${(node as { name: string }).name}" of unknown type ` +
@@ -159,6 +174,7 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   const routers = allNodes.filter((n): n is RouterNode => n.type === "router");
   const humanInputs = allNodes.filter((n): n is HumanInputNode => n.type === "humanInput");
   const tools = allNodes.filter((n): n is ToolNode => n.type === "tool");
+  const loops = allNodes.filter((n): n is LoopNode => n.type === "loop");
   // Workflow assignments + their joins + their tool wrappers are emitted by
   // workflowModule via the context list; deepest-first dependency order is
   // baked into the collector.
@@ -171,13 +187,16 @@ export function generateProject(ir: GraphIR): GeneratedProject {
     functionsModule(ir, allNodes, functions, routers, humanInputs, tools, schemas),
   );
   files.set("agents.py", agentsModule(ir, agents, schemas));
+  if (loops.length > 0) {
+    files.set("loops.py", loopsModule(ir, loops, schemas));
+  }
   files.set(
     "workflow.py",
-    workflowModule(ir, workflowContexts, agents, functions, routers, humanInputs, tools),
+    workflowModule(ir, workflowContexts, agents, functions, routers, humanInputs, tools, loops),
   );
   files.set("requirements.txt", REQUIREMENTS);
   files.set(".env.example", ENV_EXAMPLE);
-  files.set("README.md", readme(ir));
+  files.set("README.md", readme(ir, loops.length > 0));
   return files;
 }
 
@@ -355,10 +374,14 @@ function workflowModule(
   routers: readonly RouterNode[],
   humanInputs: readonly HumanInputNode[],
   tools: readonly ToolNode[],
+  loops: readonly LoopNode[],
 ): string {
   const head = header("Workflow graph (entry module)", ir);
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Workflow"] }];
   if (agents.length > 0) imports.push({ module: "agents", names: agents.map((a) => a.name) });
+  if (loops.length > 0) {
+    imports.push({ module: "loops", names: loops.map((l) => loopOrchestratorName(l)) });
+  }
   // Routers and humanInput generators live in functions.py too — their symbols
   // appear in the edge rows alongside plain function nodes. Tool impls live
   // in functions.py as `<name>_impl`; the FunctionTool wrapper (which is what
@@ -400,8 +423,26 @@ function workflowModule(
   return joinModule(head, imports, bodies, "stmt");
 }
 
-function readme(ir: GraphIR): string {
+/**
+ * `loops.py` — the `@node` orchestrator for every `loop` IR node (ADR-0039),
+ * plus the shared `validate_node_output` helper. Imported by `workflow.py`.
+ */
+function loopsModule(
+  ir: GraphIR,
+  loops: readonly LoopNode[],
+  schemas: ReadonlyMap<string, SchemaDef>,
+): string {
+  const head = header("Loop orchestrators (encapsulated dynamic workflow)", ir);
+  const helper = renderValidateNodeOutputHelper();
+  const frags: Fragment[] = [helper, ...loops.map((l) => renderLoopOrchestrator(l, schemas))];
+  return joinModule(head, frags.flatMap((f) => f.imports), frags.map((f) => f.code), "def");
+}
+
+function readme(ir: GraphIR, hasLoops: boolean): string {
   const description = ir.description ? `${ir.description}\n\n` : "";
+  const loopsRow = hasLoops
+    ? "| `loops.py` | One `@node` orchestrator per loop node (encapsulated `LlmAgent` loop). |\n"
+    : "";
   return `# ${ir.name}
 
 ${description}Generated by **graphical-agents** from the Graph IR — a runnable Google ADK
@@ -414,7 +455,7 @@ ${description}Generated by **graphical-agents** from the Graph IR — a runnable
 | \`schemas.py\` | Pydantic models for every IR schema. |
 | \`functions.py\` | One function per function node. **Implement the \`TODO\` stubs.** |
 | \`agents.py\` | One \`Agent\` per agent node. |
-| \`workflow.py\` | \`root_agent = Workflow(edges=[...])\` — the graph entry point. |
+${loopsRow}| \`workflow.py\` | \`root_agent = Workflow(edges=[...])\` — the graph entry point. |
 
 ## Run
 

@@ -311,3 +311,93 @@ test("duplicate node name across parent + nested levels fires DUPLICATE_NODE_NAM
   assert.ok(f, "expected DUPLICATE_NODE_NAME across nesting levels");
   assert.equal(f!.nodeId, "n_outer/n_shared_child");
 });
+
+// -- loop node (ADR-0039) --
+
+function loopFixture(overrides: Record<string, unknown> = {}): GraphIR {
+  const cfg = {
+    maxIterations: 3,
+    approvalPhrase: "APPROVED",
+    inputType: "str",
+    payloadType: "str",
+    generator: { model: "gemini-2.5-flash", instruction: "gen" },
+    critic: { model: "gemini-2.5-flash", instruction: "crit" },
+    reviser: { model: "gemini-2.5-pro", instruction: "rev" },
+    ...overrides,
+  };
+  return {
+    irVersion: "0.1.0",
+    name: "loop_wf",
+    schemas: [],
+    nodes: [
+      {
+        id: "n_loop",
+        type: "loop",
+        name: "my_loop",
+        config: cfg,
+      },
+    ],
+    edges: [{ from: "START", to: "n_loop" }],
+  } as unknown as GraphIR;
+}
+
+test("critic-loop fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/critic-loop.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("LOOP_BAD_MAX_ITERATIONS for maxIterations < 1 and for non-integer", () => {
+  for (const bad of [0, -2, 3.5, "five" as unknown as number]) {
+    const r = validate(loopFixture({ maxIterations: bad }));
+    const codes = new Set(r.errors.map((e) => e.code));
+    assert.ok(
+      codes.has(ValidationCode.LOOP_BAD_MAX_ITERATIONS),
+      `expected LOOP_BAD_MAX_ITERATIONS for ${JSON.stringify(bad)}; got: ${[...codes].sort().join(", ")}`,
+    );
+  }
+});
+
+test("LOOP_MISSING_APPROVAL_PHRASE for empty approvalPhrase", () => {
+  const r = validate(loopFixture({ approvalPhrase: "" }));
+  const codes = new Set(r.errors.map((e) => e.code));
+  assert.ok(codes.has(ValidationCode.LOOP_MISSING_APPROVAL_PHRASE));
+});
+
+test("LOOP_SUBAGENT_MISSING_MODEL when any sub-agent model is empty", () => {
+  for (const role of ["generator", "critic", "reviser"] as const) {
+    const r = validate(
+      loopFixture({ [role]: { model: "", instruction: "x" } } as Record<string, unknown>),
+    );
+    const codes = new Set(r.errors.map((e) => e.code));
+    assert.ok(
+      codes.has(ValidationCode.LOOP_SUBAGENT_MISSING_MODEL),
+      `expected LOOP_SUBAGENT_MISSING_MODEL for ${role}`,
+    );
+  }
+});
+
+test("LOOP_UNKNOWN_PAYLOAD_TYPE for an unresolved payloadType", () => {
+  const r = validate(loopFixture({ payloadType: "Mystery" }));
+  const codes = new Set(r.errors.map((e) => e.code));
+  assert.ok(codes.has(ValidationCode.LOOP_UNKNOWN_PAYLOAD_TYPE));
+});
+
+test("LOOP_UNKNOWN_INPUT_TYPE for an unresolved inputType", () => {
+  const r = validate(loopFixture({ inputType: "Mystery" }));
+  const codes = new Set(r.errors.map((e) => e.code));
+  assert.ok(codes.has(ValidationCode.LOOP_UNKNOWN_INPUT_TYPE));
+});
+
+test("loop's reserved wrapper-schema names collide with user schemas → DUPLICATE_SCHEMA_NAME", () => {
+  // A user schema named `my_loop_CriticOutput` collides with the symbol the
+  // codegen reserves for `my_loop`'s canonical critic output.
+  const ir = loopFixture();
+  (ir as unknown as { schemas: unknown[] }).schemas = [
+    { name: "my_loop_CriticOutput", fields: [{ name: "x", type: "str" }] },
+  ];
+  const r = validate(ir);
+  const codes = new Set(r.errors.map((e) => e.code));
+  assert.ok(codes.has(ValidationCode.DUPLICATE_SCHEMA_NAME));
+});
