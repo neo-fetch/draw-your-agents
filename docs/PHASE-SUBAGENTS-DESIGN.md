@@ -1,132 +1,151 @@
-# Design — Loop node (critic/reviser) & orchestrator agents (feature #3)
+# Design — Loop node (generate → critic → revise), via dynamic workflow (feature #3)
 
-**Status:** architect design note (no code). Implementing session(s) append their own build-record
-ADR(s) (next in sequence). Cold-start artifact for the slice prompts.
+**Status:** architect design note (no code). Supersedes the earlier `LoopAgent`-based draft —
+**that was wrong.** Ground truth is the user's proven [`exploring/generic-workflow.py`](../exploring/generic-workflow.py),
+which works against real `google-adk==2.0.0`. Implementing session(s) append their own ADR(s).
 
-**Goal:** add a deterministic **critic + reviser loop** ("iterate until approved, max-N") as a
-**dedicated `loop` node type** — a first-class node alongside `agent`/`function`/`router`/etc. Its
-sub-agents (critic, reviser) are **agent-shaped** (they reuse the agent config), so they respect the
-existing agent node model. Grounded in the official docs (sources at bottom): an ADK `Agent` takes
-`sub_agents=[...]`, **`LoopAgent(sub_agents=[…], max_iterations=N)`** is the deterministic loop
-primitive, and — **confirmed by the user** — a `LoopAgent` is accepted as a node inside
-`Workflow(edges=…)` and its internal execution does not conflict with the graph workflow.
+**Goal:** a **self-contained `loop` node** that generates an output, then iteratively critiques and
+revises it until an LLM critic approves (or a max-iteration cap). v1 mirrors the working file 1:1:
+**generator + critic + reviser**, **LLM critic only** (no deterministic check yet).
 
-**Breaks the "frozen `packages/*`" rule** deliberately (IR + validator + codegen + golden tests +
-fidelity). Biggest feature to date.
+**Breaks two `CLAUDE.md` rules deliberately** — it adds an ADK **dynamic workflow** (the scoped-out
+`@node` / `ctx.run_node` / Python-loop API) *contained inside one node*, and it's the biggest
+`packages/*` change yet. Golden tests + the ADR-0021 fidelity check are the gate. The win: the loop
+is hidden inside one `@node`, so the **outer graph stays a DAG** (invariant 4 still holds at the
+graph level).
 
 ---
 
-## What exists today (grounding)
+## Ground truth: what actually works (`generic-workflow.py`)
 
-- `NodeType` union + per-type configs in [packages/ir/src/types.ts](../packages/ir/src/types.ts).
-  `AgentConfig` = `model`, `instruction`, `modelParams?`, **`mode?: "task" | "single_turn"`**,
-  `tools?`, `inputSchemaRef?`, `outputSchemaRef`. (Docs: `mode` is *specifically* for sub-agents
-  under a coordinator — it finally has a use here.)
-- `renderAgent` ([packages/codegen/src/fragments.ts](../packages/codegen/src/fragments.ts)) emits
-  `<name> = Agent(name=, model=, instruction=, [params], [input_schema], output_schema)`. **Reusable
-  to emit the critic/reviser sub-agents.** The node `name` is the symbol used in `Workflow(edges=…)`.
-- `addNode` ([apps/web/src/store/addNode.ts](../apps/web/src/store/addNode.ts)) already mints any
-  `NodeType` with a default config; the palette + canvas render every type. Adding `loop` extends
-  these the same way the other six types already work.
+NOT `LoopAgent`. The proven pattern is a **dynamic-workflow orchestrator**:
 
-## Decision: a dedicated `loop` node type (not an agent-config flag)
+```python
+from google.adk import Context, Workflow
+from google.adk.agents import LlmAgent
+from google.adk.workflow import START, node
 
-The user chose a dedicated node type over extending `AgentConfig` (which would leave the agent
-node's own `model`/`instruction`/`output` fields dead in loop mode). So:
+@node(rerun_on_resume=True)
+async def <N>_orchestrator(ctx: Context):
+    generator = LlmAgent(model=…, name="…", instruction=…, input_schema=GenIn,  output_schema=Payload, output_key=…)
+    critic    = LlmAgent(model=…, name="…", instruction=…, input_schema=CritIn, output_schema=CriticOut, output_key=…)
+    reviser   = LlmAgent(model=…, name="…", instruction=…, input_schema=RevIn,  output_schema=Payload, output_key=…)
+
+    specs = ctx.state.get("<inputKey>", …)
+    raw = await ctx.run_node(generator, GenIn(specifications=specs))
+    current = validate_node_output(Payload, raw)
+
+    for _ in range(<maxIterations>):
+        crit = validate_node_output(CriticOut, await ctx.run_node(critic, CritIn(current=current, specifications=specs)))
+        if crit.status == "<approvalPhrase>":
+            ctx.state["<outputKey>"] = current.model_dump(); return
+        revised = await ctx.run_node(reviser, RevIn(current=current, revision_feedback=crit.feedback))
+        current = validate_node_output(Payload, revised)
+    raise RuntimeError("…failed after <maxIterations> rounds")
+
+Workflow(name=…, edges=[(START, <N>_orchestrator)])
+```
+
+Salient facts the codegen must honor:
+- **Dynamic API**: `@node(rerun_on_resume=True)` on an `async def(ctx: Context)`; sub-agents run via
+  `await ctx.run_node(agent, typed_input)`; loop is a Python `for`; success = `critic.status ==
+  approvalPhrase` → write `ctx.state[outputKey]` + `return`; exhaustion → `raise RuntimeError`.
+- **Typed pydantic I/O**: each sub-agent has `input_schema`/`output_schema`/`output_key`; the
+  orchestrator passes/validates them via a `validate_node_output(schema_cls, raw)` helper (coerces
+  dict/BaseModel → the pydantic class). This composes with our **nested-schema** support (#2): the
+  payload can be a user schema with nested fields.
+- **`Agent` vs `LlmAgent`**: the file uses `LlmAgent`. Our existing codegen uses `Agent`. v1 loop
+  sub-agents follow the file → `LlmAgent` (confirm both are import-valid in the fidelity step).
+- The orchestrator **is one node** in `Workflow(edges=…)`; its sub-agents are **not** graph nodes —
+  they're built/run inside the orchestrator (encapsulated, exactly as the file does).
+
+## IR — a new `loop` node type
 
 ```ts
-// new member of NodeType: "loop"
-interface SubAgentConfig extends AgentConfig {}   // critic/reviser ARE agent-shaped (reuse)
+// NodeType gains "loop"
+interface LoopSubAgent { model: string; instruction: string; }   // agent-shaped (respects agents)
 interface LoopConfig {
   description?: string;
-  maxIterations: number;        // integer ≥ 1
-  critic:  SubAgentConfig;      // emits feedback, or the completion phrase when satisfied
-  reviser: SubAgentConfig;      // revises, or calls exit_loop on the completion phrase
+  maxIterations: number;          // integer ≥ 1
+  approvalPhrase: string;         // default "APPROVED"
+  inputType: TypeRef;             // what the loop consumes (the "specifications") — "str" or a schema
+  payloadType: TypeRef;           // what is generated & refined (the loop's output) — usually a schema
+  generator: LoopSubAgent;
+  critic:    LoopSubAgent;
+  reviser:   LoopSubAgent;
 }
 ```
-v1 fixes the shape to **critic + reviser** (your scope choice). A future general
-`subAgents: SubAgentConfig[]` (and a coordinator flavor) slots in later without disturbing this.
+Self-contained (the chosen shape): the node owns all three sub-agents. The **critic's output schema
+is canonical** (`{ status: str, feedback: str }`) — codegen-generated, never user-authored; `status`
+gating is the termination contract. `inputType`/`payloadType` reuse the existing `TypeRef` resolver
+(scalar or declared schema — including nested ones from #2).
 
-## Codegen (the real work)
+## Codegen (the real work — parameterize `generic-workflow.py`)
 
-For a `loop` node `N` with `LoopConfig`:
-- emit two sub-agents `N_critic`, `N_reviser` by **reusing `renderAgent`** on the critic/reviser
-  configs, then augmenting: `include_contents='none'`, `output_key` set to the **canonical state
-  keys** (`criticism`, `current_document`), and the instruction text wrapped with the fixed exit
-  convention (critic emits a `COMPLETION_PHRASE` when satisfied; reviser calls `exit_loop` on that
-  phrase, else revises).
-- emit an `exit_loop(tool_context)` function (in `functions.py`) that sets
-  `tool_context.actions.escalate = True; tool_context.actions.skip_summarization = True`, attached
-  to the reviser via `tools=[exit_loop]`.
-- emit `N = LoopAgent(name="N", sub_agents=[N_critic, N_reviser], max_iterations=<maxIterations>)`.
-- imports: `from google.adk.agents import LoopAgent, Agent` (+ `ToolContext` for `exit_loop`).
-- **`N` is the symbol placed in `Workflow(edges=…)`** — the LoopAgent is one DAG node; the graph
-  stays acyclic, the loop is contained (user-confirmed this composes).
-
-**Data-flow boundary = a known rough edge → "refinable scaffold."** Inside a `LoopAgent`,
-critic↔reviser communicate via session state (`output_key`/`{placeholder}`) — the mechanism we
-deferred to "Phase 3." v1 hardcodes the canonical keys (`current_document`/`criticism`) from the
-official example; mapping the graph's positional `node_input` into the loop's initial state is the
-part a user may refine. Squarely the project's "at worst a functioning baseline" promise: we emit a
-structurally-correct loop, not a guaranteed end-to-end wire.
+For a `loop` node `N`:
+- **schemas.py:** emit the canonical `<N>_CriticOutput(BaseModel){ status: str; feedback: str }` and
+  the input-wrapper schemas the orchestrator passes (`<N>_GenInput`, `<N>_CriticInput`,
+  `<N>_ReviserInput`) referencing `payloadType`. `payloadType`/`inputType` user schemas already emit
+  via the #2 topological path; the `<N>_*` wrappers join them (and participate in topological order
+  since they reference `payloadType`).
+- **A loop module (or workflow.py):** the `validate_node_output` helper (once), the three `LlmAgent`
+  builds, and the `@node async def <N>_orchestrator(ctx)` with the for-loop. Imports
+  `from google.adk.workflow import START, node` and `from google.adk.agents import LlmAgent`,
+  `from google.adk import Context`.
+- **workflow.py:** `N`'s orchestrator symbol goes into `Workflow(edges=…)` wherever the node sits.
+- **Data-flow note (refinable scaffold):** the file reads input from `ctx.state["specifications"]`
+  (entry orchestrator). For the generated project the loop is the self-contained unit; v1 wires the
+  canonical state keys and the user refines the spec/state seeding if needed — the project's "at
+  worst a functioning baseline" promise. (Confirmed working in the file.)
 
 ## Validator (new codes)
 
-For a `loop` node: `LOOP_MISSING_CRITIC` / `LOOP_MISSING_REVISER` (both required),
-`LOOP_BAD_MAX_ITERATIONS` (integer ≥ 1), and the **critic/reviser are validated as agents** (reuse
-the agent checks: model present, ref resolution, var-segment provenance). The generated symbols
-`N_critic` / `N_reviser` join the **flat global namespace** (ADR-0017) so they can't collide
-(`DUPLICATE_NODE_NAME` reused). Standard node checks (reachability, DAG, edge endpoints) treat the
-loop node like any other node — it has one input and one output in the graph.
+For a `loop` node: `LOOP_BAD_MAX_ITERATIONS` (int ≥ 1), `LOOP_MISSING_APPROVAL_PHRASE` (non-empty),
+generator/critic/reviser each present with a non-empty `model` (reuse the agent model check), and
+`inputType`/`payloadType` resolve via the existing ref check. Generated symbols (`<N>_orchestrator`,
+`<N>_CriticOutput`, …) join the **flat global namespace** (ADR-0017) — no collisions. Graph checks
+treat the loop node like any node (one input/one output; DAG unaffected — the loop is internal).
 
-## UI (apps/web)
+## UI (apps/web — slice 3-C)
 
-- **Palette:** a new "Loop" entry (it's a `NodeType` now — palette/drag-drop/minting extend
-  automatically once `addNode` has a default `LoopConfig`).
-- **Inspector `LoopForm`:** `maxIterations` + a **critic** sub-form and a **reviser** sub-form, each
-  reusing the existing agent field widgets (model, instruction editor, etc.) since sub-agents are
-  agent-shaped. v1: plain-text instructions for sub-agents (var-chips use the source-bound mechanism,
-  not loop state placeholders — out of scope).
-- **Canvas:** add `loop` to the node-type color map + a ↻ badge (reuse the `data-node-type` styling
-  hook from ADR-0033/0034).
+- **Palette:** a "Loop" entry (new `NodeType`; palette/drag-drop/minting extend once `addNode` has a
+  default `LoopConfig`).
+- **Inspector `LoopForm`:** `maxIterations`, `approvalPhrase` (default "APPROVED"), `inputType` +
+  `payloadType` `TypeRefSelect`s (reuse the existing widget; offers schemas incl. nested), and three
+  sub-agent sub-forms (generator/critic/reviser → model + instruction each, reusing agent widgets).
+- **Canvas:** `loop` color + a ↻ badge (reuse the `data-node-type` hook).
 
 ## Verification
 
-- **3-A (fidelity) — already answered by the user** (`LoopAgent` accepted as a `Workflow` node, no
-  conflict). Folds into 3-B as a routine ADR-0021 fidelity check on the generated project rather
-  than a gating probe.
-- **Golden test:** a `critic-loop.ir.json` fixture (one `loop` node) → assert `agents.py` /
-  `functions.py` emit `N_critic`, `N_reviser`, `exit_loop`, and
-  `N = LoopAgent(sub_agents=[N_critic, N_reviser], max_iterations=…)`; `workflow.py` lists `N`.
-- **Validator spec:** missing critic/reviser, bad max_iterations, sub-agent name collision; valid
-  loop passes.
-- **Fidelity:** the generated project imports + the `LoopAgent` constructs as a `Workflow` node under
-  real `google-adk==2.0.0` (user runs it).
-- **UI:** build + browser — drag a Loop node, fill maxIterations + critic/reviser, Preview shows the
-  `LoopAgent` scaffold, node badge renders, Save/Load round-trips.
+- **Golden test:** a `critic-loop.ir.json` fixture (one `loop` node + a `payloadType` schema)
+  whose generated project structurally matches `generic-workflow.py` — the `@node` orchestrator, the
+  three `LlmAgent`s, the canonical `CriticOutput`, the `for`-loop with the approval-phrase check, and
+  `N` in `Workflow(edges=…)`.
+- **Validator spec:** bad max_iterations, empty approval phrase, missing sub-agent model, unresolved
+  payloadType.
+- **Fidelity (ADR-0021):** the generated project imports + constructs under real
+  `google-adk==2.0.0` and the `@node`/`Workflow` shape matches the proven file. User runs it; high
+  confidence since codegen is parameterized from working code.
+- **UI:** drag a Loop node, fill the fields, Preview shows the orchestrator scaffold; Save/Load
+  round-trips.
 
 ## Slice plan
 
-- **Slice 3-B — packages.** New `loop` `NodeType` + `LoopConfig` (types + JSON schema); validator
-  codes (reusing agent checks for the sub-agents); codegen (reuse `renderAgent` for sub-agents +
-  `exit_loop` emission + `LoopAgent` assembly + place `N` in `Workflow`); `critic-loop` golden
-  fixture; fidelity extension (the user-confirmed composition, now pinned by a test). Ends green on
-  `npm test`. Appends an ADR.
-- **Slice 3-C — web.** `addNode` default `LoopConfig`; palette "Loop" entry; inspector `LoopForm`
-  (maxIterations + critic/reviser sub-forms reusing agent widgets); canvas color + ↻ badge;
-  Save/Load round-trip; headless test that a dropped loop node `compile()`s to the `LoopAgent`
-  scaffold. Appends an ADR.
-
-(3-A is satisfied by the user's confirmation; no standalone probe slice needed.)
+- **Slice 3-B — packages.** `loop` `NodeType` + `LoopConfig` (types + JSON schema); validator codes;
+  codegen (canonical schemas + `validate_node_output` + three `LlmAgent`s + `@node` orchestrator
+  for-loop + place `N` in `Workflow`); `critic-loop` golden fixture mirroring `generic-workflow.py`;
+  fidelity extension. Ends green on `npm test`. Appends an ADR.
+- **Slice 3-C — web.** `addNode` default `LoopConfig`; palette "Loop"; inspector `LoopForm`; canvas
+  color + ↻ badge; Save/Load round-trip; headless test that a dropped loop node `compile()`s to the
+  orchestrator scaffold. Appends an ADR.
 
 ## Out of scope (noted)
-Coordinator (LLM-delegation `Agent(sub_agents=…)`) flavor; general N-ary `subAgents`; var-chips
-inside loop sub-agents; full session-state data-flow UI; `SequentialAgent`/`ParallelAgent`
-orchestration; nested orchestrators.
+The deterministic check hook (`run_deterministic_compile_test`) — v1 is critic-only; LoopAgent
+templated path (rejected in favor of the proven dynamic API); coordinator delegation; var-chips
+inside loop sub-agents; configurable sub-agent I/O schemas (critic output is canonical); mid-graph
+input-passing into a dynamic node (v1 is the self-contained shape).
 
-## Sources
-- [Collaborative workflows](https://adk.dev/workflows/collaboration/) — `Agent(sub_agents=…)`, the
-  `mode` field, "agents with task/single_turn modes can be Workflow graph nodes."
-- [Template agent workflows](https://adk.dev/agents/workflow-agents/) / the `LoopAgent` doc —
-  `LoopAgent(sub_agents, max_iterations)`, `exit_loop` + `actions.escalate`, completion-phrase.
-- [Graph-based workflows](https://adk.dev/graphs/), [Workflows overview](https://adk.dev/workflows/).
+## Sources / ground truth
+- [`exploring/generic-workflow.py`](../exploring/generic-workflow.py) — the proven dynamic-workflow
+  generate/validate/revise loop (authoritative).
+- [Dynamic workflows](https://adk.dev/graphs/dynamic/), [Graph-based workflows](https://adk.dev/graphs/).
