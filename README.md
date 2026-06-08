@@ -1,6 +1,6 @@
 # Graphical Agents
 
-![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%202.png?raw=true)
+![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%201.png?raw=true)
 
 A visual builder that compiles drag-and-drop agent graphs into runnable **[Google ADK](https://adk.dev/) (Python, v2.0.0) graph-workflow** projects. Also imports **draw.io** XML diagrams into the same graph.
 
@@ -9,7 +9,7 @@ A visual builder that compiles drag-and-drop agent graphs into runnable **[Googl
 ---
 
 ## ✨ Features
-![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%201.png?raw=true)
+![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%200.png?raw=true)
 
 ### Visual Graph Builder
 - **Drag-and-drop canvas** — Drag node types from the palette onto a React Flow canvas (drops at the cursor), then connect and freely arrange them
