@@ -20,7 +20,9 @@
  * where the validator findings already render.
  */
 import { useRef, useState } from "react";
+import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
+import { reveal } from "../anim/presets.ts";
 import {
   loadIRFromText,
   serializeIR,
@@ -192,23 +194,34 @@ export function Toolbar() {
           />
         </div>
       </div>
-      {banner.kind !== "none" && (
-        <div className={`load-banner ${banner.kind}`}>
-          <span>
-            {banner.kind === "load-findings"
-              ? `Loaded with ${banner.count} validation finding(s). See Preview.`
-              : banner.message}
-          </span>
-          <button
-            type="button"
-            className="dismiss"
-            aria-label="Dismiss"
-            onClick={() => setBanner({ kind: "none" })}
+      <AnimatePresence initial={false}>
+        {banner.kind !== "none" && (
+          <m.div
+            key={banner.kind}
+            variants={reveal}
+            initial="hidden"
+            animate="show"
+            exit="exit"
+            style={{ overflow: "hidden", flex: "0 0 auto" }}
           >
-            ×
-          </button>
-        </div>
-      )}
+            <div className={`load-banner ${banner.kind}`}>
+              <span>
+                {banner.kind === "load-findings"
+                  ? `Loaded with ${banner.count} validation finding(s). See Preview.`
+                  : banner.message}
+              </span>
+              <button
+                type="button"
+                className="dismiss"
+                aria-label="Dismiss"
+                onClick={() => setBanner({ kind: "none" })}
+              >
+                ×
+              </button>
+            </div>
+          </m.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

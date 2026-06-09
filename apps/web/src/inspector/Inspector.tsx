@@ -20,9 +20,11 @@ import type {
   ToolNode,
   WorkflowNode,
 } from "@graphical-agents/ir";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
 import type { ModelParamKey } from "../store/irReducer.ts";
+import { formSwap } from "../anim/presets.ts";
 import { VariableEditor, type VariableEditorAPI } from "./VariableEditor.tsx";
 import { VariablePalette } from "./VariablePalette.tsx";
 
@@ -831,20 +833,7 @@ function EdgeForm() {
 
 // ----- dispatch -----------------------------------------------------------
 
-export function Inspector() {
-  const selectedEdge = useIRStore((s) => s.selectedEdge);
-  const node = useIRStore((s) =>
-    s.selectedNodeId ? s.ir.nodes.find((n) => n.id === s.selectedNodeId) : null,
-  );
-
-  if (selectedEdge) {
-    return <EdgeForm />;
-  }
-
-  if (!node) {
-    return <div className="empty">Select a node or edge to edit it.</div>;
-  }
-
+function formFor(node: NonNullable<ReturnType<typeof pickNode>>): ReactNode {
   switch (node.type) {
     case "agent":
       return <AgentForm node={node} />;
@@ -868,4 +857,44 @@ export function Inspector() {
       return <div className="empty">Unknown node type.</div>;
     }
   }
+}
+
+function pickNode(s: { selectedNodeId: string | null; ir: GraphIR }) {
+  return s.selectedNodeId
+    ? s.ir.nodes.find((n) => n.id === s.selectedNodeId) ?? null
+    : null;
+}
+
+export function Inspector() {
+  const selectedEdge = useIRStore((s) => s.selectedEdge);
+  const node = useIRStore(pickNode);
+
+  // `mode="wait"` guarantees the outgoing form (and its Lexical editor)
+  // fully unmounts before the next one mounts — preserving the
+  // seed-once-per-node invariant (ADR-0029). Exits stay <= 120ms.
+  const key = selectedEdge
+    ? `edge:${selectedEdge.from}|${selectedEdge.to}|${selectedEdge.route ?? ""}`
+    : node?.id ?? "empty";
+
+  const content: ReactNode = selectedEdge ? (
+    <EdgeForm />
+  ) : node ? (
+    formFor(node)
+  ) : (
+    <div className="empty">Select a node or edge to edit it.</div>
+  );
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <m.div
+        key={key}
+        variants={formSwap}
+        initial="hidden"
+        animate="show"
+        exit="exit"
+      >
+        {content}
+      </m.div>
+    </AnimatePresence>
+  );
 }

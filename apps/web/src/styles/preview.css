@@ -12,11 +12,25 @@
   cursor: pointer;
 }
 .preview select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+
+/* slab wrapper — positioning context for the refresh bar */
+.preview-slab { position: relative; }
+.preview-refresh-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left;
+  border-radius: 2px 2px 0 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .preview pre {
   background: var(--code-bg);          /* ink slab — the "manufactured output" */
   color: var(--code-ink);
   padding: 13px 14px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
   border: 1px solid var(--code-line);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -27,22 +41,75 @@
   box-shadow: var(--shadow-card);
   tab-size: 4;
 }
-.preview .findings { color: var(--err-ink); margin: 0; padding-left: 18px; }
-.preview .findings li { margin-bottom: 7px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
 
-/* headline above the findings list / inline preview errors */
-.preview .findings-head { margin-bottom: 6px; color: var(--err-ink); font-weight: 600; }
+/* ----------------------------------------------------- validation findings */
+
+.preview .findings-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+  color: var(--err-ink);
+}
+.preview .findings-head strong { font-size: 13px; }
+.preview .findings-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
 .preview .preview-error { color: var(--err-ink); }
 
-/* clickable finding → select + center the node on the canvas (ADR-0043) */
-.preview .findings .finding-link {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: none;
+.preview .findings {
+  list-style: none;
+  margin: 0;
   padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.preview .findings .finding-link:hover { color: var(--accent-deep); }
+.finding-row { margin: 0; }
+.finding-row__btn {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border: 1px solid var(--err-line);
+  border-radius: var(--r-sm);
+  background: var(--err-bg);
+  color: var(--err-ink);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: border-color 0.13s ease, background 0.13s ease, transform 0.06s ease;
+}
+.finding-row__btn:hover:not(.is-static) {
+  border-color: var(--accent);
+  transform: translateX(2px);
+}
+.finding-row__btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.finding-row__btn.is-static { cursor: default; }
+.finding-row__dot {
+  flex: 0 0 auto;
+  width: 7px; height: 7px;
+  border-radius: 999px;
+  background: var(--err-ink);
+  align-self: center;
+}
+.finding-row__code {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border: 1px solid var(--err-line);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+}
+.finding-row__msg { flex: 1 1 auto; }
