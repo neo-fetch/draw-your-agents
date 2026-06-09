@@ -2074,3 +2074,59 @@ generator/critic/reviser pattern entirely graphically and watch the compiler emi
 from 3-B): variable chips inside loop sub-agent instructions, per-sub-agent input/output schema
 overrides (the wrappers are canonical), a deterministic-check UI, sub-graph editing inside
 `workflow.config.graph` for nested loops, and any change to `packages/*`.
+
+## ADR-0041 — Runnable scaffold: generated projects gain `main.py` runner + `test_workflow.py` pytest dry-run
+**Context.** The generated .zip was scaffold-only: `README.md` pointed at `adk run workflow.py`,
+but there was no entry script, no sample invocation, and no way to check the project even
+constructs without wiring up an API key — the first thing a user could *run* was nothing.
+Meanwhile the repo already contains a manually-verified execution wrapper
+([exploring/generic-workflow.py](../exploring/generic-workflow.py), the file
+[ADR-0021](#adr-0021) / [ADR-0039](#adr-0039) ran against real `google-adk==2.0.0`):
+`InMemorySessionService` → `create_session` → `Runner(agent=…, app_name=…, session_service=…)`
+→ `async for … in runner.run_async(user_id, session_id, new_message=types.Content(...))` →
+read back final session state.
+**Decisions.**
+- **`main.py` mirrors the proven wrapper, simplified** — new `mainModule(ir)` template-string
+  function in [packages/codegen/src/project.ts](../packages/codegen/src/project.ts) (scaffold
+  files live there like `readme()`/`REQUIREMENTS`; **not** a fragment — fragments are
+  per-node, these are per-project). Runtime behavior stays **manually-verified posture**
+  extending ADR-0021: `npm test` proves golden byte-match + `py_compile` (the existing trust
+  check compiles every emitted `*.py`, so both new files are covered automatically); the
+  manual procedure is clean venv → `pip install -r requirements.txt` → `pytest` →
+  `python main.py` on the city-time project.
+- **Sample input is always plain text** (`SAMPLE_INPUT` constant with a `# TODO:` comment).
+  Data flow is positional and the entry message is user-domain; we do not fabricate structured
+  JSON from the entry node's input schema. *Rejected:* schema-driven sample synthesis — noted
+  as a future enhancement.
+- **`main.py` is identical for all graphs, including HumanInput.** A `RequestInput` node will
+  pause for a response under the Runner; the README gains one sentence steering those graphs
+  to an interactive ADK runtime. *Rejected:* special-casing or omitting `main.py` for
+  human-input graphs — inconsistent file sets complicate goldens and the Preview file list for
+  no real gain.
+- **`test_workflow.py` is a key-free dry-run**: `os.environ.setdefault("GOOGLE_API_KEY",
+  "test-key")` **before** `from workflow import root_agent` (agent construction needs *a* key,
+  not a real one — confirmed in the ADR-0021 verification), then one test asserting
+  `isinstance(root_agent, Workflow)`. Importing `workflow` constructs the entire graph —
+  every `Agent`, `FunctionTool`, nested `Workflow` — without calling any model API, so this is
+  a free local fidelity slice (a poor-man's preview of the Phase 4 service,
+  [ADR-0004](#adr-0004)). Plain `assert`, no `import pytest`.
+- **`requirements.txt` gains `pytest`, unpinned** — `google-adk` stays exact-pinned (codegen
+  targets that API surface); the test uses only plain asserts so any pytest works.
+- **`scripts/update-goldens.ts` is the golden regeneration tool** (mirrors the
+  [scripts/compile.ts](../scripts/compile.ts) manual-runner precedent; not in `npm test`).
+  Discipline stated in its doc-comment: the golden diff IS the spec change — review
+  line-by-line before committing; never run it to silence a red golden test you don't
+  understand. *Rejected:* an `UPDATE_GOLDEN` env flag inside the test suite — tests that can
+  rewrite their own expectations invite silent spec drift.
+**Spec tests.** `BASE_FILES` in
+[packages/codegen/test/project.test.ts](../packages/codegen/test/project.test.ts) gains
+`main.py` + `test_workflow.py` — the per-file golden loop and the file-set assertion pick up
+all 8 projects automatically (16 new golden-match tests), and the `py_compile` trust check
+covers both new files in every project.
+**Verification.** `npm test` green: 115 codegen tests (114 pass + the pre-existing
+black-not-installed skip), check:ir / ir / web suites unchanged. Golden diff reviewed: exactly
+16 new files (2 × 8 projects) + `requirements.txt`/`README.md` changes in all 8.
+**Consequences.** The .zip is now runnable-by-recipe: `pip install` → `pytest` (free, key-less,
+proves the graph constructs) → fill `.env` + `SAMPLE_INPUT` → `python main.py`. The exact
+`Runner.run_async` kwargs remain pinned by the proven exploring file + manual-verify posture,
+not by the gate.
