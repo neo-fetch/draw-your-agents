@@ -2130,3 +2130,41 @@ black-not-installed skip), check:ir / ir / web suites unchanged. Golden diff rev
 proves the graph constructs) → fill `.env` + `SAMPLE_INPUT` → `python main.py`. The exact
 `Runner.run_async` kwargs remain pinned by the proven exploring file + manual-verify posture,
 not by the gate.
+
+## ADR-0042 — Example gallery: load any valid IR fixture from the toolbar
+**Context.** The builder always opened on the canonical city-time graph; seeing any other node
+type in action meant hand-saving a fixture from the repo and feeding it through the Load IR
+file picker. Meanwhile `packages/ir/fixtures/` already holds nine valid IR documents covering
+every v1 feature (sequence, router, parallel+join, tool, human input, nested workflow, nested
+schemas, critic loop, and the all-nodes showcase) — they just had no UI surface.
+**Decisions.**
+- **Static JSON imports, one per fixture** in the new pure module
+  [apps/web/src/store/examples.ts](../apps/web/src/store/examples.ts), using import attributes
+  (`with { type: "json" }`) — the exact precedent of `irStore.ts`'s city-time import, proven
+  under both Vite and `node --test`. *Rejected:* `import.meta.glob` — Vite-only, breaks the
+  headless suite; copying fixtures into `apps/web` — duplication that drifts. Boundary ruling:
+  fixtures live inside `packages/ir` and `apps/web` already imports one, so this stays within
+  the CLAUDE.md "apps/web depends only on `packages/ir`" rule.
+- **`loadExample` funnels through `loadIRFromText`** (the Load IR path, [ADR-0024](#adr-0024))
+  — same parse guard, same load-then-surface policy, and `JSON.stringify` → parse gives a deep
+  clone for free, so repeat loads never alias store state.
+- **Toolbar gets a controlled `<select value="">`**
+  ([apps/web/src/toolbar/Toolbar.tsx](../apps/web/src/toolbar/Toolbar.tsx)) that snaps back to
+  the "Load example…" placeholder after every pick, so re-choosing the same example fires
+  `change` again — the select analog of the existing file-input reset. Success/error reuse the
+  exact banner logic of `onFileChosen`. The Toolbar stays an untested UI shim; all decision
+  logic is in `examples.ts`.
+- **No confirm-on-overwrite.** No dirty-state tracking exists in `irStore.ts`, and the
+  existing Load IR picker already replaces the IR silently — a confirm on only the dropdown
+  would be inconsistent. A dirty flag + confirm on both paths is a noted future slice.
+**Spec tests** ([apps/web/test/examples.test.ts](../apps/web/test/examples.test.ts), five new):
+every entry loads `ok` with zero error-severity findings (the gallery mirrors `check:ir`); a
+**coverage guard** — `readdirSync` of `packages/ir/fixtures/*.ir.json` must equal the gallery
+id set, so a new fixture that isn't surfaced fails loud; repeat loads are isolated (distinct
+identities, mutation doesn't leak); ids/labels unique and non-empty; unknown id → `ok: false`.
+**Verification.** `npm test` green (107 web tests, +5). `vite build` clean; `docs/index.html`
+rebuilt. Browser smoke: each of the nine examples loads from the dropdown, the canvas and
+Preview re-render, and picking the same entry twice reloads it.
+**Consequences.** The live demo opens into a one-click tour of every v1 feature, and every
+fixture added to `packages/ir/fixtures/` must be deliberately surfaced (or the coverage guard
+fails) — the gallery can't silently rot.
