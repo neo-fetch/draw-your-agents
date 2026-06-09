@@ -156,6 +156,24 @@ html, body, #root {
   border-style: dashed;
 }
 
+/* example gallery dropdown — styled like a toolbar button (ADR-0042) */
+.toolbar select.example-select {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 6px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+  color: inherit;
+  cursor: pointer;
+}
+.toolbar select.example-select:hover {
+  background: var(--paper-sunken);
+  border-color: var(--ink-faint);
+}
+
 /* primary action — the payoff */
 .toolbar button.primary {
   background: var(--accent);
@@ -662,6 +680,19 @@ html, body, #root {
 }
 .preview .findings { color: var(--err-ink); margin: 0; padding-left: 18px; }
 .preview .findings li { margin-bottom: 7px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+
+/* clickable finding → select + center the node on the canvas (ADR-0043) */
+.preview .findings .finding-link {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.preview .findings .finding-link:hover { color: var(--accent-deep); }
 
 /* ----------------------------------------- Lexical prompt editor (ADR-0029) */
 

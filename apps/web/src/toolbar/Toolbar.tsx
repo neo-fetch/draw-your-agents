@@ -27,6 +27,7 @@ import {
   suggestedSaveFilename,
   suggestedZipFilename,
 } from "../store/irIO.ts";
+import { EXAMPLES, loadExample } from "../store/examples.ts";
 import { validate } from "../../../../packages/ir/src/validate.ts";
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
 import { bundleZip } from "../../../../packages/codegen/src/bundle.ts";
@@ -93,6 +94,25 @@ export function Toolbar() {
     );
   };
 
+  const onExampleChosen = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+    // The select is controlled at value="" so it snaps back to the
+    // placeholder after every pick — re-choosing the same example fires
+    // `change` again (the select analog of the file-input reset above).
+    const id = e.target.value;
+    if (!id) return;
+    const result = loadExample(id);
+    if (!result.ok) {
+      setBanner({ kind: "error", message: result.error });
+      return;
+    }
+    replaceIR(result.ir);
+    setBanner(
+      result.findings.length > 0
+        ? { kind: "load-findings", count: result.findings.length }
+        : { kind: "none" },
+    );
+  };
+
   const onDownloadZip = (): void => {
     try {
       const project = compile(ir);
@@ -135,6 +155,21 @@ export function Toolbar() {
               ? `${errorCount} error${errorCount === 1 ? "" : "s"}`
               : "valid"}
           </span>
+          <select
+            className="example-select"
+            value=""
+            onChange={onExampleChosen}
+            aria-label="Load example"
+          >
+            <option value="" disabled>
+              Load example…
+            </option>
+            {EXAMPLES.map((ex) => (
+              <option key={ex.id} value={ex.id}>
+                {ex.label}
+              </option>
+            ))}
+          </select>
           <button type="button" onClick={onSave}>Save IR</button>
           <button type="button" onClick={onLoadClick}>Load IR</button>
           <button

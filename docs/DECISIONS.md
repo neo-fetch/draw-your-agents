@@ -2074,3 +2074,145 @@ generator/critic/reviser pattern entirely graphically and watch the compiler emi
 from 3-B): variable chips inside loop sub-agent instructions, per-sub-agent input/output schema
 overrides (the wrappers are canonical), a deterministic-check UI, sub-graph editing inside
 `workflow.config.graph` for nested loops, and any change to `packages/*`.
+
+## ADR-0041 — Runnable scaffold: generated projects gain `main.py` runner + `test_workflow.py` pytest dry-run
+**Context.** The generated .zip was scaffold-only: `README.md` pointed at `adk run workflow.py`,
+but there was no entry script, no sample invocation, and no way to check the project even
+constructs without wiring up an API key — the first thing a user could *run* was nothing.
+Meanwhile the repo already contains a manually-verified execution wrapper
+([exploring/generic-workflow.py](../exploring/generic-workflow.py), the file
+[ADR-0021](#adr-0021) / [ADR-0039](#adr-0039) ran against real `google-adk==2.0.0`):
+`InMemorySessionService` → `create_session` → `Runner(agent=…, app_name=…, session_service=…)`
+→ `async for … in runner.run_async(user_id, session_id, new_message=types.Content(...))` →
+read back final session state.
+**Decisions.**
+- **`main.py` mirrors the proven wrapper, simplified** — new `mainModule(ir)` template-string
+  function in [packages/codegen/src/project.ts](../packages/codegen/src/project.ts) (scaffold
+  files live there like `readme()`/`REQUIREMENTS`; **not** a fragment — fragments are
+  per-node, these are per-project). Runtime behavior stays **manually-verified posture**
+  extending ADR-0021: `npm test` proves golden byte-match + `py_compile` (the existing trust
+  check compiles every emitted `*.py`, so both new files are covered automatically); the
+  manual procedure is clean venv → `pip install -r requirements.txt` → `pytest` →
+  `python main.py` on the city-time project.
+- **Sample input is always plain text** (`SAMPLE_INPUT` constant with a `# TODO:` comment).
+  Data flow is positional and the entry message is user-domain; we do not fabricate structured
+  JSON from the entry node's input schema. *Rejected:* schema-driven sample synthesis — noted
+  as a future enhancement.
+- **`main.py` is identical for all graphs, including HumanInput.** A `RequestInput` node will
+  pause for a response under the Runner; the README gains one sentence steering those graphs
+  to an interactive ADK runtime. *Rejected:* special-casing or omitting `main.py` for
+  human-input graphs — inconsistent file sets complicate goldens and the Preview file list for
+  no real gain.
+- **`test_workflow.py` is a key-free dry-run**: `os.environ.setdefault("GOOGLE_API_KEY",
+  "test-key")` **before** `from workflow import root_agent` (agent construction needs *a* key,
+  not a real one — confirmed in the ADR-0021 verification), then one test asserting
+  `isinstance(root_agent, Workflow)`. Importing `workflow` constructs the entire graph —
+  every `Agent`, `FunctionTool`, nested `Workflow` — without calling any model API, so this is
+  a free local fidelity slice (a poor-man's preview of the Phase 4 service,
+  [ADR-0004](#adr-0004)). Plain `assert`, no `import pytest`.
+- **`requirements.txt` gains `pytest`, unpinned** — `google-adk` stays exact-pinned (codegen
+  targets that API surface); the test uses only plain asserts so any pytest works.
+- **`scripts/update-goldens.ts` is the golden regeneration tool** (mirrors the
+  [scripts/compile.ts](../scripts/compile.ts) manual-runner precedent; not in `npm test`).
+  Discipline stated in its doc-comment: the golden diff IS the spec change — review
+  line-by-line before committing; never run it to silence a red golden test you don't
+  understand. *Rejected:* an `UPDATE_GOLDEN` env flag inside the test suite — tests that can
+  rewrite their own expectations invite silent spec drift.
+**Spec tests.** `BASE_FILES` in
+[packages/codegen/test/project.test.ts](../packages/codegen/test/project.test.ts) gains
+`main.py` + `test_workflow.py` — the per-file golden loop and the file-set assertion pick up
+all 8 projects automatically (16 new golden-match tests), and the `py_compile` trust check
+covers both new files in every project.
+**Verification.** `npm test` green: 115 codegen tests (114 pass + the pre-existing
+black-not-installed skip), check:ir / ir / web suites unchanged. Golden diff reviewed: exactly
+16 new files (2 × 8 projects) + `requirements.txt`/`README.md` changes in all 8.
+**Consequences.** The .zip is now runnable-by-recipe: `pip install` → `pytest` (free, key-less,
+proves the graph constructs) → fill `.env` + `SAMPLE_INPUT` → `python main.py`. The exact
+`Runner.run_async` kwargs remain pinned by the proven exploring file + manual-verify posture,
+not by the gate.
+
+## ADR-0042 — Example gallery: load any valid IR fixture from the toolbar
+**Context.** The builder always opened on the canonical city-time graph; seeing any other node
+type in action meant hand-saving a fixture from the repo and feeding it through the Load IR
+file picker. Meanwhile `packages/ir/fixtures/` already holds nine valid IR documents covering
+every v1 feature (sequence, router, parallel+join, tool, human input, nested workflow, nested
+schemas, critic loop, and the all-nodes showcase) — they just had no UI surface.
+**Decisions.**
+- **Static JSON imports, one per fixture** in the new pure module
+  [apps/web/src/store/examples.ts](../apps/web/src/store/examples.ts), using import attributes
+  (`with { type: "json" }`) — the exact precedent of `irStore.ts`'s city-time import, proven
+  under both Vite and `node --test`. *Rejected:* `import.meta.glob` — Vite-only, breaks the
+  headless suite; copying fixtures into `apps/web` — duplication that drifts. Boundary ruling:
+  fixtures live inside `packages/ir` and `apps/web` already imports one, so this stays within
+  the CLAUDE.md "apps/web depends only on `packages/ir`" rule.
+- **`loadExample` funnels through `loadIRFromText`** (the Load IR path, [ADR-0024](#adr-0024))
+  — same parse guard, same load-then-surface policy, and `JSON.stringify` → parse gives a deep
+  clone for free, so repeat loads never alias store state.
+- **Toolbar gets a controlled `<select value="">`**
+  ([apps/web/src/toolbar/Toolbar.tsx](../apps/web/src/toolbar/Toolbar.tsx)) that snaps back to
+  the "Load example…" placeholder after every pick, so re-choosing the same example fires
+  `change` again — the select analog of the existing file-input reset. Success/error reuse the
+  exact banner logic of `onFileChosen`. The Toolbar stays an untested UI shim; all decision
+  logic is in `examples.ts`.
+- **No confirm-on-overwrite.** No dirty-state tracking exists in `irStore.ts`, and the
+  existing Load IR picker already replaces the IR silently — a confirm on only the dropdown
+  would be inconsistent. A dirty flag + confirm on both paths is a noted future slice.
+**Spec tests** ([apps/web/test/examples.test.ts](../apps/web/test/examples.test.ts), five new):
+every entry loads `ok` with zero error-severity findings (the gallery mirrors `check:ir`); a
+**coverage guard** — `readdirSync` of `packages/ir/fixtures/*.ir.json` must equal the gallery
+id set, so a new fixture that isn't surfaced fails loud; repeat loads are isolated (distinct
+identities, mutation doesn't leak); ids/labels unique and non-empty; unknown id → `ok: false`.
+**Verification.** `npm test` green (107 web tests, +5). `vite build` clean; `docs/index.html`
+rebuilt. Browser smoke: each of the nine examples loads from the dropdown, the canvas and
+Preview re-render, and picking the same entry twice reloads it.
+**Consequences.** The live demo opens into a one-click tour of every v1 feature, and every
+fixture added to `packages/ir/fixtures/` must be deliberately surfaced (or the coverage guard
+fails) — the gallery can't silently rot.
+
+## ADR-0043 — Clickable validator findings: select + center the offending node
+**Context.** The whole builder loop is "watch Preview go red, fix the node it names" — but
+findings rendered as plain text (`[CODE] message (node: id)`), leaving the user to scan the
+canvas for the id by eye. The validator already puts a `nodeId` on node-scoped findings
+([packages/ir/src/validate.ts](../packages/ir/src/validate.ts)), and selection is already
+store-owned (`selectedNodeId` → React Flow `selected`, [ADR-0026](#adr-0026)) — the click just
+had nowhere to go.
+**Decisions.**
+- **Store-mediated focus request.** New `focusRequest: { nodeId, nonce } | null` state and
+  `focusNode(nodeId)` action in [apps/web/src/store/irStore.ts](../apps/web/src/store/irStore.ts):
+  selects the node (same semantics as `setSelectedNode`, clearing any edge selection) and bumps
+  the nonce so clicking the same finding twice re-centers.
+  [Canvas.tsx](../apps/web/src/canvas/Canvas.tsx) consumes the request in a `useEffect`: it
+  already holds the `ReactFlowInstance` ref ([ADR-0034](#adr-0034)), so it calls
+  `getNode(id)` → `setCenter(center, { duration: 300 })`, falling back to nominal half-extents
+  (180×60) when `measured` is undefined pre-layout — centering is best-effort UX, not
+  correctness. The effect cannot loop: `focusRequest` changes only on a click and `setCenter`
+  never writes the store. *Rejected:* wrapping the app in `ReactFlowProvider` so Preview could
+  call `useReactFlow()` — restructures `App.tsx` and couples Preview to React Flow for one
+  imperative call.
+- **Pure resolver for the click target.** New
+  [apps/web/src/store/findingTarget.ts](../apps/web/src/store/findingTarget.ts) —
+  `resolveFindingTarget(nodeId, ir)`: a top-level id resolves to itself; a nested id
+  (`<parentId>/.../<nodeId>`, the validator's `pathPrefix` composition) resolves to its
+  **enclosing top-level workflow node** — inner nodes don't exist on the top canvas, and
+  landing on the workflow node is still actionable. *Rejected:* no-op for nested findings —
+  a dead-looking link teaches users the feature is unreliable. Unresolvable ids return `null`
+  and the finding stays plain text.
+- **Preview renders the `(node: …)` suffix as a link-button** when the resolver returns a
+  target ([apps/web/src/preview/Preview.tsx](../apps/web/src/preview/Preview.tsx)); the
+  `[code] message` text is unchanged. Note: Preview renders findings only when compile throws
+  `ValidationError` (errors); warnings aren't rendered there today — unchanged, out of scope.
+**Spec tests.** Headless
+([apps/web/test/findingTarget.test.ts](../apps/web/test/findingTarget.test.ts)): a top-level id
+resolves to itself; a *real* validator finding (city-time agent stripped of `model`) resolves
+to its node; a nested UNREACHABLE_NODE finding (inner edge dropped from the nested fixture)
+composes `n_nested/n_inner_b` and resolves to `n_nested`; undefined / unknown / unknown-parent
+ids → `null`. Install-required tier
+([apps/web/test-app/irStore.test.ts](../apps/web/test-app/irStore.test.ts)): `focusNode`
+selects the node, clears the edge selection, and bumps the nonce on repeat calls.
+**Verification.** `npm test` green (111 web tests, +4); `npm run test:web:app` green (9, +1);
+`vite build` clean, `docs/index.html` rebuilt. Browser smoke: delete the edge into a join →
+Preview lists `JOIN_MISSING_FAILSAFE` ‑style findings; clicking one selects the node and the
+viewport glides to it; clicking the same finding after panning away re-centers.
+**Consequences.** The red-to-fixed loop closes: every node-scoped finding is now a one-click
+jump to the offending node, including findings raised inside nested workflow graphs. Possible
+follow-on: one-click quick fixes (e.g. "add failsafe output") hanging off the same resolver.
