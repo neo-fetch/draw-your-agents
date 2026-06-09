@@ -34,9 +34,7 @@ export function Preview() {
   if (result.kind === "validation") {
     return (
       <div>
-        <div style={{ marginBottom: 6, color: "#b91c1c", fontWeight: 600 }}>
-          IR validation failed
-        </div>
+        <div className="findings-head">IR validation failed</div>
         <ul className="findings">
           {result.findings.map((f, i) => {
             // Clickable when the finding's node resolves to a canvas node
@@ -71,9 +69,7 @@ export function Preview() {
 
   if (result.kind === "error") {
     return (
-      <div style={{ color: "#b91c1c" }}>
-        Preview error: {result.message}
-      </div>
+      <div className="preview-error">Preview error: {result.message}</div>
     );
   }
 

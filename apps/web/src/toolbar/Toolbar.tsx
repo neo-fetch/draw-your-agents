@@ -28,6 +28,7 @@ import {
   suggestedZipFilename,
 } from "../store/irIO.ts";
 import { EXAMPLES, loadExample } from "../store/examples.ts";
+import { ThemeSwitcher } from "./ThemeSwitcher.tsx";
 import { validate } from "../../../../packages/ir/src/validate.ts";
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
 import { bundleZip } from "../../../../packages/codegen/src/bundle.ts";
@@ -143,6 +144,7 @@ export function Toolbar() {
           <span className="wordmark__tag">IR → ADK</span>
         </div>
         <div className="toolbar">
+          <ThemeSwitcher />
           <span
             className={`validity ${zipDisabled ? "has-errors" : "is-valid"}`}
             title={

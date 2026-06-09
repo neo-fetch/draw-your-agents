@@ -16,6 +16,8 @@ import { IRNode, type IRNodeData } from "./IRNode.tsx";
 import { StartNode } from "./StartNode.tsx";
 import { NODE_DND_MIME } from "../palette/Palette.tsx";
 import type { AddableNodeType } from "../store/addNode.ts";
+import { THEME_BY_ID } from "../theme/themes.ts";
+import { useThemeStore } from "../theme/themeStore.ts";
 
 const nodeTypes = { ir: IRNode, "ir-start": StartNode };
 
@@ -49,6 +51,11 @@ function startNodePosition(nodes: { ui?: { x: number; y: number } }[]): {
 
 export function Canvas() {
   const ir = useIRStore((s) => s.ir);
+  // Grid colors come from the theme registry, not CSS — React Flow's
+  // <Background color> lands on SVG presentation attributes, which don't
+  // resolve var() (ADR-0044).
+  const theme = useThemeStore((s) => s.theme);
+  const grid = THEME_BY_ID.get(theme)!.grid;
   const selectedNodeId = useIRStore((s) => s.selectedNodeId);
   const selectedEdge = useIRStore((s) => s.selectedEdge);
   const setSelectedNode = useIRStore((s) => s.setSelectedNode);
@@ -255,7 +262,7 @@ export function Canvas() {
         variant={BackgroundVariant.Lines}
         gap={22}
         lineWidth={1}
-        color="rgba(33, 29, 24, 0.05)"
+        color={grid.fine}
       />
       <Background
         id="grid-coarse"
@@ -263,7 +270,7 @@ export function Canvas() {
         gap={110}
         size={8}
         lineWidth={1.2}
-        color="rgba(33, 29, 24, 0.14)"
+        color={grid.coarse}
       />
       <Controls />
     </ReactFlow>

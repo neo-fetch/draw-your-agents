@@ -1,0 +1,53 @@
+/* ----------------------------------------------------------- inspector */
+
+.inspector label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; font-weight: 500; }
+.inspector input,
+.inspector select,
+.inspector textarea {
+  width: 100%;
+  padding: 6px 9px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  box-sizing: border-box;
+  transition: border-color 0.13s ease, box-shadow 0.13s ease;
+}
+.inspector textarea { font-family: var(--font-mono); font-size: 12px; }
+.inspector input:focus,
+.inspector select:focus,
+.inspector textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.inspector select { cursor: pointer; }
+.inspector button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.inspector button:hover { background: var(--paper-sunken); border-color: var(--ink-faint); }
+.inspector button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.inspector .empty { color: var(--ink-faint); font-style: italic; }
+
+/* form building blocks (replaces the old ROW/HINT inline styles) */
+.field { margin-bottom: 10px; }
+.field__hint { font-size: 11px; color: var(--ink-faint); }
+.field__title { font-weight: 600; }
+.field__name-input { font-weight: 600; width: 100%; }
+
+/* string-list editor rows */
+.list-row { display: flex; gap: 6px; margin-bottom: 4px; }

@@ -1,0 +1,48 @@
+/* --------------------------------------------------------------- preview */
+
+.preview select {
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 9px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.preview select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+.preview pre {
+  background: var(--code-bg);          /* ink slab — the "manufactured output" */
+  color: var(--code-ink);
+  padding: 13px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--code-line);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow: auto;
+  margin: 0;
+  box-shadow: var(--shadow-card);
+  tab-size: 4;
+}
+.preview .findings { color: var(--err-ink); margin: 0; padding-left: 18px; }
+.preview .findings li { margin-bottom: 7px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
+
+/* headline above the findings list / inline preview errors */
+.preview .findings-head { margin-bottom: 6px; color: var(--err-ink); font-weight: 600; }
+.preview .preview-error { color: var(--err-ink); }
+
+/* clickable finding → select + center the node on the canvas (ADR-0043) */
+.preview .findings .finding-link {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.preview .findings .finding-link:hover { color: var(--accent-deep); }

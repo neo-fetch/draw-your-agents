@@ -1,0 +1,108 @@
+/* ------------------------------------------------------------- IR nodes */
+
+/* drop target wrapping React Flow (ADR-0034) — fills the canvas area so the
+   drop hit-zone covers the whole canvas and React Flow inherits a height. */
+.canvas-drop { flex: 1 1 auto; min-height: 0; position: relative; }
+
+.ir-node {
+  --type: var(--ink-faint);
+  position: relative;
+  padding: 9px 12px 9px 14px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--type);
+  border-radius: var(--r-md);
+  background: var(--paper-raised);
+  min-width: 148px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.06s ease;
+}
+.ir-node:hover { box-shadow: var(--shadow-pop); }
+.ir-node.selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-wash), var(--shadow-pop), var(--glow-accent);
+}
+.ir-node .name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.ir-node .type {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--type);
+}
+
+.ir-node[data-node-type="agent"]      { --type: var(--t-agent); }
+.ir-node[data-node-type="function"]   { --type: var(--t-function); }
+.ir-node[data-node-type="router"]     { --type: var(--t-router); }
+.ir-node[data-node-type="tool"]       { --type: var(--t-tool); }
+.ir-node[data-node-type="join"]       { --type: var(--t-join); }
+.ir-node[data-node-type="humanInput"] { --type: var(--t-humanInput); }
+.ir-node[data-node-type="workflow"]   { --type: var(--t-workflow); }
+.ir-node[data-node-type="loop"]       { --type: var(--t-loop); }
+.ir-node[data-node-type="loop"] .type::after { content: " ↻"; }
+
+.start-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 15px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  box-shadow: var(--shadow-card);
+}
+
+/* React Flow handles */
+.react-flow__handle {
+  width: 8px; height: 8px;
+  background: var(--paper-raised);
+  border: 1.5px solid var(--ink-faint);
+}
+.react-flow__handle:hover { border-color: var(--accent); background: var(--accent-wash); }
+.ir-node.selected .react-flow__handle { border-color: var(--accent); }
+
+/* React Flow edges */
+.react-flow__edge-path { stroke: var(--ink-soft); stroke-width: 1.5; }
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path { stroke: var(--accent); stroke-width: 2; }
+.react-flow__edge-text {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  fill: var(--ink); letter-spacing: 0.04em;
+}
+.react-flow__edge-textbg { fill: var(--paper-raised); }
+.react-flow__arrowhead, .react-flow__edge .react-flow__edge-path { transition: stroke 0.12s ease; }
+
+/* React Flow chrome */
+.react-flow { background: var(--paper); }
+
+.react-flow__controls {
+  box-shadow: var(--shadow-card);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+}
+.react-flow__controls-button {
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  width: 26px; height: 26px;
+}
+.react-flow__controls-button:hover { background: var(--paper-sunken); }
+.react-flow__controls-button svg { fill: var(--ink-soft); }
+.react-flow__attribution {
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+.react-flow__attribution a { color: var(--ink-faint); }

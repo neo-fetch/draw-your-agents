@@ -1,0 +1,75 @@
+/* ----------------------------------------------------------------- panes */
+
+.pane {
+  border-left: 1px solid var(--line);
+  overflow: auto;
+  background: var(--paper-raised);
+  animation: paneIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pane:first-child { border-left: none; }
+.pane:nth-child(1) { animation-delay: 0.02s; }
+.pane:nth-child(2) {
+  animation-delay: 0.07s;
+  background: transparent;
+  /* canvas pane: column so the drop wrapper fills the area below the header */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pane:nth-child(3) { animation-delay: 0.12s; }
+.pane:nth-child(4) { animation-delay: 0.17s; }
+
+@keyframes paneIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.pane > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-soft);
+  background: var(--paper-raised);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.pane > header::before {
+  content: "";
+  width: 10px; height: 10px;
+  border: 1px solid var(--ink-faint);
+  border-right: none; border-bottom: none;   /* registration tick ⌐ */
+}
+
+.pane .body { padding: 14px; }
+
+/* sub-section header within the palette pane (ADR-0035) — same registration-
+   tick + small-caps mono treatment as `.pane > header`, but not sticky so the
+   schemas section scrolls naturally below the palette. */
+.pane__subhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 8px;
+  margin: 6px 0 0;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+.pane__subhead::before {
+  content: "";
+  width: 10px; height: 10px;
+  border: 1px solid var(--ink-faint);
+  border-right: none; border-bottom: none;
+}
