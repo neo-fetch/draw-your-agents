@@ -53,8 +53,19 @@ export interface IRState {
   ir: GraphIR;
   selectedNodeId: string | null;
   selectedEdge: SelectedEdge | null;
+  /**
+   * One-shot canvas focus request (ADR-0043): set by `focusNode`, consumed by
+   * the canvas (which centers the viewport on the node). The `nonce` bumps on
+   * every call so clicking the same finding twice re-centers.
+   */
+  focusRequest: { nodeId: string; nonce: number } | null;
   setSelectedNode: (id: string | null) => void;
   setSelectedEdge: (edge: SelectedEdge | null) => void;
+  /**
+   * Select a node *and* ask the canvas to center on it (ADR-0043) — the
+   * clickable-finding path. Selection semantics match `setSelectedNode`.
+   */
+  focusNode: (nodeId: string) => void;
   /** Shallow-merge `patch` into the node's `config`, returning a new IR. */
   updateNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void;
   /** Patch one nested `modelParams` key (undefined clears it). */
@@ -156,6 +167,13 @@ export function createIRStore(initial: GraphIR): IRStore {
     ir: initial,
     selectedNodeId: null,
     selectedEdge: null,
+    focusRequest: null,
+    focusNode: (nodeId) =>
+      set((s) => ({
+        selectedNodeId: nodeId,
+        selectedEdge: null,
+        focusRequest: { nodeId, nonce: (s.focusRequest?.nonce ?? 0) + 1 },
+      })),
     setSelectedNode: (id) =>
       set((s) => ({
         selectedNodeId: id,

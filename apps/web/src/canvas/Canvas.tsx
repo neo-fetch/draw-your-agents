@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -65,6 +65,21 @@ export function Canvas() {
   const rfInstance = useRef<ReactFlowInstance<RFNode<IRNodeData>, RFEdge> | null>(
     null,
   );
+
+  // Consume canvas focus requests from clickable findings (ADR-0043): center
+  // the viewport on the requested node. Best-effort UX — no-op when the
+  // instance or node is missing; `measured` is undefined before first layout,
+  // so fall back to nominal half-extents. Cannot loop: `focusRequest` only
+  // changes on a finding click, and `setCenter` never writes the store.
+  const focusRequest = useIRStore((s) => s.focusRequest);
+  useEffect(() => {
+    if (!focusRequest || !rfInstance.current) return;
+    const node = rfInstance.current.getNode(focusRequest.nodeId);
+    if (!node) return;
+    const cx = node.position.x + (node.measured?.width ?? 180) / 2;
+    const cy = node.position.y + (node.measured?.height ?? 60) / 2;
+    void rfInstance.current.setCenter(cx, cy, { duration: 300 });
+  }, [focusRequest]);
 
   // Map IR nodes to React Flow nodes, prepending the synthetic START node
   // so users can drag from it like any other source handle (ADR-0026).

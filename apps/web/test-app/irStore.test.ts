@@ -160,3 +160,21 @@ test("store.setNodePosition persists into the IR and Save IR round-trips positio
   )!;
   assert.deepStrictEqual(after.ui, { x: 999, y: 333 });
 });
+
+test("store.focusNode selects the node, clears edge selection, bumps the nonce (ADR-0043)", () => {
+  const store = createIRStore(cloneFixture(loadFixture()));
+
+  store.getState().setSelectedEdge({ from: "START", to: "n_city_gen" });
+  store.getState().focusNode("n_city_gen");
+
+  assert.strictEqual(store.getState().selectedNodeId, "n_city_gen");
+  assert.strictEqual(store.getState().selectedEdge, null);
+  const first = store.getState().focusRequest;
+  assert.ok(first && first.nodeId === "n_city_gen");
+
+  // Clicking the same finding again must re-request the focus: the nonce
+  // bumps so the canvas effect re-fires even for an identical nodeId.
+  store.getState().focusNode("n_city_gen");
+  const second = store.getState().focusRequest;
+  assert.ok(second && second.nonce === first.nonce + 1);
+});

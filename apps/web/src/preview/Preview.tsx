@@ -7,6 +7,7 @@ import { useIRStore } from "../store/irStore.ts";
 // compile path; black formatting is opt-in and lives in later slices.
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
 import type { GeneratedProject } from "../../../../packages/codegen/src/project.ts";
+import { resolveFindingTarget } from "../store/findingTarget.ts";
 
 type CompileResult =
   | { kind: "ok"; project: GeneratedProject }
@@ -26,6 +27,7 @@ const DEFAULT_FILE = "agents.py";
 
 export function Preview() {
   const ir = useIRStore((s) => s.ir);
+  const focusNode = useIRStore((s) => s.focusNode);
   const result = useMemo(() => safeCompile(ir), [ir]);
   const [selectedFile, setSelectedFile] = useState<string>(DEFAULT_FILE);
 
@@ -36,12 +38,32 @@ export function Preview() {
           IR validation failed
         </div>
         <ul className="findings">
-          {result.findings.map((f, i) => (
-            <li key={i}>
-              [{f.code}] {f.message}
-              {f.nodeId ? ` (node: ${f.nodeId})` : ""}
-            </li>
-          ))}
+          {result.findings.map((f, i) => {
+            // Clickable when the finding's node resolves to a canvas node
+            // (nested findings resolve to their enclosing workflow node —
+            // ADR-0043); otherwise the suffix stays plain text.
+            const target = resolveFindingTarget(f.nodeId, ir);
+            return (
+              <li key={i}>
+                [{f.code}] {f.message}
+                {f.nodeId &&
+                  (target ? (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        className="finding-link"
+                        onClick={() => focusNode(target)}
+                      >
+                        (node: {f.nodeId})
+                      </button>
+                    </>
+                  ) : (
+                    ` (node: ${f.nodeId})`
+                  ))}
+              </li>
+            );
+          })}
         </ul>
       </div>
     );

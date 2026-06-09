@@ -2168,3 +2168,51 @@ Preview re-render, and picking the same entry twice reloads it.
 **Consequences.** The live demo opens into a one-click tour of every v1 feature, and every
 fixture added to `packages/ir/fixtures/` must be deliberately surfaced (or the coverage guard
 fails) — the gallery can't silently rot.
+
+## ADR-0043 — Clickable validator findings: select + center the offending node
+**Context.** The whole builder loop is "watch Preview go red, fix the node it names" — but
+findings rendered as plain text (`[CODE] message (node: id)`), leaving the user to scan the
+canvas for the id by eye. The validator already puts a `nodeId` on node-scoped findings
+([packages/ir/src/validate.ts](../packages/ir/src/validate.ts)), and selection is already
+store-owned (`selectedNodeId` → React Flow `selected`, [ADR-0026](#adr-0026)) — the click just
+had nowhere to go.
+**Decisions.**
+- **Store-mediated focus request.** New `focusRequest: { nodeId, nonce } | null` state and
+  `focusNode(nodeId)` action in [apps/web/src/store/irStore.ts](../apps/web/src/store/irStore.ts):
+  selects the node (same semantics as `setSelectedNode`, clearing any edge selection) and bumps
+  the nonce so clicking the same finding twice re-centers.
+  [Canvas.tsx](../apps/web/src/canvas/Canvas.tsx) consumes the request in a `useEffect`: it
+  already holds the `ReactFlowInstance` ref ([ADR-0034](#adr-0034)), so it calls
+  `getNode(id)` → `setCenter(center, { duration: 300 })`, falling back to nominal half-extents
+  (180×60) when `measured` is undefined pre-layout — centering is best-effort UX, not
+  correctness. The effect cannot loop: `focusRequest` changes only on a click and `setCenter`
+  never writes the store. *Rejected:* wrapping the app in `ReactFlowProvider` so Preview could
+  call `useReactFlow()` — restructures `App.tsx` and couples Preview to React Flow for one
+  imperative call.
+- **Pure resolver for the click target.** New
+  [apps/web/src/store/findingTarget.ts](../apps/web/src/store/findingTarget.ts) —
+  `resolveFindingTarget(nodeId, ir)`: a top-level id resolves to itself; a nested id
+  (`<parentId>/.../<nodeId>`, the validator's `pathPrefix` composition) resolves to its
+  **enclosing top-level workflow node** — inner nodes don't exist on the top canvas, and
+  landing on the workflow node is still actionable. *Rejected:* no-op for nested findings —
+  a dead-looking link teaches users the feature is unreliable. Unresolvable ids return `null`
+  and the finding stays plain text.
+- **Preview renders the `(node: …)` suffix as a link-button** when the resolver returns a
+  target ([apps/web/src/preview/Preview.tsx](../apps/web/src/preview/Preview.tsx)); the
+  `[code] message` text is unchanged. Note: Preview renders findings only when compile throws
+  `ValidationError` (errors); warnings aren't rendered there today — unchanged, out of scope.
+**Spec tests.** Headless
+([apps/web/test/findingTarget.test.ts](../apps/web/test/findingTarget.test.ts)): a top-level id
+resolves to itself; a *real* validator finding (city-time agent stripped of `model`) resolves
+to its node; a nested UNREACHABLE_NODE finding (inner edge dropped from the nested fixture)
+composes `n_nested/n_inner_b` and resolves to `n_nested`; undefined / unknown / unknown-parent
+ids → `null`. Install-required tier
+([apps/web/test-app/irStore.test.ts](../apps/web/test-app/irStore.test.ts)): `focusNode`
+selects the node, clears the edge selection, and bumps the nonce on repeat calls.
+**Verification.** `npm test` green (111 web tests, +4); `npm run test:web:app` green (9, +1);
+`vite build` clean, `docs/index.html` rebuilt. Browser smoke: delete the edge into a join →
+Preview lists `JOIN_MISSING_FAILSAFE` ‑style findings; clicking one selects the node and the
+viewport glides to it; clicking the same finding after panning away re-centers.
+**Consequences.** The red-to-fixed loop closes: every node-scoped finding is now a one-click
+jump to the offending node, including findings raised inside nested workflow graphs. Possible
+follow-on: one-click quick fixes (e.g. "add failsafe output") hanging off the same resolver.

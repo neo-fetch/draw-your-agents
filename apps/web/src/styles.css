@@ -681,6 +681,19 @@ html, body, #root {
 .preview .findings { color: var(--err-ink); margin: 0; padding-left: 18px; }
 .preview .findings li { margin-bottom: 7px; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; }
 
+/* clickable finding → select + center the node on the canvas (ADR-0043) */
+.preview .findings .finding-link {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.preview .findings .finding-link:hover { color: var(--accent-deep); }
+
 /* ----------------------------------------- Lexical prompt editor (ADR-0029) */
 
 .ga-variable-editor {
