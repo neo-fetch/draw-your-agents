@@ -2216,3 +2216,75 @@ viewport glides to it; clicking the same finding after panning away re-centers.
 **Consequences.** The red-to-fixed loop closes: every node-scoped finding is now a one-click
 jump to the offending node, including findings raised inside nested workflow graphs. Possible
 follow-on: one-click quick fixes (e.g. "add failsafe output") hanging off the same resolver.
+
+## ADR-0044 — Theming, motion system, and workbench UX rework
+**Context.** The builder was visually single-theme ("vellum" light), minimally animated, and
+laid out as four fixed-width grid columns. A design overhaul was commissioned around the user's
+journey — *plan → build → validate → ship* — with multiple themes (a black-metal terminal theme
+among them), orchestrated animations, and a more workstation-like layout. The styling was one
+743-line `styles.css`, with several colors hardcoded outside the `:root` tokens (code slab,
+variable chips, validity pill, inline styles in Inspector/Preview).
+**Decisions.**
+- **Theme = `data-theme` attribute + token override block.** The existing `:root` custom
+  properties stay the semantic token layer (Vellum values live in `:root`, so the default theme
+  renders with zero bootstrap); a theme is one `[data-theme="<id>"]` block in
+  [apps/web/src/styles/themes/](../apps/web/src/styles/themes/) plus one entry in the
+  framework-free registry [apps/web/src/theme/themes.ts](../apps/web/src/theme/themes.ts)
+  (label, `color-scheme`, `<meta theme-color>`, React Flow grid colors — SVG presentation
+  attributes don't resolve `var()`, so `Canvas.tsx` reads grid colors from the registry).
+  New tokens close the hardcode gaps: `--code-*`, `--chip-*`, `--ok-bg/-line`,
+  `--selection-*`, `--scroll-*`, and texture knobs `--fx-scanlines`/`--fx-grain`/
+  `--glow-accent` (inert zeros in Vellum). `styles.css` split into
+  [apps/web/src/styles/](../apps/web/src/styles/) per-surface files behind an `index.css`
+  `@import` manifest (Vite inlines them — no runtime cost). *Rejected:* renaming tokens to a
+  `--color-surface`-style scale — churns ~700 lines for no expressive gain.
+- **Theme persistence + FOUC guard.** `localStorage["ga.theme"]`, applied by an inline
+  `<head>` script in [apps/web/index.html](../apps/web/index.html) *before* the stylesheets
+  (key + id list deliberately duplicated from `themes.ts`); the zustand
+  [themeStore](../apps/web/src/theme/themeStore.ts) hydrates from `dataset.theme` so React
+  agrees with the pre-paint choice. Theme switch crossfades via a transient
+  `html.theme-switching` class (300ms color transitions), skipped under
+  `prefers-reduced-motion`. The switcher is generated from the registry — adding a theme adds
+  a segment.
+- **Bathory theme** ([bathory.css](../apps/web/src/styles/themes/bathory.css)): near-black
+  paper, bone/ash ink, one blood red (`#d23b22`; hover goes *brighter* on dark), sulfur-gold
+  warnings, node hues lifted ~30% lightness, sharp radii, Pirata One wordmark, static CRT
+  scanlines + SVG-turbulence grain on theme-agnostic `.app-shell::before/::after` overlays
+  driven by the `--fx-*` tokens, red glow on primary CTA / error pill / selected nodes+edges.
+  *Rejected:* scanline flicker animation — hostile, and a reduced-motion hazard.
+- **Motion via `motion@12`** with `LazyMotion` + `m.` components + `strict`;
+  `MotionConfig reducedMotion="user"`. Feature set is **domMax** (not domAnimation) because
+  the theme-switcher indicator (`layoutId`) and the findings list (`popLayout`) use layout
+  animations — measured cost +43 KB gzip on the singlefile bundle, accepted. Shared presets in
+  [apps/web/src/anim/presets.ts](../apps/web/src/anim/presets.ts). Canvas nodes animate
+  scale/opacity on **mount only** — React Flow owns x/y, and node *exit* animations are
+  impossible under RF-controlled rendering (AnimatePresence can't intercept removal):
+  explicitly scoped out. Inspector form swaps use `AnimatePresence mode="wait"` keyed on
+  node id / edge triple, preserving the one-Lexical-editor-at-a-time invariant (ADR-0029);
+  exits ≤120ms. Preview crossfades on *filename* only (never animates the `<pre>` text) with
+  an accent "refreshed" bar keyed on content; findings render as card-rows that drain away
+  when fixed (whole row is the ADR-0043 focus affordance now).
+- **Workbench layout, hand-rolled** (no `react-resizable-panels`): grid → flex; side panes
+  get widths from a UI-only zustand store ([uiStore.ts](../apps/web/src/layout/uiStore.ts))
+  over a pure, install-free-tested model
+  ([paneLayout.ts](../apps/web/src/layout/paneLayout.ts), clamps: left 180–320, inspector
+  280–480, preview 360–640, persisted to `localStorage["ga.layout"]`).
+  [PaneResizeHandle](../apps/web/src/layout/PaneResizeHandle.tsx) is a pointer-capture drag
+  divider (`role="separator"`, arrow-key steps); [WorkPane](../apps/web/src/layout/WorkPane.tsx)
+  collapses to a 36px labeled rail (canvas never collapses; width animates via CSS, disabled
+  during drag). Layout/theme state never touches the IR store or the pure reducers.
+- **Journey-shaped toolbar + empty state.** Toolbar reads left→right as plan→ship: wordmark,
+  file cluster (**New** — a `blankIR()` document from
+  [irIO.ts](../apps/web/src/store/irIO.ts); deliberately invalid with `NO_START_EDGE`, honest-
+  surface per ADR-0024 — examples, Save/Load IR), then theme switcher, validity pill (now a
+  button: with errors it expands the Preview pane where findings live), and the primary CTA
+  renamed **Export project**. An empty graph shows a pointer-transparent canvas overlay
+  ([CanvasEmptyState](../apps/web/src/canvas/CanvasEmptyState.tsx)) with the three-step guide
+  and example shortcuts. Inspector forms are grouped into `<fieldset>` sections with a sticky
+  node header (name + type-tinted chip; `top` pinned to the now fixed-height 36px pane header).
+**Spec tests.** Install-free: [themes.test.ts](../apps/web/test/themes.test.ts) (registry
+shape, `coerceThemeId` fallback, storage-key stability) and
+[paneLayout.test.ts](../apps/web/test/paneLayout.test.ts) (clamp/round-trip/garbage-tolerant
+parse) — both import only dependency-free modules, keeping the cold-checkout `node --test`
+gate green. Visual verification: Playwright screenshots of both themes (workbench, inspector
+sections, empty state, findings cards).
