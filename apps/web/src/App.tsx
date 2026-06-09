@@ -5,6 +5,8 @@ import { Palette } from "./palette/Palette.tsx";
 import { Preview } from "./preview/Preview.tsx";
 import { SchemaPanel } from "./schemas/SchemaPanel.tsx";
 import { Toolbar } from "./toolbar/Toolbar.tsx";
+import { PaneResizeHandle } from "./layout/PaneResizeHandle.tsx";
+import { WorkPane } from "./layout/WorkPane.tsx";
 import { paneItem, paneStagger } from "./anim/presets.ts";
 
 /**
@@ -13,6 +15,10 @@ import { paneItem, paneStagger } from "./anim/presets.ts";
  * domMax (not domAnimation) because the theme switcher indicator and the
  * findings list use layout animations. `reducedMotion="user"` honors the
  * OS setting for every transform globally (ADR-0044).
+ *
+ * Workbench layout (ADR-0044): flex row of side panes (resizable via
+ * PaneResizeHandle, collapsible to rails via WorkPane) around the canvas,
+ * which always flexes to fill and never collapses.
  */
 export function App() {
   return (
@@ -26,8 +32,10 @@ export function App() {
             initial="hidden"
             animate="show"
           >
-            <m.section className="pane palette-pane" variants={paneItem}>
-              <header>Add Node</header>
+            <WorkPane pane="left" title="Build" edge="start">
+              <header className="pane__subhead pane__subhead--first">
+                Add Node
+              </header>
               <div className="body palette">
                 <Palette />
               </div>
@@ -35,23 +43,24 @@ export function App() {
               <div className="body schemas">
                 <SchemaPanel />
               </div>
-            </m.section>
-            <m.section className="pane" variants={paneItem}>
+            </WorkPane>
+            <PaneResizeHandle pane="left" edge="end" />
+            <m.section className="pane pane--canvas" variants={paneItem}>
               <header>Canvas</header>
               <Canvas />
             </m.section>
-            <m.section className="pane" variants={paneItem}>
-              <header>Inspector</header>
+            <PaneResizeHandle pane="inspector" edge="start" />
+            <WorkPane pane="inspector" title="Inspector" edge="end">
               <div className="body inspector">
                 <Inspector />
               </div>
-            </m.section>
-            <m.section className="pane" variants={paneItem}>
-              <header>Preview</header>
+            </WorkPane>
+            <PaneResizeHandle pane="preview" edge="start" />
+            <WorkPane pane="preview" title="Preview" edge="end">
               <div className="body preview">
                 <Preview />
               </div>
-            </m.section>
+            </WorkPane>
           </m.div>
         </div>
       </MotionConfig>

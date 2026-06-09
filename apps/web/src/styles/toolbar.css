@@ -47,6 +47,13 @@
   margin-left: auto;
 }
 
+/* file cluster sits by the wordmark; the ship cluster keeps margin-left:auto */
+.toolbar--file {
+  margin-left: 4px;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
 .toolbar button {
   font-family: var(--font-mono);
   font-size: 12px;
@@ -158,8 +165,10 @@
 }
 .theme-switcher__label { position: relative; z-index: 1; }
 
-/* validity pill */
-.validity {
+/* validity pill — a <button>: clicking it (with errors) reveals the Preview
+   pane where the findings render (ADR-0044). High-specificity selectors so
+   the generic `.toolbar button` rules don't reshape the pill. */
+.toolbar button.validity {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -172,18 +181,30 @@
   border: 1px solid var(--line-strong);
   background: var(--paper);
   color: var(--ink-soft);
+  cursor: default;
 }
-.validity::before {
+.toolbar button.validity::before {
   content: "";
   width: 7px; height: 7px;
   border-radius: 999px;
   background: var(--ink-faint);
   box-shadow: 0 0 0 3px rgba(150, 139, 124, 0.18);
 }
-.validity.is-valid { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
-.validity.is-valid::before { background: var(--ok); box-shadow: 0 0 0 3px rgba(63, 125, 82, 0.16); }
-.validity.has-errors { color: var(--err-ink); border-color: var(--err-line); background: var(--err-bg); }
-.validity.has-errors::before {
+.toolbar button.validity.is-valid,
+.toolbar button.validity.is-valid:hover {
+  color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg);
+}
+.toolbar button.validity.is-valid::before {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(63, 125, 82, 0.16);
+}
+.toolbar button.validity.has-errors,
+.toolbar button.validity.has-errors:hover {
+  color: var(--err-ink); border-color: var(--err-line); background: var(--err-bg);
+  cursor: pointer;
+}
+.toolbar button.validity.has-errors:hover { border-color: var(--accent); }
+.toolbar button.validity.has-errors::before {
   background: var(--accent);
   box-shadow: 0 0 0 3px rgba(207, 77, 44, 0.18), var(--glow-accent);
 }

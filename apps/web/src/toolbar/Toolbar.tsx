@@ -24,12 +24,14 @@ import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
 import { reveal } from "../anim/presets.ts";
 import {
+  blankIR,
   loadIRFromText,
   serializeIR,
   suggestedSaveFilename,
   suggestedZipFilename,
 } from "../store/irIO.ts";
 import { EXAMPLES, loadExample } from "../store/examples.ts";
+import { useUIStore } from "../layout/uiStore.ts";
 import { ThemeSwitcher } from "./ThemeSwitcher.tsx";
 import { validate } from "../../../../packages/ir/src/validate.ts";
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
@@ -54,6 +56,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 export function Toolbar() {
   const ir = useIRStore((s) => s.ir);
   const replaceIR = useIRStore((s) => s.replaceIR);
+  const expandPane = useUIStore((s) => s.expandPane);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [banner, setBanner] = useState<Banner>({ kind: "none" });
 
@@ -66,6 +69,12 @@ export function Toolbar() {
   const onSave = (): void => {
     const blob = new Blob([serializeIR(ir)], { type: "application/json" });
     downloadBlob(blob, suggestedSaveFilename(ir));
+  };
+
+  const onNew = (): void => {
+    // Blank document → the canvas empty state takes over as the guide.
+    replaceIR(blankIR());
+    setBanner({ kind: "none" });
   };
 
   const onLoadClick = (): void => {
@@ -145,20 +154,9 @@ export function Toolbar() {
           </span>
           <span className="wordmark__tag">IR → ADK</span>
         </div>
-        <div className="toolbar">
-          <ThemeSwitcher />
-          <span
-            className={`validity ${zipDisabled ? "has-errors" : "is-valid"}`}
-            title={
-              zipDisabled
-                ? `IR has ${errorCount} validation error(s)`
-                : "IR is valid — ready to generate"
-            }
-          >
-            {zipDisabled
-              ? `${errorCount} error${errorCount === 1 ? "" : "s"}`
-              : "valid"}
-          </span>
+        {/* file cluster — plan: start, save, resume */}
+        <div className="toolbar toolbar--file">
+          <button type="button" onClick={onNew}>New</button>
           <select
             className="example-select"
             value=""
@@ -176,15 +174,6 @@ export function Toolbar() {
           </select>
           <button type="button" onClick={onSave}>Save IR</button>
           <button type="button" onClick={onLoadClick}>Load IR</button>
-          <button
-            type="button"
-            className="primary"
-            onClick={onDownloadZip}
-            disabled={zipDisabled}
-            title={zipDisabled ? `IR has ${errorCount} validation error(s)` : undefined}
-          >
-            Download .zip
-          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -192,6 +181,36 @@ export function Toolbar() {
             style={{ display: "none" }}
             onChange={onFileChosen}
           />
+        </div>
+        {/* ship cluster — theme, status, and the payoff CTA */}
+        <div className="toolbar">
+          <ThemeSwitcher />
+          <button
+            type="button"
+            className={`validity ${zipDisabled ? "has-errors" : "is-valid"}`}
+            title={
+              zipDisabled
+                ? `IR has ${errorCount} validation error(s) — click to see them in Preview`
+                : "IR is valid — ready to generate"
+            }
+            onClick={() => {
+              // Findings live in the Preview pane — make sure it's visible.
+              if (zipDisabled) expandPane("preview");
+            }}
+          >
+            {zipDisabled
+              ? `${errorCount} error${errorCount === 1 ? "" : "s"}`
+              : "valid"}
+          </button>
+          <button
+            type="button"
+            className="primary"
+            onClick={onDownloadZip}
+            disabled={zipDisabled}
+            title={zipDisabled ? `IR has ${errorCount} validation error(s)` : undefined}
+          >
+            Export project
+          </button>
         </div>
       </div>
       <AnimatePresence initial={false}>

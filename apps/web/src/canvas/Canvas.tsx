@@ -14,6 +14,7 @@ import {
 import { useIRStore } from "../store/irStore.ts";
 import { IRNode, type IRNodeData } from "./IRNode.tsx";
 import { StartNode } from "./StartNode.tsx";
+import { CanvasEmptyState } from "./CanvasEmptyState.tsx";
 import { NODE_DND_MIME } from "../palette/Palette.tsx";
 import type { AddableNodeType } from "../store/addNode.ts";
 import { THEME_BY_ID } from "../theme/themes.ts";
@@ -274,6 +275,7 @@ export function Canvas() {
       />
       <Controls />
     </ReactFlow>
+    {ir.nodes.length === 0 && <CanvasEmptyState />}
     </div>
   );
 }

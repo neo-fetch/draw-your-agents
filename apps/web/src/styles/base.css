@@ -65,8 +65,8 @@ html, body, #root {
 }
 
 .app {
-  display: grid;
-  grid-template-columns: 240px 1fr 348px 484px;
+  display: flex;
+  align-items: stretch;
   flex: 1 1 auto;
   min-height: 0;
 }

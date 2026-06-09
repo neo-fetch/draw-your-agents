@@ -33,6 +33,16 @@ import { VariablePalette } from "./VariablePalette.tsx";
 // Form rows/hints use the `.field` / `.field__hint` classes (inspector.css)
 // so themes restyle them through tokens.
 
+/** Grouped form block — small-caps legend matching the pane subhead voice. */
+function FormSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <fieldset className="form-section">
+      <legend>{title}</legend>
+      {children}
+    </fieldset>
+  );
+}
+
 // Encoded option values for TypeRefSelect so we can round-trip null/"str"
 // alongside arbitrary schema names without collisions.
 const REF_NULL = "__null__";
@@ -214,17 +224,22 @@ function NodeNameInput({
   );
 }
 
+/**
+ * Sticky mini-header (ADR-0044): node name + type chip stay visible while
+ * scrolling long forms — the chip is tinted with the node-type hue.
+ */
 function Header({ node }: { node: GraphNode }) {
   const renameNode = useIRStore((s) => s.renameNode);
   return (
-    <div className="field">
+    <div className="form-head" data-node-type={node.type}>
       <NodeNameInput
         key={node.id}
         initial={node.name}
         onCommit={(next) => renameNode(node.id, next)}
       />
-      <div className="field__hint">
-        {node.id} · {node.type}
+      <div className="form-head__meta">
+        <span className="type-chip">{node.type}</span>
+        <span className="field__hint">{node.id}</span>
       </div>
     </div>
   );
@@ -262,73 +277,78 @@ function AgentForm({ node }: { node: AgentNode }) {
     <div>
       <Header node={node} />
 
-      <div className="field">
-        <label htmlFor="agent-model">model</label>
-        <input
-          id="agent-model"
-          type="text"
-          value={node.config.model}
-          onChange={(e) => updateNodeConfig(node.id, { model: e.target.value })}
-        />
-      </div>
+      <FormSection title="Model">
+        <div className="field">
+          <label htmlFor="agent-model">model</label>
+          <input
+            id="agent-model"
+            type="text"
+            value={node.config.model}
+            onChange={(e) => updateNodeConfig(node.id, { model: e.target.value })}
+          />
+        </div>
 
-      <div className="field">
-        <label htmlFor="agent-mode">mode</label>
-        <select
-          id="agent-mode"
-          value={node.config.mode ?? ""}
-          onChange={(e) => {
-            const v = e.target.value;
-            updateNodeConfig(node.id, { mode: v === "" ? undefined : v });
-          }}
-        >
-          <option value="">(unset)</option>
-          <option value="task">task</option>
-          <option value="single_turn">single_turn</option>
-        </select>
-      </div>
+        <div className="field">
+          <label htmlFor="agent-mode">mode</label>
+          <select
+            id="agent-mode"
+            value={node.config.mode ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              updateNodeConfig(node.id, { mode: v === "" ? undefined : v });
+            }}
+          >
+            <option value="">(unset)</option>
+            <option value="task">task</option>
+            <option value="single_turn">single_turn</option>
+          </select>
+        </div>
 
-      <div className="field">
-        <label htmlFor="agent-input-ref">inputSchemaRef</label>
-        <TypeRefSelect
-          id="agent-input-ref"
-          value={node.config.inputSchemaRef}
-          schemas={schemas}
-          allowNull
-          allowStr
-          onChange={(v) => updateNodeConfig(node.id, { inputSchemaRef: v })}
-        />
-      </div>
+        {paramRow("temperature", "modelParams.temperature")}
+        {paramRow("topP", "modelParams.topP")}
+        {paramRow("topK", "modelParams.topK", "1")}
+        {paramRow("maxOutputTokens", "modelParams.maxOutputTokens", "1")}
+      </FormSection>
 
-      <div className="field">
-        <label htmlFor="agent-output-ref">outputSchemaRef</label>
-        <TypeRefSelect
-          id="agent-output-ref"
-          value={node.config.outputSchemaRef}
-          schemas={schemas}
-          allowStr
-          onChange={(v) =>
-            updateNodeConfig(node.id, { outputSchemaRef: v ?? "str" })
-          }
-        />
-      </div>
+      <FormSection title="Input · Output">
+        <div className="field">
+          <label htmlFor="agent-input-ref">inputSchemaRef</label>
+          <TypeRefSelect
+            id="agent-input-ref"
+            value={node.config.inputSchemaRef}
+            schemas={schemas}
+            allowNull
+            allowStr
+            onChange={(v) => updateNodeConfig(node.id, { inputSchemaRef: v })}
+          />
+        </div>
 
-      {paramRow("temperature", "modelParams.temperature")}
-      {paramRow("topP", "modelParams.topP")}
-      {paramRow("topK", "modelParams.topK", "1")}
-      {paramRow("maxOutputTokens", "modelParams.maxOutputTokens", "1")}
+        <div className="field">
+          <label htmlFor="agent-output-ref">outputSchemaRef</label>
+          <TypeRefSelect
+            id="agent-output-ref"
+            value={node.config.outputSchemaRef}
+            schemas={schemas}
+            allowStr
+            onChange={(v) =>
+              updateNodeConfig(node.id, { outputSchemaRef: v ?? "str" })
+            }
+          />
+        </div>
 
-      <div className="field">
-        <label>tools</label>
-        <StringListEditor
-          value={node.config.tools ?? []}
-          placeholder="tool name"
-          onChange={(next) =>
-            updateNodeConfig(node.id, { tools: next.length === 0 ? undefined : next })
-          }
-        />
-      </div>
+        <div className="field">
+          <label>tools</label>
+          <StringListEditor
+            value={node.config.tools ?? []}
+            placeholder="tool name"
+            onChange={(next) =>
+              updateNodeConfig(node.id, { tools: next.length === 0 ? undefined : next })
+            }
+          />
+        </div>
+      </FormSection>
 
+      <FormSection title="Prompt">
       <div className="field">
         <label>instruction</label>
         <div className="field__hint">
@@ -368,6 +388,7 @@ function AgentForm({ node }: { node: AgentNode }) {
           }}
         />
       </div>
+      </FormSection>
     </div>
   );
 }
@@ -378,6 +399,7 @@ function FunctionForm({ node }: { node: FunctionNode }) {
   return (
     <div>
       <Header node={node} />
+      <FormSection title="Configuration">
       <div className="field">
         <label htmlFor="fn-desc">description</label>
         <input
@@ -433,6 +455,7 @@ function FunctionForm({ node }: { node: FunctionNode }) {
           onChange={(v) => updateNodeConfig(node.id, { body: v })}
         />
       </div>
+      </FormSection>
     </div>
   );
 }
@@ -443,6 +466,7 @@ function ToolForm({ node }: { node: ToolNode }) {
   return (
     <div>
       <Header node={node} />
+      <FormSection title="Configuration">
       <div className="field">
         <label htmlFor="tool-desc">description</label>
         <input
@@ -483,6 +507,7 @@ function ToolForm({ node }: { node: ToolNode }) {
           onChange={(v) => updateNodeConfig(node.id, { body: v })}
         />
       </div>
+      </FormSection>
     </div>
   );
 }
@@ -493,6 +518,7 @@ function RouterForm({ node }: { node: RouterNode }) {
   return (
     <div>
       <Header node={node} />
+      <FormSection title="Configuration">
       <div className="field">
         <label htmlFor="router-desc">description</label>
         <input
@@ -536,6 +562,7 @@ function RouterForm({ node }: { node: RouterNode }) {
           onChange={(v) => updateNodeConfig(node.id, { body: v })}
         />
       </div>
+      </FormSection>
     </div>
   );
 }
@@ -545,6 +572,7 @@ function JoinForm({ node }: { node: JoinNode }) {
   return (
     <div>
       <Header node={node} />
+      <FormSection title="Configuration">
       <div className="field">
         <label htmlFor="join-desc">description</label>
         <input
@@ -558,6 +586,7 @@ function JoinForm({ node }: { node: JoinNode }) {
           }
         />
       </div>
+      </FormSection>
     </div>
   );
 }
@@ -568,6 +597,7 @@ function HumanInputForm({ node }: { node: HumanInputNode }) {
   return (
     <div>
       <Header node={node} />
+      <FormSection title="Configuration">
       <div className="field">
         <label htmlFor="hi-message">message</label>
         <input
@@ -601,6 +631,7 @@ function HumanInputForm({ node }: { node: HumanInputNode }) {
           }
         />
       </div>
+      </FormSection>
     </div>
   );
 }
@@ -612,6 +643,7 @@ function WorkflowForm({ node }: { node: WorkflowNode }) {
   return (
     <div>
       <Header node={node} />
+      <FormSection title="Configuration">
       <div className="field">
         <label htmlFor="wf-desc">description</label>
         <input
@@ -632,6 +664,7 @@ function WorkflowForm({ node }: { node: WorkflowNode }) {
           sub-graph editing in a later slice.
         </div>
       </div>
+      </FormSection>
     </div>
   );
 }
@@ -658,8 +691,7 @@ function LoopForm({ node }: { node: LoopNode }) {
   ) => {
     const sub: LoopSubAgent = cfg[key];
     return (
-      <div className="field" key={key}>
-        <label>{label}</label>
+      <FormSection title={label} key={key}>
         <div className="field">
           <label htmlFor={`loop-${key}-model`} className="field__hint">model</label>
           <input
@@ -686,13 +718,14 @@ function LoopForm({ node }: { node: LoopNode }) {
             }
           />
         </div>
-      </div>
+      </FormSection>
     );
   };
 
   return (
     <div>
       <Header node={node} />
+      <FormSection title="Loop">
       <div className="field">
         <label htmlFor="loop-max">maxIterations</label>
         <NumberOrEmpty
@@ -736,6 +769,7 @@ function LoopForm({ node }: { node: LoopNode }) {
           onChange={(v) => updateNodeConfig(node.id, { payloadType: v ?? "str" })}
         />
       </div>
+      </FormSection>
       {subAgentRow("generator", "generator")}
       {subAgentRow("critic", "critic")}
       {subAgentRow("reviser", "reviser")}
