@@ -29,8 +29,11 @@ export interface Fragment {
   readonly code: string;
 }
 
-/** Pydantic field type for an IR scalar, with any import it needs. */
-function scalarType(type: ScalarType): { py: string; imports: ImportReq[] } {
+/**
+ * Pydantic field type for an IR scalar, with any import it needs. Shared with
+ * the LangGraph target (ADR-0045).
+ */
+export function scalarType(type: ScalarType): { py: string; imports: ImportReq[] } {
   switch (type) {
     case "str":
     case "int":
@@ -51,9 +54,10 @@ function scalarType(type: ScalarType): { py: string; imports: ImportReq[] } {
 /**
  * Resolve a type reference used as a function I/O or agent schema slot. `"str"`
  * is the builtin; any other ref must name a declared schema (rendered as the
- * pydantic class, imported from schemas.py).
+ * pydantic class, imported from schemas.py). Shared with the LangGraph target
+ * (ADR-0045) — both targets keep their pydantic models in a `schemas` module.
  */
-function resolveRef(
+export function resolveRef(
   ref: TypeRef,
   schemas: ReadonlyMap<string, SchemaDef>,
 ): { py: string; imports: ImportReq[] } {

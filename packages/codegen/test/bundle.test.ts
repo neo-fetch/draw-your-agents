@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { GraphIR } from "@graphical-agents/ir";
 import { generateProject } from "../src/project.ts";
+import { generateLangGraphProject } from "../src/langgraph/project.ts";
 import { bundleZip, unzipStore } from "../src/bundle.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -47,6 +48,18 @@ for (const { name, fixture } of PROJECTS) {
     }
   });
 }
+
+test("langgraph project: bundleZip round-trips byte-equal under unzipStore", () => {
+  // One LangGraph entry proves target-independence of the bundler (ADR-0045);
+  // the byte-level zip mechanics are covered by the ADK loop above.
+  const ir = loadIR("packages/ir/fixtures/city-time.ir.json");
+  const generated = generateLangGraphProject(ir);
+  const recovered = unzipStore(bundleZip(generated, ir.name));
+  assert.equal(recovered.size, generated.size);
+  for (const [path, content] of generated) {
+    assert.equal(recovered.get(`${ir.name}/${path}`), content);
+  }
+});
 
 test("EOCD shape matches the generated project's entry count", () => {
   const generated = generateProject(loadIR(PROJECTS[0]!.fixture));

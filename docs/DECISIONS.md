@@ -2288,3 +2288,95 @@ shape, `coerceThemeId` fallback, storage-key stability) and
 parse) — both import only dependency-free modules, keeping the cold-checkout `node --test`
 gate green. Visual verification: Playwright screenshots of both themes (workbench, inspector
 sections, empty state, findings cards).
+
+## ADR-0045 — Multi-target codegen: LangGraph as a second generator behind one front door
+**Context.** Codegen was hardwired to Google ADK. The IR, validator, and graph-shape rules are
+target-agnostic (ADR-0001/0013), so a second framework target — LangGraph (Python) — was added
+without touching the IR contract.
+**Decisions.**
+- **One front door, options param.** `compile(ir, { target?: "adk" | "langgraph" })` in
+  [packages/codegen/src/compile.ts](../packages/codegen/src/compile.ts), default `"adk"` — the
+  validate-then-throw gate stays in exactly one place, and the web app's one-arg `compile(ir)`
+  calls keep working unchanged. `generateLangGraphProject(ir)` is exported pure, mirroring
+  `generateProject`. CLI: `node scripts/compile.ts <ir> <zip> --target=langgraph`. The web UI
+  stays ADK-only for now (a target picker is its own slice).
+- **Module family, not a fork.** The target lives in
+  [packages/codegen/src/langgraph/](../packages/codegen/src/langgraph/) (`state.ts`,
+  `fragments.ts`, `graphModule.ts`, `project.ts`), reusing the shared plumbing exported from the
+  ADK modules: `Fragment`/`renderImports` (now parameterized by the target's local-module set),
+  `renderSchema`, `topologicalSchemas`, `walkAllNodes`, `joinModule`, `header`, the formatter,
+  and the bundler. *Rejected:* a `CodegenTarget` strategy interface — two targets don't justify
+  the indirection; revisit at three.
+- **`compileEdges` as the shared shape gate.** The LangGraph assembler runs `compileEdges` per
+  graph and **discards the rows** (they are ADK-shaped chains), then emits wiring directly from
+  the pairwise IR edges. One shape spec, two emitters: any topology the ADK target accepts, the
+  LangGraph target accepts, and vice versa. If LangGraph ever supports richer shapes, the gate
+  forks then, not now.
+- **Goldens split per target.** LangGraph goldens live under
+  [packages/codegen/test/golden-langgraph/](../packages/codegen/test/golden-langgraph/) (same
+  eight fixture projects as `golden/`), pinned by
+  [project-langgraph.test.ts](../packages/codegen/test/project-langgraph.test.ts) with the same
+  py_compile trust check; `showcase-all-nodes` stays golden-less in both targets but must
+  generate + py_compile (smoke test). `scripts/update-goldens.ts` regenerates both targets.
+  The black-idempotence loop in `format.test.ts` covers every LangGraph fixture (f-strings and
+  magic trailing commas are the riskiest black surfaces).
+
+## ADR-0046 — LangGraph mapping: state-key dataflow, defer joins, interrupts, while-loop loops
+**Context.** ADK's graph workflow pipes one node's output positionally into the next node's
+input. LangGraph has no positional piping — all data flows through a shared state object —
+so the IR's data-flow semantics needed an explicit mapping. Verified against langgraph 1.2.4 /
+langchain 1.3.6 (June 2026, docs.langchain.com).
+**Decisions.**
+- **One state key per node output.** Each node writes `{"<node_name>_output": value}`; the
+  reserved entry key is `workflow_input`. Node names are globally unique (ADR-0017), so no two
+  writers share a key — parallel branches included — and **no reducers are needed**. A node
+  reads its single upstream's key; a router's branch targets read the **router's own input
+  key** (the route label is control flow, not data). `state.py` declares one
+  `TypedDict(total=False)` per graph (`typing_extensions.TypedDict` per the LangGraph docs).
+  *Rejected:* pydantic state — re-validates on every superstep and complicates checkpointer
+  round-trips; the typed boundary that matters (LLM output) is already a pydantic instance via
+  `with_structured_output`.
+- **Node mappings.** Agent → `init_chat_model("google_genai:<model>")` (bare ADK-style ids get
+  the `google_genai:` prefix; ids with a `provider:` prefix pass through) constructed **lazily
+  inside the node function** so importing `graph` needs no API key; structured output via
+  `.with_structured_output(Schema)`; prompts are f-strings — var chips read
+  `{state['<source>_output'].<field>}`, and a chip-less instruction gets the node's input
+  appended as an `Input:` block (schema inputs as `.model_dump_json()`). Router →
+  `add_conditional_edges(name, lambda state: state["<name>_output"], {route: target})` in
+  declared-route order. Join → node function merging upstream keys into a dict keyed by
+  upstream name, registered `defer=True` (LangGraph's native wait-for-all-pending; the ADK
+  failsafe-output hazard does not exist, `JOIN_MISSING_FAILSAFE` stays an ADK-side warning).
+  Leaves (no out-edges) wire to `END`.
+- **HumanInput = `interrupt()` + self-validated response.** The root graph compiles with
+  `checkpointer=InMemorySaver()` when any humanInput exists; `main.py` drives the documented
+  loop (`invoke` → `result["__interrupt__"]` → `Command(resume=...)` on one `thread_id`).
+  `payloadRef` ships as `Schema.model_json_schema()` in the interrupt payload;
+  `responseSchemaRef` is enforced in-node via `model_validate` — `interrupt()` has no native
+  response schema. HumanInput **inside a nested workflow** is rejected loud (interrupt
+  propagation through an `.invoke()` wrapper is unverified).
+- **Nested workflow = compiled subgraph behind a state-mapping wrapper.** Each sub-graph gets
+  its own state class and builder (deepest-first), compiles **without** a checkpointer, and the
+  parent calls it through a wrapper mapping upstream key → sub `workflow_input` and the
+  sub-graph's **single leaf** output → the workflow node's key (multiple leaves in a nested
+  graph are rejected loud).
+- **Loop = a plain Python `for`-loop in one node function** (`loops.py`), not a cyclic
+  subgraph: three lazily-built structured-output models (generator/critic/reviser), instruction
+  constants at module level, exit on `crit.status == approvalPhrase`, `RuntimeError` on
+  exhaustion. `with_structured_output` replaces ADK's `validate_node_output` helper; of the four
+  reserved wrapper schemas only `<N>_CriticOutput` is emitted (the others exist only for ADK's
+  `input_schema` slots).
+- **Rejected loud (CodegenError):** agent-attached `tools` (no fixture exercises them;
+  `create_agent` integration is a follow-up), non-null IR `body` (ADK `Event` bodies don't
+  transplant), humanInput in nested graphs, multi-leaf nested graphs, state-class/schema name
+  collisions. Function `emits: "message"` has no LangGraph analog and is ignored.
+- **Scaffold.** `requirements.txt` pins `langgraph>=1.2,<2`, `langchain>=1.3,<2`,
+  `langchain-google-genai`; `test_graph.py` is a key-free dry-run that imports `graph` —
+  building **and compiling** every `StateGraph`, which is where LangGraph validates node/edge
+  consistency (a stronger structural check than ADK's constructor dry-run). No `langgraph.json`
+  / CLI dev server — plain script execution.
+**Fidelity (ADR-0021 posture).** Verified by hand against a real venv (langgraph 1.2.4,
+langchain 1.3.6, Python 3.11): all nine fixture projects pass their generated `pytest` dry-run;
+executing the `parallel` project end-to-end confirms superstep fan-out + `defer=True` join
+merging; executing `human-input` confirms interrupt → `Command(resume=...)` → downstream
+consumption of the answer. LLM-calling paths (agents/loops) are generated from documented
+1.x APIs but were not exercised against a live key.

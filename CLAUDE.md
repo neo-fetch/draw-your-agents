@@ -2,6 +2,8 @@
 
 Visual builder that compiles a drag-and-drop agent graph into runnable **Google ADK
 (Python, v2.0.0) graph-workflow** projects. Also imports **draw.io** XML into the same graph.
+A second codegen target emits **LangGraph (Python, 1.x)** projects:
+`compile(ir, { target: "langgraph" })` (ADR-0045/0046).
 
 ## The one rule: the IR is the source of truth
 Every input (visual builder, draw.io import) produces a **Graph IR** — a versioned JSON
@@ -20,7 +22,7 @@ IR → edges compiler → per-node template fragments → assemble modules
 
 ## Module boundaries (= context boundaries)
 - `packages/ir`      IR JSON Schema + TS types + validator. **The keystone.** Everything depends on it.
-- `packages/codegen` IR → ADK project. Templates + edges compiler + golden tests.
+- `packages/codegen` IR → ADK project (default) + LangGraph project (`src/langgraph/`). Templates + edges compiler + golden tests.
 - `packages/drawio`  mxGraph XML → IR.
 - `apps/web`         React Flow canvas + Lexical prompt editor. Depends only on `packages/ir` types.
 
