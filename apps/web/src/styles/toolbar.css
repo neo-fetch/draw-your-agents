@@ -40,6 +40,40 @@
   border-left: 1px solid var(--line-strong);
 }
 
+/* tag-as-button: same look, but it switches the codegen target on click */
+.wordmark__tag--switch {
+  background: none;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  padding-top: 0;
+  padding-right: 0;
+  padding-bottom: 0;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.wordmark__tag--switch:hover,
+.wordmark__tag--switch:focus-visible {
+  color: var(--ink);
+}
+
+/* back to the landing target picker */
+.wordmark__home {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1;
+  align-self: center;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.wordmark__home:hover,
+.wordmark__home:focus-visible {
+  color: var(--accent);
+}
+
 .toolbar {
   display: flex;
   gap: 8px;

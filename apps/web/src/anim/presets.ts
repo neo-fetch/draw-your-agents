@@ -50,6 +50,13 @@ export const findingItem: Variants = {
   exit: { opacity: 0, x: 6, transition: { duration: 0.12, ease: "easeIn" } },
 };
 
+/** Whole-page swap (landing ↔ workbench) — opacity only. */
+export const pageFade: Variants = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { duration: 0.25, ease: EASE_OUT } },
+  exit: { opacity: 0, transition: { duration: 0.12, ease: "easeIn" } },
+};
+
 /** Banner / dropdown reveal (height collapses via an overflow-hidden wrap). */
 export const reveal: Variants = {
   hidden: { height: 0, opacity: 0 },
