@@ -20,14 +20,19 @@
  * where the validator findings already render.
  */
 import { useRef, useState } from "react";
+import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
+import { reveal } from "../anim/presets.ts";
 import {
+  blankIR,
   loadIRFromText,
   serializeIR,
   suggestedSaveFilename,
   suggestedZipFilename,
 } from "../store/irIO.ts";
 import { EXAMPLES, loadExample } from "../store/examples.ts";
+import { useUIStore } from "../layout/uiStore.ts";
+import { ThemeSwitcher } from "./ThemeSwitcher.tsx";
 import { validate } from "../../../../packages/ir/src/validate.ts";
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
 import { bundleZip } from "../../../../packages/codegen/src/bundle.ts";
@@ -51,6 +56,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 export function Toolbar() {
   const ir = useIRStore((s) => s.ir);
   const replaceIR = useIRStore((s) => s.replaceIR);
+  const expandPane = useUIStore((s) => s.expandPane);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [banner, setBanner] = useState<Banner>({ kind: "none" });
 
@@ -63,6 +69,12 @@ export function Toolbar() {
   const onSave = (): void => {
     const blob = new Blob([serializeIR(ir)], { type: "application/json" });
     downloadBlob(blob, suggestedSaveFilename(ir));
+  };
+
+  const onNew = (): void => {
+    // Blank document → the canvas empty state takes over as the guide.
+    replaceIR(blankIR());
+    setBanner({ kind: "none" });
   };
 
   const onLoadClick = (): void => {
@@ -142,19 +154,9 @@ export function Toolbar() {
           </span>
           <span className="wordmark__tag">IR → ADK</span>
         </div>
-        <div className="toolbar">
-          <span
-            className={`validity ${zipDisabled ? "has-errors" : "is-valid"}`}
-            title={
-              zipDisabled
-                ? `IR has ${errorCount} validation error(s)`
-                : "IR is valid — ready to generate"
-            }
-          >
-            {zipDisabled
-              ? `${errorCount} error${errorCount === 1 ? "" : "s"}`
-              : "valid"}
-          </span>
+        {/* file cluster — plan: start, save, resume */}
+        <div className="toolbar toolbar--file">
+          <button type="button" onClick={onNew}>New</button>
           <select
             className="example-select"
             value=""
@@ -172,15 +174,6 @@ export function Toolbar() {
           </select>
           <button type="button" onClick={onSave}>Save IR</button>
           <button type="button" onClick={onLoadClick}>Load IR</button>
-          <button
-            type="button"
-            className="primary"
-            onClick={onDownloadZip}
-            disabled={zipDisabled}
-            title={zipDisabled ? `IR has ${errorCount} validation error(s)` : undefined}
-          >
-            Download .zip
-          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -189,24 +182,65 @@ export function Toolbar() {
             onChange={onFileChosen}
           />
         </div>
-      </div>
-      {banner.kind !== "none" && (
-        <div className={`load-banner ${banner.kind}`}>
-          <span>
-            {banner.kind === "load-findings"
-              ? `Loaded with ${banner.count} validation finding(s). See Preview.`
-              : banner.message}
-          </span>
+        {/* ship cluster — theme, status, and the payoff CTA */}
+        <div className="toolbar">
+          <ThemeSwitcher />
           <button
             type="button"
-            className="dismiss"
-            aria-label="Dismiss"
-            onClick={() => setBanner({ kind: "none" })}
+            className={`validity ${zipDisabled ? "has-errors" : "is-valid"}`}
+            title={
+              zipDisabled
+                ? `IR has ${errorCount} validation error(s) — click to see them in Preview`
+                : "IR is valid — ready to generate"
+            }
+            onClick={() => {
+              // Findings live in the Preview pane — make sure it's visible.
+              if (zipDisabled) expandPane("preview");
+            }}
           >
-            ×
+            {zipDisabled
+              ? `${errorCount} error${errorCount === 1 ? "" : "s"}`
+              : "valid"}
+          </button>
+          <button
+            type="button"
+            className="primary"
+            onClick={onDownloadZip}
+            disabled={zipDisabled}
+            title={zipDisabled ? `IR has ${errorCount} validation error(s)` : undefined}
+          >
+            Export project
           </button>
         </div>
-      )}
+      </div>
+      <AnimatePresence initial={false}>
+        {banner.kind !== "none" && (
+          <m.div
+            key={banner.kind}
+            variants={reveal}
+            initial="hidden"
+            animate="show"
+            exit="exit"
+            style={{ overflow: "hidden", flex: "0 0 auto" }}
+          >
+            <div className={`load-banner ${banner.kind}`}>
+              <span>
+                {banner.kind === "load-findings"
+                  ? `Loaded with ${banner.count} validation finding(s). See Preview.`
+                  : banner.message}
+              </span>
+              <button
+                type="button"
+                className="dismiss"
+                aria-label="Dismiss"
+                onClick={() => setBanner({ kind: "none" })}
+              >
+                ×
+              </button>
+            </div>
+          </m.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

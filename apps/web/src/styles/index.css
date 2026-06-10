@@ -1,0 +1,18 @@
+/* =========================================================================
+   graphical-agents — stylesheet manifest.
+   Import order matters: tokens first (every file consumes them), theme
+   override blocks last (they re-declare token values per [data-theme]).
+   Vite inlines all @imports into the single bundle at build time.
+   ========================================================================= */
+
+@import "./tokens.css";
+@import "./base.css";
+@import "./toolbar.css";
+@import "./panes.css";
+@import "./canvas.css";
+@import "./palette.css";
+@import "./schemas.css";
+@import "./inspector.css";
+@import "./preview.css";
+@import "./editor.css";
+@import "./themes/bathory.css";

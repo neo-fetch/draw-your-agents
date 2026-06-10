@@ -14,7 +14,26 @@
  * `npm install`, no React tree).
  */
 import type { GraphIR } from "@graphical-agents/ir";
+// Value import stays on the relative path (type-only imports may use the
+// package name) so this module loads under install-free `node --test`.
+import { IR_VERSION } from "../../../../packages/ir/src/types.ts";
 import { validate, type Finding } from "../../../../packages/ir/src/validate.ts";
+
+/**
+ * A fresh, empty document for the toolbar's "New" action (ADR-0044).
+ * Deliberately not valid yet — an empty graph has no START edge, and the
+ * validator says so (honest-surface posture, ADR-0024); the canvas empty
+ * state guides the user to their first node.
+ */
+export function blankIR(): GraphIR {
+  return {
+    irVersion: IR_VERSION,
+    name: "untitled",
+    schemas: [],
+    nodes: [],
+    edges: [],
+  };
+}
 
 export type LoadResult =
   | { ok: true; ir: GraphIR; findings: Finding[] }

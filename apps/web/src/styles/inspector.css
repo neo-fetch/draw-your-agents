@@ -1,0 +1,112 @@
+/* ----------------------------------------------------------- inspector */
+
+.inspector label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 4px; font-weight: 500; }
+.inspector input,
+.inspector select,
+.inspector textarea {
+  width: 100%;
+  padding: 6px 9px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  box-sizing: border-box;
+  transition: border-color 0.13s ease, box-shadow 0.13s ease;
+}
+.inspector textarea { font-family: var(--font-mono); font-size: 12px; }
+.inspector input:focus,
+.inspector select:focus,
+.inspector textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.inspector select { cursor: pointer; }
+.inspector button {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.inspector button:hover { background: var(--paper-sunken); border-color: var(--ink-faint); }
+.inspector button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.inspector .empty { color: var(--ink-faint); font-style: italic; }
+
+/* form building blocks (replaces the old ROW/HINT inline styles) */
+.field { margin-bottom: 10px; }
+.field__hint { font-size: 11px; color: var(--ink-faint); }
+.field__title { font-weight: 600; }
+.field__name-input { font-weight: 600; width: 100%; }
+
+/* string-list editor rows */
+.list-row { display: flex; gap: 6px; margin-bottom: 4px; }
+
+/* grouped form block — small-caps legend in the pane-subhead voice */
+.form-section {
+  margin: 0 0 14px;
+  padding: 10px 11px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: transparent;
+  min-width: 0;
+}
+.form-section > legend {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+  padding: 0 6px;
+}
+
+/* sticky mini-header — node name + type chip survive the scroll (ADR-0044).
+   `top` matches the pane header's fixed height; negative margins span the
+   body padding so the strip runs edge to edge. */
+.form-head {
+  --type: var(--ink-faint);
+  position: sticky;
+  top: 35px;
+  z-index: 1;
+  margin: -14px -14px 14px;
+  padding: 11px 14px 9px;
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.25);
+}
+.form-head__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.type-chip {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--type);
+  color: var(--type);
+}
+.form-head[data-node-type="agent"]      { --type: var(--t-agent); }
+.form-head[data-node-type="function"]   { --type: var(--t-function); }
+.form-head[data-node-type="router"]     { --type: var(--t-router); }
+.form-head[data-node-type="tool"]       { --type: var(--t-tool); }
+.form-head[data-node-type="join"]       { --type: var(--t-join); }
+.form-head[data-node-type="humanInput"] { --type: var(--t-humanInput); }
+.form-head[data-node-type="workflow"]   { --type: var(--t-workflow); }
+.form-head[data-node-type="loop"]       { --type: var(--t-loop); }

@@ -1,0 +1,85 @@
+/* =========================================================================
+   Semantic design tokens — Vellum (default theme) values.
+   "Drafting Table": warm vellum paper · warm-black ink · one vermilion
+   red-pencil accent. Type: Fraunces (wordmark) / IBM Plex Sans (UI) /
+   IBM Plex Mono (code).
+
+   Themes override these in a `[data-theme="…"]` block (see styles/themes/).
+   The default theme lives directly in :root so the page renders correctly
+   even before the theme bootstrap script runs.
+   ========================================================================= */
+
+:root {
+  color-scheme: light;
+
+  /* paper & ink */
+  --paper: #f3efe6;
+  --paper-raised: #faf8f2;
+  --paper-sunken: #ece6d9;
+  --ink: #211d18;
+  --ink-soft: #6c6357;
+  --ink-faint: #968b7c;
+  --line: #ded5c4;
+  --line-strong: #c9bca5;
+
+  /* the one accent — red pencil */
+  --accent: #cf4d2c;
+  --accent-deep: #a83a1e;
+  --accent-wash: #f7e3da;
+  --accent-contrast: #fdf6f3; /* text on accent-filled surfaces */
+
+  /* semantic (warm-toned) */
+  --warn-bg: #f6e7c8;
+  --warn-line: #e0c485;
+  --warn-ink: #7a531a;
+  --err-bg: #f3dcd4;
+  --err-line: #dba996;
+  --err-ink: #8f2f1c;
+  --ok: #3f7d52;
+  --ok-bg: #eef4ec;
+  --ok-line: #bcd3bf;
+
+  /* node-type hues — earthy, distinguishable, paper-friendly */
+  --t-agent: #3a5a9b;
+  --t-function: #2f7d6b;
+  --t-router: #b8801f;
+  --t-tool: #7d4a8c;
+  --t-join: #5b6770;
+  --t-humanInput: #b3506b;
+  --t-workflow: #5a7d2f;
+  --t-loop: #a85a2b;
+
+  /* code slab — the "manufactured output" */
+  --code-bg: #2a2620;
+  --code-ink: #ece5d6;
+  --code-line: #3a352c;
+
+  /* prompt variable chips */
+  --chip-bg: var(--accent-wash);
+  --chip-ink: var(--accent-deep);
+  --chip-line: #e7bdac;
+
+  /* text selection & scrollbars */
+  --selection-bg: var(--accent-wash);
+  --selection-ink: var(--ink);
+  --scroll-thumb: var(--line-strong);
+  --scroll-track: transparent;
+
+  /* theme texture FX — inert in Vellum; themes raise the opacities */
+  --fx-scanlines: 0;
+  --fx-grain: 0;
+  --glow-accent: 0 0 0 0 transparent; /* no-op shadow, safe in comma lists */
+
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --r-sm: 4px;
+  --r-md: 7px;
+  --r-lg: 11px;
+  --shadow-card: 0 1px 0 rgba(33, 29, 24, 0.04), 0 6px 18px -12px rgba(33, 29, 24, 0.35);
+  --shadow-pop: 0 10px 30px -14px rgba(33, 29, 24, 0.5);
+
+  /* canvas drafting grid behind the whole shell */
+  --shell-grid-line: rgba(33, 29, 24, 0.035);
+}

@@ -1,0 +1,40 @@
+/* ----------------------------------------- Lexical prompt editor (ADR-0029) */
+
+.ga-variable-editor {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  min-height: 96px;
+  transition: border-color 0.13s ease, box-shadow 0.13s ease;
+}
+.ga-variable-editor:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+.ga-variable-editor__input {
+  outline: none;
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  min-height: 80px;
+  color: var(--ink);
+}
+.ga-variable-editor__placeholder {
+  position: absolute; top: 9px; left: 10px;
+  color: var(--ink-faint);
+  font-family: var(--font-mono); font-size: 12px;
+  pointer-events: none; user-select: none;
+}
+.ga-variable-chip {
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 0 1px;
+  border-radius: var(--r-sm);
+  background: var(--chip-bg);
+  color: var(--chip-ink);
+  border: 1px solid var(--chip-line);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  white-space: nowrap;
+}

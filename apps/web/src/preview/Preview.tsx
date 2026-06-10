@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
 // Import directly from compile.ts (not codegen's index) — the index re-exports
 // format.ts and bundle.ts, and format.ts imports `node:child_process` at top
@@ -8,6 +9,7 @@ import { useIRStore } from "../store/irStore.ts";
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
 import type { GeneratedProject } from "../../../../packages/codegen/src/project.ts";
 import { resolveFindingTarget } from "../store/findingTarget.ts";
+import { EASE_OUT, findingItem } from "../anim/presets.ts";
 
 type CompileResult =
   | { kind: "ok"; project: GeneratedProject }
@@ -25,56 +27,91 @@ function safeCompile(ir: Parameters<typeof compile>[0]): CompileResult {
 
 const DEFAULT_FILE = "agents.py";
 
-export function Preview() {
+/**
+ * Findings list — each row is a card; fixed findings animate out via
+ * AnimatePresence so progress is visible ("drain the list" UX, ADR-0044).
+ * Rows resolve to a canvas node where possible (ADR-0043) and then the
+ * whole row is the focus affordance, not just a suffix link.
+ */
+function Findings({ findings }: { findings: ValidationError["findings"] }) {
   const ir = useIRStore((s) => s.ir);
   const focusNode = useIRStore((s) => s.focusNode);
+
+  // Stable per-finding keys; duplicates (same code+node+message) get a
+  // disambiguating counter so React keys stay unique.
+  const seen = new Map<string, number>();
+  const rows = findings.map((f) => {
+    const base = `${f.code}|${f.nodeId ?? ""}|${f.message}`;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    return { f, key: n === 0 ? base : `${base}#${n}` };
+  });
+
+  const count = findings.length;
+  return (
+    <div>
+      <div className="findings-head">
+        <strong>
+          {count} validation finding{count === 1 ? "" : "s"}
+        </strong>
+        <span className="findings-sub">fix these to export your project</span>
+      </div>
+      <ul className="findings">
+        <AnimatePresence mode="popLayout" initial={false}>
+          {rows.map(({ f, key }) => {
+            const target = resolveFindingTarget(f.nodeId, ir);
+            const body = (
+              <>
+                <span className="finding-row__dot" aria-hidden="true" />
+                <span className="finding-row__code">{f.code}</span>
+                <span className="finding-row__msg">
+                  {f.message}
+                  {f.nodeId ? ` (node: ${f.nodeId})` : ""}
+                </span>
+              </>
+            );
+            return (
+              <m.li
+                key={key}
+                layout
+                variants={findingItem}
+                initial="hidden"
+                animate="show"
+                exit="exit"
+                className="finding-row"
+              >
+                {target ? (
+                  <button
+                    type="button"
+                    className="finding-row__btn"
+                    title="Show this node on the canvas"
+                    onClick={() => focusNode(target)}
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div className="finding-row__btn is-static">{body}</div>
+                )}
+              </m.li>
+            );
+          })}
+        </AnimatePresence>
+      </ul>
+    </div>
+  );
+}
+
+export function Preview() {
+  const ir = useIRStore((s) => s.ir);
   const result = useMemo(() => safeCompile(ir), [ir]);
   const [selectedFile, setSelectedFile] = useState<string>(DEFAULT_FILE);
 
   if (result.kind === "validation") {
-    return (
-      <div>
-        <div style={{ marginBottom: 6, color: "#b91c1c", fontWeight: 600 }}>
-          IR validation failed
-        </div>
-        <ul className="findings">
-          {result.findings.map((f, i) => {
-            // Clickable when the finding's node resolves to a canvas node
-            // (nested findings resolve to their enclosing workflow node —
-            // ADR-0043); otherwise the suffix stays plain text.
-            const target = resolveFindingTarget(f.nodeId, ir);
-            return (
-              <li key={i}>
-                [{f.code}] {f.message}
-                {f.nodeId &&
-                  (target ? (
-                    <>
-                      {" "}
-                      <button
-                        type="button"
-                        className="finding-link"
-                        onClick={() => focusNode(target)}
-                      >
-                        (node: {f.nodeId})
-                      </button>
-                    </>
-                  ) : (
-                    ` (node: ${f.nodeId})`
-                  ))}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    );
+    return <Findings findings={result.findings} />;
   }
 
   if (result.kind === "error") {
-    return (
-      <div style={{ color: "#b91c1c" }}>
-        Preview error: {result.message}
-      </div>
-    );
+    return <div className="preview-error">Preview error: {result.message}</div>;
   }
 
   const files = Array.from(result.project.keys()).sort();
@@ -90,7 +127,29 @@ export function Preview() {
           </option>
         ))}
       </select>
-      <pre>{content}</pre>
+      {/* Crossfade keyed on the filename only — never animate the <pre> text
+          itself (large strings re-layout). The accent bar re-runs whenever
+          the compiled content changes: a quiet "refreshed" tick. */}
+      <AnimatePresence mode="wait" initial={false}>
+        <m.div
+          key={file}
+          className="preview-slab"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.12 }}
+        >
+          <m.div
+            key={content}
+            className="preview-refresh-bar"
+            aria-hidden="true"
+            initial={{ scaleX: 0, opacity: 0.9 }}
+            animate={{ scaleX: 1, opacity: 0 }}
+            transition={{ duration: 0.7, ease: EASE_OUT }}
+          />
+          <pre>{content}</pre>
+        </m.div>
+      </AnimatePresence>
     </div>
   );
 }

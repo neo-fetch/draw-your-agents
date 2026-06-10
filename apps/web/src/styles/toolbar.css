@@ -1,0 +1,231 @@
+/* ------------------------------------------------------------------ topbar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 9px 16px 9px 18px;
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line-strong);
+  flex: 0 0 auto;
+}
+
+.wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  user-select: none;
+}
+
+.wordmark__mark {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1;
+  text-shadow: var(--wordmark-glow, none);
+}
+.wordmark__mark .dot { color: var(--accent); }
+
+.wordmark__tag {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding-left: 12px;
+  border-left: 1px solid var(--line-strong);
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* file cluster sits by the wordmark; the ship cluster keeps margin-left:auto */
+.toolbar--file {
+  margin-left: 4px;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
+.toolbar button {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 6px 13px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.06s ease;
+}
+.toolbar button:hover:not(:disabled) {
+  background: var(--paper-sunken);
+  border-color: var(--ink-faint);
+}
+.toolbar button:active:not(:disabled) { transform: translateY(1px); }
+.toolbar button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.toolbar button:disabled {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+  background: var(--paper);
+  border-style: dashed;
+}
+
+/* example gallery dropdown — styled like a toolbar button (ADR-0042) */
+.toolbar select.example-select {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 6px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+  color: inherit;
+  cursor: pointer;
+}
+.toolbar select.example-select:hover {
+  background: var(--paper-sunken);
+  border-color: var(--ink-faint);
+}
+.toolbar select.example-select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+/* primary action — the payoff */
+.toolbar button.primary {
+  background: var(--accent);
+  border-color: var(--accent-deep);
+  color: var(--accent-contrast);
+  box-shadow: 0 1px 0 rgba(168, 58, 30, 0.6), var(--glow-accent);
+}
+.toolbar button.primary:hover:not(:disabled) {
+  background: var(--accent-deep);
+  border-color: var(--accent-deep);
+}
+.toolbar button.primary:disabled {
+  background: var(--paper);
+  color: var(--ink-faint);
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+
+/* theme switcher — segmented control (ADR-0044) */
+.theme-switcher {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-sunken);
+}
+.theme-switcher__seg {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  padding: 3px 10px;
+  border: none;
+  border-radius: calc(var(--r-sm) - 1px);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 0.14s ease;
+}
+.theme-switcher__seg:hover { color: var(--ink); }
+.theme-switcher__seg:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-wash), 0 0 0 1px var(--accent) inset;
+}
+.theme-switcher__seg.is-active { color: var(--ink); }
+/* shared-layout active background — springs between segments */
+.theme-switcher__ind {
+  position: absolute;
+  inset: 0;
+  background: var(--paper-raised);
+  border-radius: calc(var(--r-sm) - 1px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+.theme-switcher__label { position: relative; z-index: 1; }
+
+/* validity pill — a <button>: clicking it (with errors) reveals the Preview
+   pane where the findings render (ADR-0044). High-specificity selectors so
+   the generic `.toolbar button` rules don't reshape the pill. */
+.toolbar button.validity {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  padding: 4px 11px 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: default;
+}
+.toolbar button.validity::before {
+  content: "";
+  width: 7px; height: 7px;
+  border-radius: 999px;
+  background: var(--ink-faint);
+  box-shadow: 0 0 0 3px rgba(150, 139, 124, 0.18);
+}
+.toolbar button.validity.is-valid,
+.toolbar button.validity.is-valid:hover {
+  color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg);
+}
+.toolbar button.validity.is-valid::before {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(63, 125, 82, 0.16);
+}
+.toolbar button.validity.has-errors,
+.toolbar button.validity.has-errors:hover {
+  color: var(--err-ink); border-color: var(--err-line); background: var(--err-bg);
+  cursor: pointer;
+}
+.toolbar button.validity.has-errors:hover { border-color: var(--accent); }
+.toolbar button.validity.has-errors::before {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(207, 77, 44, 0.18), var(--glow-accent);
+}
+
+/* --------------------------------------------------------------- banners */
+
+.load-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 16px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid;
+}
+.load-banner.load-findings { background: var(--warn-bg); border-bottom-color: var(--warn-line); color: var(--warn-ink); }
+.load-banner.error { background: var(--err-bg); border-bottom-color: var(--err-line); color: var(--err-ink); }
+.load-banner .dismiss {
+  background: transparent; border: none;
+  font-size: 17px; line-height: 1; cursor: pointer; color: inherit; padding: 0 4px;
+}
+.load-banner .dismiss:hover { color: var(--ink); }

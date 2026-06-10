@@ -1,0 +1,229 @@
+/* ------------------------------------------------------------- IR nodes */
+
+/* drop target wrapping React Flow (ADR-0034) — fills the canvas area so the
+   drop hit-zone covers the whole canvas and React Flow inherits a height. */
+.canvas-drop { flex: 1 1 auto; min-height: 0; position: relative; }
+
+/* guided empty state (ADR-0044) — pointer-transparent overlay; only the
+   example buttons take events so canvas pan/drop keeps working */
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+}
+.canvas-empty__card {
+  pointer-events: none;
+  max-width: 380px;
+  padding: 22px 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-pop);
+}
+.canvas-empty__title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  margin-bottom: 14px;
+  color: var(--ink);
+}
+.canvas-empty__title::after {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 2px;
+  margin-top: 8px;
+  background: var(--accent);
+}
+.canvas-empty__steps {
+  list-style: none;
+  counter-reset: step;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.canvas-empty__steps li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: baseline;
+}
+.canvas-empty__steps li::before {
+  content: counter(step);
+  grid-row: 1 / 3;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  align-self: start;
+}
+.canvas-empty__step-title {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.canvas-empty__step-detail {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.canvas-empty__examples {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.canvas-empty__examples-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.canvas-empty__examples-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.canvas-empty__examples-row button {
+  pointer-events: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 0.13s ease, background 0.13s ease, color 0.13s ease;
+}
+.canvas-empty__examples-row button:hover {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+}
+.canvas-empty__examples-row button:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+.ir-node {
+  --type: var(--ink-faint);
+  position: relative;
+  padding: 9px 12px 9px 14px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--type);
+  border-radius: var(--r-md);
+  background: var(--paper-raised);
+  min-width: 148px;
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.06s ease;
+}
+.ir-node:hover { box-shadow: var(--shadow-pop); }
+.ir-node.selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-wash), var(--shadow-pop), var(--glow-accent);
+}
+.ir-node .name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.ir-node .type {
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--type);
+}
+
+.ir-node[data-node-type="agent"]      { --type: var(--t-agent); }
+.ir-node[data-node-type="function"]   { --type: var(--t-function); }
+.ir-node[data-node-type="router"]     { --type: var(--t-router); }
+.ir-node[data-node-type="tool"]       { --type: var(--t-tool); }
+.ir-node[data-node-type="join"]       { --type: var(--t-join); }
+.ir-node[data-node-type="humanInput"] { --type: var(--t-humanInput); }
+.ir-node[data-node-type="workflow"]   { --type: var(--t-workflow); }
+.ir-node[data-node-type="loop"]       { --type: var(--t-loop); }
+.ir-node[data-node-type="loop"] .type::after { content: " ↻"; }
+
+.start-node {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 15px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  box-shadow: var(--shadow-card);
+}
+
+/* React Flow handles */
+.react-flow__handle {
+  width: 8px; height: 8px;
+  background: var(--paper-raised);
+  border: 1.5px solid var(--ink-faint);
+}
+.react-flow__handle:hover { border-color: var(--accent); background: var(--accent-wash); }
+.ir-node.selected .react-flow__handle { border-color: var(--accent); }
+
+/* React Flow edges */
+.react-flow__edge-path { stroke: var(--ink-soft); stroke-width: 1.5; }
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path { stroke: var(--accent); stroke-width: 2; }
+.react-flow__edge-text {
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  fill: var(--ink); letter-spacing: 0.04em;
+}
+.react-flow__edge-textbg { fill: var(--paper-raised); }
+.react-flow__arrowhead, .react-flow__edge .react-flow__edge-path { transition: stroke 0.12s ease; }
+
+/* React Flow chrome */
+.react-flow { background: var(--paper); }
+
+.react-flow__controls {
+  box-shadow: var(--shadow-card);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+}
+.react-flow__controls-button {
+  background: var(--paper-raised);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  width: 26px; height: 26px;
+}
+.react-flow__controls-button:hover { background: var(--paper-sunken); }
+.react-flow__controls-button svg { fill: var(--ink-soft); }
+.react-flow__attribution {
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+.react-flow__attribution a { color: var(--ink-faint); }

@@ -5,10 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f3efe6" />
     <title>graphical-agents · drafting table</title>
+    <!-- Theme bootstrap — runs before any stylesheet/bundle so the saved
+         theme paints first (no flash of the wrong theme). Key + id list
+         duplicate src/theme/themes.ts deliberately; keep in sync. -->
+    <script>
+      try {
+        var t = localStorage.getItem("ga.theme");
+        document.documentElement.dataset.theme =
+          t === "bathory" ? t : "vellum";
+      } catch (e) {
+        document.documentElement.dataset.theme = "vellum";
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Pirata+One&display=swap"
       rel="stylesheet"
     />
     <link

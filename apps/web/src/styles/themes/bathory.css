@@ -1,0 +1,100 @@
+/* =========================================================================
+   Theme: Bathory — black-metal terminal.
+   Photocopied-black album sleeve · bone-white scratch lettering · one
+   violent red. Sharp corners, CRT scanlines + film grain, phosphor glow.
+   Only token overrides + a handful of texture rules live here; components
+   never reference this file directly.
+   ========================================================================= */
+
+[data-theme="bathory"] {
+  color-scheme: dark;
+
+  /* sleeve & bone */
+  --paper: #0b0b0d;
+  --paper-raised: #131316;
+  --paper-sunken: #060607;
+  --ink: #d8d3c3;        /* bone */
+  --ink-soft: #918c7d;   /* ash */
+  --ink-faint: #5d594e;
+  --line: #232328;
+  --line-strong: #38383f;
+
+  /* blood red — hover goes BRIGHTER on dark, not darker */
+  --accent: #d23b22;
+  --accent-deep: #ef5a3c;
+  --accent-wash: rgba(210, 59, 34, 0.16);
+  --accent-contrast: #0b0b0d;
+
+  /* semantic — sulfur gold warnings, ember errors */
+  --warn-bg: #1d1708;
+  --warn-line: #6b5618;
+  --warn-ink: #d8b54a;
+  --err-bg: #200b07;
+  --err-line: #6e2a1b;
+  --err-ink: #ef7a5e;
+  --ok: #8fae6b;
+  --ok-bg: #11160d;
+  --ok-line: #3c4a2e;
+
+  /* node hues lifted ~30% lightness to read on near-black */
+  --t-agent: #7e9fe2;
+  --t-function: #54c0a4;
+  --t-router: #d9a83f;
+  --t-tool: #b48ad1;
+  --t-join: #94a0ab;
+  --t-humanInput: #d97f9b;
+  --t-workflow: #9cc167;
+  --t-loop: #d98a52;
+
+  /* phosphor terminal slab */
+  --code-bg: #050506;
+  --code-ink: #cfc9b8;
+  --code-line: #232328;
+
+  --chip-bg: rgba(210, 59, 34, 0.14);
+  --chip-ink: #ef7a5e;
+  --chip-line: #6e2a1b;
+
+  --selection-bg: #d23b22;
+  --selection-ink: #0b0b0d;
+  --scroll-thumb: #38383f;
+  --scroll-track: transparent;
+
+  /* textures on */
+  --fx-scanlines: 0.05;
+  --fx-grain: 0.035;
+  --glow-accent: 0 0 10px rgba(210, 59, 34, 0.45);
+  --wordmark-glow: 0 0 12px rgba(210, 59, 34, 0.35);
+
+  /* blackletter wordmark only — body stays Plex */
+  --font-display: "Pirata One", "Fraunces", Georgia, serif;
+
+  /* sharp corners — cut, not rounded */
+  --r-sm: 0px;
+  --r-md: 1px;
+  --r-lg: 2px;
+
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  --shadow-pop: 0 0 14px -4px rgba(210, 59, 34, 0.35);
+
+  /* drafting grid in bone, barely-there */
+  --shell-grid-line: rgba(216, 211, 195, 0.03);
+}
+
+/* wordmark loses the serif tightness when blackletter takes over */
+[data-theme="bathory"] .wordmark__mark {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* selected edges burn */
+[data-theme="bathory"] .react-flow__edge.selected .react-flow__edge-path,
+[data-theme="bathory"] .react-flow__edge:hover .react-flow__edge-path {
+  filter: drop-shadow(0 0 3px rgba(210, 59, 34, 0.5));
+}
+
+/* START pseudo-node inverts: bone pill on black reads as a tombstone */
+[data-theme="bathory"] .start-node {
+  background: var(--ink);
+  color: var(--paper);
+}

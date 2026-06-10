@@ -1,0 +1,155 @@
+/* ----------------------------------------------------------------- panes
+   Workbench layout (ADR-0044): flex row — side panes are fixed-width
+   (resizable, collapsible to rails), the canvas flexes to fill. Pane
+   entrance is orchestrated by framer-motion (paneStagger/paneItem in
+   src/anim/presets.ts). */
+
+.pane {
+  overflow: auto;
+  background: var(--paper-raised);
+}
+
+.pane--side {
+  flex: 0 0 auto;
+  min-height: 0;
+  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.pane--side.is-resizing { transition: none; }
+.pane--side.is-collapsed { overflow: hidden; }
+
+.pane--canvas {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  /* canvas pane: column so the drop wrapper fills the area below the header */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* drag divider between canvas and a side pane */
+.pane-resize-handle {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  position: relative;
+  touch-action: none;
+}
+.pane-resize-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--line);
+  transition: background 0.13s ease, width 0.13s ease;
+}
+.pane-resize-handle:hover::before,
+.pane-resize-handle:focus-visible::before {
+  background: var(--accent);
+  width: 3px;
+}
+.pane-resize-handle:focus-visible { outline: none; }
+
+/* collapsed pane → slim vertical rail */
+.pane-rail {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 12px 0;
+  border: none;
+  border-inline: 1px solid var(--line);
+  background: var(--paper-raised);
+  cursor: pointer;
+  transition: background 0.13s ease;
+}
+.pane-rail:hover { background: var(--paper-sunken); }
+.pane-rail:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.pane-rail__label {
+  writing-mode: vertical-rl;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+
+.pane > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;            /* fixed: .form-head sticky offset depends on it */
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-soft);
+  background: var(--paper-raised);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.pane > header::before {
+  content: "";
+  width: 10px; height: 10px;
+  border: 1px solid var(--ink-faint);
+  border-right: none; border-bottom: none;   /* registration tick ⌐ */
+}
+
+/* collapse chevron at the right edge of a pane header */
+.pane-collapse {
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: color 0.13s ease, background 0.13s ease;
+}
+.pane-collapse:hover { color: var(--ink); background: var(--paper-sunken); }
+.pane-collapse:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-wash);
+}
+
+.pane .body { padding: 14px; }
+
+/* sub-section header within the palette pane (ADR-0035) — same registration-
+   tick + small-caps mono treatment as `.pane > header`, but not sticky so the
+   sections scroll naturally. */
+.pane__subhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 8px;
+  margin: 6px 0 0;
+  border-top: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+.pane__subhead::before {
+  content: "";
+  width: 10px; height: 10px;
+  border: 1px solid var(--ink-faint);
+  border-right: none; border-bottom: none;
+}
+.pane__subhead--first { border-top: none; margin-top: 0; padding-top: 12px; }
