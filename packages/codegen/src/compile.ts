@@ -13,6 +13,7 @@
  */
 import type { GraphIR } from "@graphical-agents/ir";
 import { validate, type Finding } from "../../ir/src/validate.ts";
+import { generateLangGraphProject } from "./langgraph/project.ts";
 import { generateProject, type GeneratedProject } from "./project.ts";
 
 /** Raised when the IR fails validation. Carries the error-severity findings. */
@@ -28,9 +29,19 @@ export class ValidationError extends Error {
   }
 }
 
-/** Validate the IR, then generate the runnable ADK project. Throws on errors. */
-export function compile(ir: GraphIR): GeneratedProject {
+/** Code generation target: Google ADK (the default) or LangGraph (ADR-0045). */
+export type CodegenTarget = "adk" | "langgraph";
+
+export interface CompileOptions {
+  /** Defaults to `"adk"`. */
+  readonly target?: CodegenTarget;
+}
+
+/** Validate the IR, then generate the runnable project for `target`. Throws on errors. */
+export function compile(ir: GraphIR, opts: CompileOptions = {}): GeneratedProject {
   const { errors } = validate(ir);
   if (errors.length > 0) throw new ValidationError(errors);
-  return generateProject(ir);
+  return (opts.target ?? "adk") === "langgraph"
+    ? generateLangGraphProject(ir)
+    : generateProject(ir);
 }

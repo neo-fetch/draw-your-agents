@@ -7,18 +7,28 @@
  * of `npm test` — this is a manual runner for the closing stages of the
  * pipeline (ADR-0020).
  *
- *   node scripts/compile.ts <fixture.ir.json> <out.zip>
+ *   node scripts/compile.ts <fixture.ir.json> <out.zip> [--target=adk|langgraph]
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import type { GraphIR } from "../packages/ir/src/types.ts";
-import { compile, ValidationError } from "../packages/codegen/src/compile.ts";
+import {
+  compile,
+  ValidationError,
+  type CodegenTarget,
+} from "../packages/codegen/src/compile.ts";
 import { formatProject } from "../packages/codegen/src/format.ts";
 import { bundleZip } from "../packages/codegen/src/bundle.ts";
 import { CodegenError } from "../packages/codegen/src/python.ts";
 
-const [, , inPath, outPath] = process.argv;
-if (!inPath || !outPath) {
-  console.error("usage: node scripts/compile.ts <fixture.ir.json> <out.zip>");
+const args = process.argv.slice(2);
+const targetArg = args.find((a) => a.startsWith("--target="));
+const positional = args.filter((a) => !a.startsWith("--"));
+const [inPath, outPath] = positional;
+const target = (targetArg?.slice("--target=".length) ?? "adk") as CodegenTarget;
+if (!inPath || !outPath || (target !== "adk" && target !== "langgraph")) {
+  console.error(
+    "usage: node scripts/compile.ts <fixture.ir.json> <out.zip> [--target=adk|langgraph]",
+  );
   process.exit(2);
 }
 
@@ -31,11 +41,13 @@ try {
 }
 
 try {
-  const generated = compile(ir);
+  const generated = compile(ir, { target });
   const { project, status } = formatProject(generated);
   const bytes = bundleZip(project, ir.name);
   writeFileSync(outPath, bytes);
-  console.log(`OK  ${inPath} → ${outPath}  (${bytes.length} bytes, black=${status})`);
+  console.log(
+    `OK  ${inPath} → ${outPath}  (${bytes.length} bytes, target=${target}, black=${status})`,
+  );
 } catch (ex) {
   if (ex instanceof ValidationError) {
     console.error(`validation failed: ${ex.message}`);
