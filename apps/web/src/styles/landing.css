@@ -1,0 +1,131 @@
+/* =========================================================================
+   Landing page — the target picker front door. Two full-height button
+   halves; the hover color cascades into the logos via currentColor.
+   Tokens only, so both themes apply through [data-theme] like everywhere
+   else; the per-side hover hues are declared here and overridden for dark
+   contrast in themes/bathory.css.
+   ========================================================================= */
+
+:root {
+  --landing-red: #c0392b; /* LangGraph hover */
+  --landing-blue: #3a5a9b; /* Google hover — the --t-agent family */
+}
+
+.landing {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  background: var(--paper);
+  z-index: 10;
+}
+
+.landing__inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.landing__head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--line);
+  user-select: none;
+}
+
+.landing__mark {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  line-height: 1;
+  text-shadow: var(--wordmark-glow, none);
+}
+.landing__mark .dot {
+  color: var(--accent);
+}
+
+.landing__sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.landing__halves {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.landing-half {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 32px;
+  color: var(--ink-soft);
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.landing-half + .landing-half {
+  border-left: 1px solid var(--line);
+}
+
+.landing-half:hover,
+.landing-half:focus-visible {
+  background: var(--paper-raised);
+}
+.landing-half:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -6px;
+}
+
+.landing-half--langgraph:hover,
+.landing-half--langgraph:focus-visible {
+  color: var(--landing-red);
+}
+.landing-half--adk:hover,
+.landing-half--adk:focus-visible {
+  color: var(--landing-blue);
+}
+
+.landing-half__logo {
+  width: clamp(96px, 18vmin, 180px);
+  height: auto;
+}
+
+.landing-half__label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 26px;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.landing-half__blurb {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 640px) {
+  .landing__halves {
+    flex-direction: column;
+  }
+  .landing-half + .landing-half {
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+}

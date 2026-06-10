@@ -32,6 +32,8 @@ import {
 } from "../store/irIO.ts";
 import { EXAMPLES, loadExample } from "../store/examples.ts";
 import { useUIStore } from "../layout/uiStore.ts";
+import { TARGET_BY_ID } from "../target/targets.ts";
+import { useTargetStore } from "../target/targetStore.ts";
 import { ThemeSwitcher } from "./ThemeSwitcher.tsx";
 import { validate } from "../../../../packages/ir/src/validate.ts";
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
@@ -57,6 +59,10 @@ export function Toolbar() {
   const ir = useIRStore((s) => s.ir);
   const replaceIR = useIRStore((s) => s.replaceIR);
   const expandPane = useUIStore((s) => s.expandPane);
+  const target = useTargetStore((s) => s.target);
+  const setTarget = useTargetStore((s) => s.setTarget);
+  const returnToLanding = useTargetStore((s) => s.returnToLanding);
+  const otherTarget = target === "adk" ? "langgraph" : "adk";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [banner, setBanner] = useState<Banner>({ kind: "none" });
 
@@ -127,7 +133,7 @@ export function Toolbar() {
 
   const onDownloadZip = (): void => {
     try {
-      const project = compile(ir);
+      const project = compile(ir, { target });
       const bytes = bundleZip(project, ir.name);
       // Copy into a fresh ArrayBuffer so the Blob owns its memory cleanly —
       // `bytes` is a Uint8Array view that may be tied to the bundler's buffer.
@@ -152,7 +158,26 @@ export function Toolbar() {
           <span className="wordmark__mark">
             graphical<span className="dot">·</span>agents
           </span>
-          <span className="wordmark__tag">IR → ADK</span>
+          {/* The tag doubles as the target switch; the ⌂ button goes back
+              to the landing picker. Neither touches the IR store — the
+              graph survives both. */}
+          <button
+            type="button"
+            className="wordmark__tag wordmark__tag--switch"
+            title={`Switch codegen target to ${TARGET_BY_ID.get(otherTarget)?.label}`}
+            onClick={() => setTarget(otherTarget)}
+          >
+            {TARGET_BY_ID.get(target)?.tag}
+          </button>
+          <button
+            type="button"
+            className="wordmark__home"
+            title="Back to the target picker (your graph is kept)"
+            aria-label="Choose target"
+            onClick={returnToLanding}
+          >
+            ⌂
+          </button>
         </div>
         {/* file cluster — plan: start, save, resume */}
         <div className="toolbar toolbar--file">

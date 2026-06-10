@@ -10,15 +10,20 @@ import { compile, ValidationError } from "../../../../packages/codegen/src/compi
 import type { GeneratedProject } from "../../../../packages/codegen/src/project.ts";
 import { resolveFindingTarget } from "../store/findingTarget.ts";
 import { EASE_OUT, findingItem } from "../anim/presets.ts";
+import type { CodegenTarget } from "../target/targets.ts";
+import { useTargetStore } from "../target/targetStore.ts";
 
 type CompileResult =
   | { kind: "ok"; project: GeneratedProject }
   | { kind: "validation"; findings: ValidationError["findings"] }
   | { kind: "error"; message: string };
 
-function safeCompile(ir: Parameters<typeof compile>[0]): CompileResult {
+function safeCompile(
+  ir: Parameters<typeof compile>[0],
+  target: CodegenTarget,
+): CompileResult {
   try {
-    return { kind: "ok", project: compile(ir) };
+    return { kind: "ok", project: compile(ir, { target }) };
   } catch (e) {
     if (e instanceof ValidationError) return { kind: "validation", findings: e.findings };
     return { kind: "error", message: e instanceof Error ? e.message : String(e) };
@@ -103,7 +108,8 @@ function Findings({ findings }: { findings: ValidationError["findings"] }) {
 
 export function Preview() {
   const ir = useIRStore((s) => s.ir);
-  const result = useMemo(() => safeCompile(ir), [ir]);
+  const target = useTargetStore((s) => s.target);
+  const result = useMemo(() => safeCompile(ir, target), [ir, target]);
   const [selectedFile, setSelectedFile] = useState<string>(DEFAULT_FILE);
 
   if (result.kind === "validation") {

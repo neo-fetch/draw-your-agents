@@ -2380,3 +2380,32 @@ executing the `parallel` project end-to-end confirms superstep fan-out + `defer=
 merging; executing `human-input` confirms interrupt → `Command(resume=...)` → downstream
 consumption of the answer. LLM-calling paths (agents/loops) are generated from documented
 1.x APIs but were not exercised against a live key.
+
+## ADR-0047 — Web UI target picker: split landing page + phase-in-store (no router)
+**Context.** ADR-0045 shipped `compile(ir, { target })` but left the web UI ADK-only. The
+target needed a front door and a way through to Preview/Export without contaminating the IR
+(the same document compiles to either target).
+**Decisions.**
+- **Registry + store split, like themes.** `src/target/targets.ts` is framework-free
+  (`TARGETS`, `TARGET_BY_ID`, `DEFAULT_TARGET = "adk"`, `coerceTarget`; the id union is
+  type-only `CodegenTarget` from `codegen/src/compile.ts` — never redeclared) so the
+  install-free `test/targets.test.ts` covers it. `src/target/targetStore.ts` holds
+  `{ phase: "landing" | "builder", target }` with `chooseTarget` / `setTarget` /
+  `returnToLanding`; zustand-at-runtime, so its spec lives in `test-app/` (ADR-0031/0032).
+- **Landing on every load — deliberately NOT persisted** (unlike the theme). The picker is
+  the product's front door: left half LangGraph (hover red), right half Google ADK (hover
+  blue). Halves are real `<button>`s; hover hues are `--landing-red`/`--landing-blue` tokens
+  overridden in bathory.css.
+- **Phase-in-store instead of a router.** Single-file Pages build, no URL state wanted;
+  `App.tsx` swaps `<Landing/>` ↔ `<Workbench/>` under `AnimatePresence`. The graph survives
+  round-trips because it lives in the module-level IR store; component-local state (Preview's
+  selected file, toolbar banners) resets with the unmount — accepted.
+- **Toolbar tag is the in-builder switch.** The static `IR → ADK` span became a button
+  toggling the target, plus a `⌂` button back to the picker; neither touches the IR store.
+  Preview and Export both compile with `{ target }` — validation flow is target-independent
+  (compile validates before dispatch).
+- **Logos inlined as JSX `currentColor` SVGs** (lobe-icons LangGraph + VertexAI marks, source
+  URLs in the file headers). Not `.svg` imports: `currentColor` doesn't cascade into an
+  `<img>`/data-URL, and inline JSX keeps vite-plugin-singlefile asset-free.
+**Verify.** `npm test` (registry spec), `npm run test:web:app` (store spec + per-target
+compile file-set sanity), `npm run build:pages`.

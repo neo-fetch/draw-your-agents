@@ -79,6 +79,10 @@
 
   /* drafting grid in bone, barely-there */
   --shell-grid-line: rgba(216, 211, 195, 0.03);
+
+  /* landing hover hues lifted to read on near-black */
+  --landing-red: #ef5a3c;
+  --landing-blue: #7e9fe2;
 }
 
 /* wordmark loses the serif tightness when blackletter takes over */
