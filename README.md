@@ -1,6 +1,6 @@
 # Graphical Agents
 
-![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%201.png?raw=true)
+![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/choose.png?raw=true)
 
 A visual builder that compiles drag-and-drop agent graphs into runnable **[Google ADK](https://adk.dev/) (Python, v2.0.0) graph-workflow** projects. Also imports **draw.io** XML diagrams into the same graph.
 
@@ -9,7 +9,7 @@ A visual builder that compiles drag-and-drop agent graphs into runnable **[Googl
 ---
 
 ## ✨ Features
-![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%200.png?raw=true)
+![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/init.png?raw=true)
 
 ### Visual Graph Builder
 - **Drag-and-drop canvas** — Drag node types from the palette onto a React Flow canvas (drops at the cursor), then connect and freely arrange them
@@ -18,6 +18,7 @@ A visual builder that compiles drag-and-drop agent graphs into runnable **[Googl
 - **Live code preview** — See the generated ADK Python project update in real time as you edit the graph
 - **One-click export** — Download a runnable `.zip` project scaffold ready for `pip install && python -m workflow`
 - **"Drafting Table" UI** — A distinctive vellum-and-ink design: blueprint canvas grid, per-type color-coding, at-a-glance graph-validity pill
+![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/workflow.png?raw=true)
 
 ### Variable-Chip System (Phase 2 — Headline Feature)
 - **Inline prompt variables** — Drag schema fields into an agent's prompt as chips rendered `<Schema.field from node>`
@@ -25,11 +26,13 @@ A visual builder that compiles drag-and-drop agent graphs into runnable **[Googl
 - **Single-schema rail** — The palette intelligently filters to one schema per agent, enforcing ADK's data-flow constraints
 - **Schema CRUD** — Create, rename, and delete schemas and fields directly in the UI; references cascade on rename
 - **Nested pydantic models** — A schema field's type can be another declared schema (`customer: Customer`); the validator rejects cycles and codegen emits the models in dependency order
+![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%200.png?raw=true)
 
 ### Iterative Refinement — Critic/Reviser Loop
 - **Loop node** — A self-contained *generate → critique → revise* loop that iterates until an LLM critic approves (or a max-iteration cap)
 - **Compiles to a real ADK dynamic workflow** — Codegen emits an `@node` orchestrator (`ctx.run_node` + a bounded Python loop) modeled on a verified working example, placed as one node so the outer graph stays an acyclic DAG
 - **Typed payloads** — Generator/critic/reviser exchange pydantic-typed I/O (composes with nested schemas); a canonical `{status, feedback}` critic output drives termination
+![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%201.png?raw=true)
 
 ### Code Generation Pipeline
 - **Full v1 declarative coverage** — Agent, Function, Router, JoinNode, HumanInput, nested Workflow, and Tool nodes all compile end to end
