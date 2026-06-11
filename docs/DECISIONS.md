@@ -2409,3 +2409,41 @@ target needed a front door and a way through to Preview/Export without contamina
   `<img>`/data-URL, and inline JSX keeps vite-plugin-singlefile asset-free.
 **Verify.** `npm test` (registry spec), `npm run test:web:app` (store spec + per-target
 compile file-set sanity), `npm run build:pages`.
+
+## ADR-0048 — Mid-graph parallel fan-out: prefix row + fan-out-node-headed branch rows
+**Context.** ADR-0015 shipped parallel fan-out + join, but only from START — an interior
+node with multiple out-edges threw `EdgesCompilerError: branch/parallel is not handled by
+this slice`. The canvas has always allowed drawing that shape (`START → prep → {task_a,
+task_b} → join → final`), and the LangGraph target's wiring/state planning already handled
+it; the single blocker was the ADK edges compiler's linear-walk guard (both targets gate on
+`compileEdges` per ADR-0045).
+**Decisions.**
+- **Row form: the prefix row closes at the fan-out node; one branch row per out-edge is
+  headed by that node; the join continuation row is unchanged.**
+  `[("START", prep), (prep, task_a, my_join), (prep, task_b, my_join), (my_join, final_task)]`
+  This generalizes the one existing rule — *a repeated row head means fan-out from that
+  node* — which is exactly what repeated `"START"` already means (ADR-0015), and ADR-0015's
+  `(join, continuation)` row already established interior row heads. Rejected alternative:
+  duplicating the prefix into every branch row (`("START", prep, task_a, join)` × N) — it
+  relies on ADK deduplicating the repeated prefix segment (does `prep` run once or twice?),
+  a stronger untested assumption, and duplicates a k-node prefix N times.
+- **`compileParallel` → `compileFanOut(head, branchTargets, outEdges, nodeOf)`.** The START
+  case is the degenerate empty-prefix call with `head = {kind:"start"}` (byte-identical
+  output; existing goldens unchanged). The linear walk, on seeing >1 out-edges, returns the
+  prefix row plus `compileFanOut` with the node as head. The unused `inDegree` param was
+  dropped. No `RowMember`/`EdgeRow`/renderer changes.
+- **Still rejected loud, verbatim messages:** nested fan-out inside a branch, branches that
+  don't reach a join, divergent join nodes, multi-out after join, fan-out in the
+  continuation chain. These are codegen-slice limits, not IR invariants — the validator
+  needed no change (`JOIN_MISSING_FAILSAFE` iterates join in-edges regardless of where the
+  fan-out begins).
+- **LangGraph: zero source changes.** `resolveInputKey` gives each branch `prep_output`,
+  branches write distinct state keys (no reducers, per ADR-0046), the join keeps
+  `defer=True`. Only new goldens.
+- **Assumption to re-verify against real ADK 2.0.0** (ADR-0021 posture): an interior node
+  heading multiple rows is a valid `edges` encoding for fan-out. Goldens + `py_compile`
+  prove syntax, not runtime semantics.
+**Verify.** `npm run check:ir` (new `parallel-mid.ir.json` fixture, warning-free); `npm test`
+(edges golden `parallel-mid.edges.txt`, row-shape + rejection specs in `edges.test.ts`,
+golden projects `golden/parallel-mid/` + `golden-langgraph/parallel-mid/`, example-gallery
+coverage guard).

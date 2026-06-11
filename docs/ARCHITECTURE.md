@@ -47,7 +47,8 @@ Agents must be single-turn / task mode (ADK constraint).
 ## 4. Edges compiler (`packages/codegen`)
 The IR is a plain directed graph. The compiler linearizes it into ADK `edges=[...]`:
 collapse linear chains → sequence rows; routers → `(router, {route: target})`; joins → fan-in rows
-+ continuation; START repeats for parallel. Highest-risk module → golden-file tests.
++ continuation; a repeated row head (START or an interior node) is parallel fan-out
+(ADR-0048). Highest-risk module → golden-file tests.
 ([ADR-0009](DECISIONS.md))
 
 ## 5. Code generation pipeline ([ADR-0003](DECISIONS.md))

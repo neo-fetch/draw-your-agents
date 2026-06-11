@@ -1,0 +1,77 @@
+{
+  "irVersion": "0.1.0",
+  "name": "parallel_mid_workflow",
+  "description": "Mid-graph parallel fan-out (ADR-0048): START → prep → {task_a, task_b} → my_join → final_task.",
+  "schemas": [],
+  "nodes": [
+    {
+      "id": "n_prep",
+      "type": "function",
+      "name": "prep",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "description": "Prepare the shared input before fanning out.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_task_a",
+      "type": "function",
+      "name": "task_a",
+      "ui": { "x": 260, "y": -120 },
+      "config": {
+        "description": "Parallel branch A.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_task_b",
+      "type": "function",
+      "name": "task_b",
+      "ui": { "x": 260, "y": 120 },
+      "config": {
+        "description": "Parallel branch B.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_join",
+      "type": "join",
+      "name": "my_join",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "description": "Wait for both branches to complete."
+      }
+    },
+    {
+      "id": "n_final",
+      "type": "function",
+      "name": "final_task",
+      "ui": { "x": 780, "y": 0 },
+      "config": {
+        "description": "Final task after the join.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_prep" },
+    { "from": "n_prep", "to": "n_task_a" },
+    { "from": "n_prep", "to": "n_task_b" },
+    { "from": "n_task_a", "to": "n_join" },
+    { "from": "n_task_b", "to": "n_join" },
+    { "from": "n_join", "to": "n_final" }
+  ]
+}

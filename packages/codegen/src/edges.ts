@@ -9,9 +9,12 @@
  * Supported constructs:
  * - **Linear chains**: a single START entry threaded through nodes.
  * - **Routers**: a router terminates the entry chain and emits a route-map row.
- * - **Parallel fan-out + join**: repeated START edges fan out to branches that
- *   converge on a join node. Each branch is its own START row ending at the join;
- *   a continuation row begins at the join (ADR-0015).
+ * - **Parallel fan-out + join**: a fan-out point (repeated START edges, or an
+ *   interior node with multiple out-edges) fans out to branches that converge on
+ *   a join node. Each branch is its own row headed by the fan-out point — a
+ *   repeated row head means fan-out from that node, the same rule that governs
+ *   repeated `"START"`. A continuation row begins at the join (ADR-0015,
+ *   ADR-0048).
  * - **HumanInput**: a humanInput node is a plain linear-chain member — it
  *   consumes the previous node's output, yields a `RequestInput`, and forwards
  *   the user's response (ADR-0016). It needs no new `RowMember` kind.
@@ -93,9 +96,9 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
     return node;
   };
 
-  // Parallel fan-out: multiple START targets.
+  // Parallel fan-out from START: multiple START targets.
   if (startTargets.length > 1) {
-    return compileParallel(startTargets, outEdges, inDegree, nodeOf);
+    return compileFanOut({ kind: "start" }, startTargets, outEdges, nodeOf);
   }
 
   // Single-entry: walk the linear successor chain from the single START target.
@@ -114,10 +117,19 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
     const outs = outEdges.get(cur) ?? [];
     if (outs.length === 0) break; // chain end
     if (outs.length > 1) {
-      throw new EdgesCompilerError(
-        `node "${node.name}" fans out to ${outs.length} edges; ` +
-          "branch/parallel is not handled by this slice",
-      );
+      // Mid-graph fan-out (ADR-0048): the prefix row closes at this node; one
+      // branch row per out-edge is headed by it. `rows` is necessarily empty
+      // here — a router terminates the walk before this check — so returning
+      // directly cannot drop a route-map row.
+      return [
+        members,
+        ...compileFanOut(
+          { kind: "node", name: rowSymbol(node) },
+          outs.map((e) => e.to),
+          outEdges,
+          nodeOf,
+        ),
+      ];
     }
     const next = outs[0].to;
     if ((inDegree.get(next) ?? 0) > 1) {
@@ -134,31 +146,32 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
 }
 
 /**
- * Compile a parallel fan-out graph: repeated START → branches → join → continuation.
+ * Compile a parallel fan-out region: fan-out point → branches → join → continuation.
  *
- * Each branch becomes its own START row ending at the join node. The chain walks
- * from each START target until it reaches a join node (fan-in), collecting all
- * intermediate nodes. A final continuation row begins at the join and chains
- * forward.
+ * `head` is the fan-out point — the START sentinel (repeated START edges,
+ * ADR-0015) or an interior node with multiple out-edges (mid-graph fan-out,
+ * ADR-0048). Each branch becomes its own row headed by `head` and ending at the
+ * join node. The chain walks from each branch target until it reaches a join
+ * node (fan-in), collecting all intermediate nodes. A final continuation row
+ * begins at the join and chains forward.
  *
- * Row form (ADR-0015):
- *   ("START", task_a, my_join_node)
- *   ("START", task_b, my_join_node)
- *   ("START", task_c, my_join_node)
- *   (my_join_node, final_task_d)
+ * Row form (ADR-0015 / ADR-0048):
+ *   ("START", task_a, my_join_node)        (prep, task_a, my_join)
+ *   ("START", task_b, my_join_node)   or   (prep, task_b, my_join)
+ *   (my_join_node, final_task_d)           (my_join, final_task)
  */
-function compileParallel(
-  startTargets: readonly string[],
+function compileFanOut(
+  head: RowMember,
+  branchTargets: readonly string[],
   outEdges: ReadonlyMap<string, Edge[]>,
-  inDegree: ReadonlyMap<string, number>,
   nodeOf: (id: string) => GraphNode,
 ): EdgeRow[] {
   const rows: EdgeRow[] = [];
   let joinNodeId: string | undefined;
 
-  // Build one fan-out row per START target.
-  for (const target of startTargets) {
-    const members: RowMember[] = [{ kind: "start" }];
+  // Build one fan-out row per branch target.
+  for (const target of branchTargets) {
+    const members: RowMember[] = [head];
     let cur = target;
     for (;;) {
       const node = nodeOf(cur);

@@ -131,6 +131,110 @@ test("parallel: produces N fan-out rows + 1 continuation row", () => {
   ]);
 });
 
+// -- mid-graph fan-out (ADR-0048) --
+
+test("parallel-mid: prefix row + fan-out rows + continuation matches golden", () => {
+  const ir = loadIR("packages/ir/fixtures/parallel-mid.ir.json");
+  const rendered = renderEdgeRows(compileEdges(ir));
+  assert.equal(rendered, loadGolden("parallel-mid.edges.txt"));
+});
+
+test("parallel-mid: produces a prefix row + 2 fan-out rows + 1 continuation row", () => {
+  const rows = compileEdges(loadIR("packages/ir/fixtures/parallel-mid.ir.json"));
+  assert.equal(rows.length, 4, "expected 1 prefix row + 2 fan-out rows + 1 continuation row");
+  // Prefix row: ("START", prep) — closes at the fan-out node.
+  assert.deepEqual(rows[0], [
+    { kind: "start" },
+    { kind: "node", name: "prep" },
+  ]);
+  // Fan-out rows headed by the fan-out node: (prep, branch, join)
+  assert.deepEqual(rows[1], [
+    { kind: "node", name: "prep" },
+    { kind: "node", name: "task_a" },
+    { kind: "node", name: "my_join" },
+  ]);
+  assert.deepEqual(rows[2], [
+    { kind: "node", name: "prep" },
+    { kind: "node", name: "task_b" },
+    { kind: "node", name: "my_join" },
+  ]);
+  // Continuation row: (join, final)
+  assert.deepEqual(rows[3], [
+    { kind: "node", name: "my_join" },
+    { kind: "node", name: "final_task" },
+  ]);
+});
+
+test("parallel-mid: rejects nested fan-out inside a branch loud", () => {
+  const ir: GraphIR = {
+    irVersion: "0.1.0",
+    name: "nested_fan_out",
+    schemas: [],
+    nodes: [
+      { id: "p", type: "function", name: "p", config: { inputType: "str", outputType: "str" } },
+      { id: "a", type: "function", name: "a", config: { inputType: "str", outputType: "str" } },
+      { id: "b", type: "function", name: "b", config: { inputType: "str", outputType: "str" } },
+      { id: "c", type: "function", name: "c", config: { inputType: "str", outputType: "str" } },
+      { id: "j", type: "join", name: "j", config: {} },
+    ],
+    edges: [
+      { from: "START", to: "p" },
+      { from: "p", to: "a" },
+      { from: "p", to: "b" },
+      { from: "a", to: "c" },
+      { from: "a", to: "j" },
+      { from: "b", to: "j" },
+      { from: "c", to: "j" },
+    ],
+  };
+  assert.throws(() => compileEdges(ir), /nested fan-out/);
+});
+
+test("parallel-mid: rejects a branch that does not reach a join loud", () => {
+  const ir: GraphIR = {
+    irVersion: "0.1.0",
+    name: "branch_no_join",
+    schemas: [],
+    nodes: [
+      { id: "p", type: "function", name: "p", config: { inputType: "str", outputType: "str" } },
+      { id: "a", type: "function", name: "a", config: { inputType: "str", outputType: "str" } },
+      { id: "b", type: "function", name: "b", config: { inputType: "str", outputType: "str" } },
+    ],
+    edges: [
+      { from: "START", to: "p" },
+      { from: "p", to: "a" },
+      { from: "p", to: "b" },
+    ],
+  };
+  assert.throws(() => compileEdges(ir), /does not reach a join/);
+});
+
+test("parallel-mid: rejects fan-out after the join loud", () => {
+  const ir: GraphIR = {
+    irVersion: "0.1.0",
+    name: "fan_out_after_join",
+    schemas: [],
+    nodes: [
+      { id: "p", type: "function", name: "p", config: { inputType: "str", outputType: "str" } },
+      { id: "a", type: "function", name: "a", config: { inputType: "str", outputType: "str" } },
+      { id: "b", type: "function", name: "b", config: { inputType: "str", outputType: "str" } },
+      { id: "j", type: "join", name: "j", config: {} },
+      { id: "x", type: "function", name: "x", config: { inputType: "str", outputType: "str" } },
+      { id: "y", type: "function", name: "y", config: { inputType: "str", outputType: "str" } },
+    ],
+    edges: [
+      { from: "START", to: "p" },
+      { from: "p", to: "a" },
+      { from: "p", to: "b" },
+      { from: "a", to: "j" },
+      { from: "b", to: "j" },
+      { from: "j", to: "x" },
+      { from: "j", to: "y" },
+    ],
+  };
+  assert.throws(() => compileEdges(ir), /multi-out after join/);
+});
+
 // -- humanInput linear chain (ADR-0016) --
 
 test("human-input: linear chain through ask_user → process_response matches golden", () => {
