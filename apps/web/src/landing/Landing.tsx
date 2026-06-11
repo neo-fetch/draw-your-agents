@@ -56,6 +56,17 @@ export function Landing() {
             <span className="landing-half__blurb">{adk.blurb}</span>
           </m.button>
         </div>
+        <m.footer className="landing__foot" variants={paneItem}>
+          runs in your browser · free for individuals &amp; non-profits · in memory of
+          Quorthon — the dark theme is a{" "}
+          <a
+            href="https://github.com/neo-fetch/draw-your-agents#-why-bathory"
+            target="_blank"
+            rel="noreferrer"
+          >
+            tribute to Bathory
+          </a>
+        </m.footer>
       </m.div>
     </m.div>
   );

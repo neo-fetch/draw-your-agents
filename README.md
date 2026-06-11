@@ -4,6 +4,8 @@
 
 A visual builder that compiles drag-and-drop agent graphs into runnable **[Google ADK](https://adk.dev/) (Python, v2.0.0) graph-workflow** projects. Also imports **draw.io** XML diagrams into the same graph.
 
+Runs entirely in your browser — free for individuals and non-profits, by design. The dark theme, and the ethos behind the whole project, is a tribute to **Bathory** ([why?](#-why-bathory)).
+
 > **Status:** Phase 0 (headless codegen) ✅ — Phase 1 (visual builder) ✅ — Phase 2 (variable chips + schema editor) ✅ — Critic/reviser **loop node**, **nested pydantic models**, **editable node names** ✅ — draw.io import 🔜
 
 ---
@@ -285,6 +287,22 @@ pip install black
 | **Phase 3** | 🔜 Next | draw.io XML ingestion (`mxGraph XML → IR`) |
 | **Phase 4** | 📋 Planned | Python fidelity service (`black` + `compile()` + dry-run `Workflow(...)`) |
 | **Phase 5** | 📋 Planned | Polish, session-state variables, undo/redo |
+
+---
+
+## 🖤 Why Bathory
+
+The dark theme in this builder is called **bathory**, and it isn't just a color choice — it's the reason this project looks, ships, and licenses the way it does.
+
+**Free and browser-only, by design.** Everything runs client-side: validation, code generation, the live preview, even the `.zip` bundler is pure TypeScript executing in your tab. No server, no account, no telemetry, nothing to pay. The project is built to be free for individuals and non-profits, and the [AGPL-3.0 license](#-license) keeps it that way — whoever builds on it must pass the same freedom downstream.
+
+**The theme.** The palette descends from the base16 **"Black Metal (Bathory)"** scheme by metalelf0, whose colors were lifted from the cover art of late-1980s extreme-metal records: near-black paper, bone-white scratch lettering, ash greys, and one violent red. It is deliberately lo-fi and anti-commercial — sharp corners, film grain, CRT scanlines — a rejection of the neon, "vibrant", gamer-centric look of modern UI. See [`bathory.css`](apps/web/src/styles/themes/bathory.css) and ADR-0044 in the [decision log](docs/DECISIONS.md).
+
+**The band.** [Bathory](https://en.wikipedia.org/wiki/Bathory_(band)), led by Quorthon, pioneered the first wave of black metal from Stockholm in the early 1980s. The early occult imagery — inverted crosses, demonic theatrics, abrasive lo-fi production — was provocation aimed squarely at religious dogmatism and institutional authority, not literal belief. By the late '80s Quorthon abandoned the Satanic aesthetic entirely and invented Viking metal: romanticized Norse storytelling about bravery, honor, and heritage, with later albums dwelling on the futility and tragedy of war rather than glorifying it.
+
+**The principles.** Quorthon stood for staunch individualism and anti-authoritarianism. He was openly critical of herd mentality and of every ideology that tries to herd individuals into collectives, and he firmly rejected fascism and every attempt by hate groups to co-opt Norse and pagan imagery for white supremacy or neo-Nazism. Those principles — independence, skepticism of dogma, anti-war, and zero tolerance for hate — are what this project stands for.
+
+*In memory of Quorthon (Tomas "Ace" Börje Forsberg, 1966–2004).*
 
 ---
 
