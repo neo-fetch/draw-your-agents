@@ -15,6 +15,7 @@ import { loadIRFromText, type LoadResult } from "./irIO.ts";
 import cityTime from "../../../../packages/ir/fixtures/city-time.ir.json" with { type: "json" };
 import routing from "../../../../packages/ir/fixtures/routing.ir.json" with { type: "json" };
 import parallel from "../../../../packages/ir/fixtures/parallel.ir.json" with { type: "json" };
+import parallelMid from "../../../../packages/ir/fixtures/parallel-mid.ir.json" with { type: "json" };
 import tool from "../../../../packages/ir/fixtures/tool.ir.json" with { type: "json" };
 import humanInput from "../../../../packages/ir/fixtures/human-input.ir.json" with { type: "json" };
 import nested from "../../../../packages/ir/fixtures/nested.ir.json" with { type: "json" };
@@ -34,6 +35,7 @@ export const EXAMPLES: readonly Example[] = [
   { id: "city-time", label: "City time (sequence)", raw: cityTime },
   { id: "routing", label: "Support router (branch)", raw: routing },
   { id: "parallel", label: "Parallel fan-out + join", raw: parallel },
+  { id: "parallel-mid", label: "Mid-graph fan-out + join", raw: parallelMid },
   { id: "tool", label: "Tool node", raw: tool },
   { id: "human-input", label: "Human input", raw: humanInput },
   { id: "nested", label: "Nested workflow", raw: nested },

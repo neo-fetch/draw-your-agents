@@ -24,6 +24,7 @@ const PROJECTS = [
   { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json" },
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
   { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json" },
+  { name: "parallel-mid", fixture: "packages/ir/fixtures/parallel-mid.ir.json" },
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json" },
   { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json" },
   { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json" },

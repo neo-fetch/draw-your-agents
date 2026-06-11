@@ -52,7 +52,8 @@ A session works in **one** package. Load `packages/ir` types + that package; not
 
 ## Key ADK facts the generator relies on
 - `Workflow(edges=[...])` where a row is a sequence chain; `("START", ...)` begins a graph;
-  `START` may repeat (parallel fan-out).
+  `START` may repeat (parallel fan-out); an interior row head may repeat likewise
+  (mid-graph fan-out, ADR-0048).
 - Router: a function returns `Event(route=...)` → a row `(router, {route: target})`.
 - Data flow is **positional**: `Event(output=...)` → next node's `node_input`. **One output per node.**
 - Agent prompt variables: `{Schema.field}` or source-bound `<Schema.field from node_name>`.
