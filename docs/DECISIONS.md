@@ -2447,3 +2447,19 @@ it; the single blocker was the ADK edges compiler's linear-walk guard (both targ
 (edges golden `parallel-mid.edges.txt`, row-shape + rejection specs in `edges.test.ts`,
 golden projects `golden/parallel-mid/` + `golden-langgraph/parallel-mid/`, example-gallery
 coverage guard).
+
+## ADR-0049 — Bathory tribute: README "Why Bathory" section + landing footer
+**Context.** The bathory theme (ADR-0044) descends from the base16 "Black Metal (Bathory)"
+scheme, and the project's browser-only / nothing-to-pay posture is rooted in the band's
+principles (individualism, anti-dogmatism, anti-war, explicit rejection of extremism and
+hate groups). That story lived nowhere user-facing.
+**Decisions.**
+- README gains a `## 🖤 Why Bathory` section (between Roadmap and Key ADK Facts) plus a
+  one-line pointer in the intro. The Landing page gains a `.landing__foot` footer — tokens
+  only so both themes apply; `m.footer` with the `paneItem` variant (App mounts `LazyMotion
+  strict`) — linking to the README section.
+- **"Free for individuals and non-profits" is ethos framing, not a license term.** The
+  license remains AGPL-3.0, which permits commercial use under copyleft; the README states
+  the intent ("built to be free for…") without claiming a usage restriction.
+**Verify.** `npm test` (tier-1 gate, unaffected but must stay green); `apps/web` type-check —
+the change is presentational JSX/CSS only.

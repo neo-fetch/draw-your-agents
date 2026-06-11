@@ -120,6 +120,27 @@
   color: var(--ink-faint);
 }
 
+.landing__foot {
+  padding: 12px 28px;
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  user-select: none;
+}
+
+.landing__foot a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.landing__foot a:hover,
+.landing__foot a:focus-visible {
+  color: var(--ink-soft);
+}
+
 @media (max-width: 640px) {
   .landing__halves {
     flex-direction: column;
