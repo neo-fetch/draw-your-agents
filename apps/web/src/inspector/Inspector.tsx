@@ -23,6 +23,7 @@ import type {
 import { useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
+import { selectActiveGraph } from "../store/subgraph.ts";
 import type { ModelParamKey } from "../store/irReducer.ts";
 import { formSwap } from "../anim/presets.ts";
 import { VariableEditor, type VariableEditorAPI } from "./VariableEditor.tsx";
@@ -250,7 +251,7 @@ function Header({ node }: { node: GraphNode }) {
 function AgentForm({ node }: { node: AgentNode }) {
   const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
   const updateModelParam = useIRStore((s) => s.updateModelParam);
-  const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas).map((x) => x.name);
   const params = node.config.modelParams ?? {};
 
   // Imperative handle into the Lexical editor for chip insertion (ADR-0030).
@@ -395,7 +396,7 @@ function AgentForm({ node }: { node: AgentNode }) {
 
 function FunctionForm({ node }: { node: FunctionNode }) {
   const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
-  const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas).map((x) => x.name);
   return (
     <div>
       <Header node={node} />
@@ -462,7 +463,7 @@ function FunctionForm({ node }: { node: FunctionNode }) {
 
 function ToolForm({ node }: { node: ToolNode }) {
   const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
-  const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas).map((x) => x.name);
   return (
     <div>
       <Header node={node} />
@@ -514,7 +515,7 @@ function ToolForm({ node }: { node: ToolNode }) {
 
 function RouterForm({ node }: { node: RouterNode }) {
   const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
-  const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas).map((x) => x.name);
   return (
     <div>
       <Header node={node} />
@@ -593,7 +594,7 @@ function JoinForm({ node }: { node: JoinNode }) {
 
 function HumanInputForm({ node }: { node: HumanInputNode }) {
   const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
-  const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas).map((x) => x.name);
   return (
     <div>
       <Header node={node} />
@@ -638,6 +639,7 @@ function HumanInputForm({ node }: { node: HumanInputNode }) {
 
 function WorkflowForm({ node }: { node: WorkflowNode }) {
   const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
+  const enterSubgraph = useIRStore((s) => s.enterSubgraph);
   const sub: GraphIR | undefined = node.config.graph;
   const nodeCount = Array.isArray(sub?.nodes) ? sub.nodes.length : 0;
   return (
@@ -659,9 +661,20 @@ function WorkflowForm({ node }: { node: WorkflowNode }) {
       </div>
       <div className="field">
         <label>graph</label>
+        {/* Discoverable alternative to double-clicking the canvas card
+            (ADR-0050). The selected node is in the active graph by
+            definition, so enterSubgraph always resolves. */}
+        <button
+          type="button"
+          className="open-subgraph"
+          onClick={() => enterSubgraph(node.id)}
+        >
+          Open sub-graph ({nodeCount} node{nodeCount === 1 ? "" : "s"})
+        </button>
         <div className="field__hint">
-          Nested workflow: {nodeCount} node{nodeCount === 1 ? "" : "s"} —
-          sub-graph editing in a later slice.
+          Edits the nested workflow on the canvas — double-clicking the node
+          card does the same. Use the breadcrumb above the canvas to come
+          back.
         </div>
       </div>
       </FormSection>
@@ -682,7 +695,7 @@ function WorkflowForm({ node }: { node: WorkflowNode }) {
  */
 function LoopForm({ node }: { node: LoopNode }) {
   const updateNodeConfig = useIRStore((s) => s.updateNodeConfig);
-  const schemas = useIRStore((s) => s.ir.schemas).map((x) => x.name);
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas).map((x) => x.name);
   const cfg = node.config;
 
   const subAgentRow = (
@@ -794,10 +807,10 @@ function LoopForm({ node }: { node: LoopNode }) {
 function EdgeForm() {
   const selectedEdge = useIRStore((s) => s.selectedEdge)!;
   const sourceNode = useIRStore((s) =>
-    s.ir.nodes.find((n) => n.id === selectedEdge.from),
+    selectActiveGraph(s).nodes.find((n) => n.id === selectedEdge.from),
   );
   const targetNode = useIRStore((s) =>
-    s.ir.nodes.find((n) => n.id === selectedEdge.to),
+    selectActiveGraph(s).nodes.find((n) => n.id === selectedEdge.to),
   );
   const setEdgeRoute = useIRStore((s) => s.setEdgeRoute);
 
@@ -893,9 +906,15 @@ function formFor(node: NonNullable<ReturnType<typeof pickNode>>): ReactNode {
   }
 }
 
-function pickNode(s: { selectedNodeId: string | null; ir: GraphIR }) {
+function pickNode(s: {
+  selectedNodeId: string | null;
+  ir: GraphIR;
+  subgraphPath: string[];
+}) {
+  // Selection is scoped to the active graph (ADR-0050): the same id could
+  // legally recur in a nested sub-graph of a hand-loaded IR.
   return s.selectedNodeId
-    ? s.ir.nodes.find((n) => n.id === s.selectedNodeId) ?? null
+    ? selectActiveGraph(s).nodes.find((n) => n.id === s.selectedNodeId) ?? null
     : null;
 }
 

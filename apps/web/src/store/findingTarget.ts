@@ -9,6 +9,11 @@
  * shows the nested graph's summary there).
  *
  * No DOM, no zustand — headlessly tested in `test/findingTarget.test.ts`.
+ *
+ * Superseded for the Preview click path by `subgraph.ts`'s
+ * `resolveFindingPath` (ADR-0050), which navigates *into* the owning
+ * sub-graph instead of collapsing to the top-level workflow node. Kept as
+ * the documented top-level-only resolver.
  */
 import type { GraphIR } from "@graphical-agents/ir";
 

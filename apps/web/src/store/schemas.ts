@@ -6,11 +6,12 @@
  * `irEdges.ts`, `insertVariable.ts`: React-free, zustand-free, no `lexical`,
  * IR types consumed type-only (ADR-0011 / ADR-0013 / ADR-0022).
  *
- * Scope: top-level `ir.schemas` only — nested `workflow.config.graph.schemas`
- * are out of scope, consistent with the nested-graph editing deferral across
- * ADR-0017 / ADR-0023 / ADR-0026 / ADR-0029. The UI never re-implements
- * validator rules (identifier validity / uniqueness — invariant 1, type-ref
- * resolution — invariant 5): Preview surfaces those findings honestly.
+ * Scope: one graph's `schemas` at a time. The store retargets these reducers
+ * at the active sub-graph via `updateGraphAtPath` (ADR-0050) — graph-local is
+ * the *complete* scope because the validator resolves schema refs strictly
+ * per-level. The UI never re-implements validator rules (identifier validity
+ * / uniqueness — invariant 1, type-ref resolution — invariant 5): Preview
+ * surfaces those findings honestly.
  */
 import type {
   AgentNode,
@@ -99,9 +100,10 @@ export function addSchema(ir: GraphIR): { ir: GraphIR; schemaName: string } {
  * job (invariant 1) — Preview surfaces INVALID_SCHEMA_NAME /
  * DUPLICATE_SCHEMA_NAME if the user types something illegal.
  *
- * Cascade is top-level only — nested `workflow.config.graph.schemas` are out
- * of scope (consistent with the nested-graph editing deferral throughout the
- * UI). Field-name rename does NOT cascade into chips (see `updateField`).
+ * Cascade covers this graph only, and that is complete: schema refs resolve
+ * strictly per-level in the validator, so a node can never reference another
+ * level's schema (ADR-0050). Field-name rename does NOT cascade into chips
+ * (see `updateField`).
  */
 export function renameSchema(
   ir: GraphIR,

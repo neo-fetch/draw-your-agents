@@ -85,9 +85,10 @@ export function setEdgeRoute(
 }
 
 /**
- * Remove `nodeId` from the top-level graph and every edge that references
- * it (as `from` or `to`). No-op (same IR reference) if `nodeId` is not a
- * top-level node — nested-graph editing is a later slice.
+ * Remove `nodeId` from this graph and every edge that references it (as
+ * `from` or `to`). No-op (same IR reference) if `nodeId` is not a node of
+ * this graph — the store retargets the reducer at the active sub-graph via
+ * `updateGraphAtPath` (ADR-0050).
  */
 export function deleteNode(ir: GraphIR, nodeId: string): GraphIR {
   if (!ir.nodes.some((n) => n.id === nodeId)) return ir;

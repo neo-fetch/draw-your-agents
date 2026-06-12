@@ -28,6 +28,7 @@ import type {
   UiPosition,
   WorkflowNode,
 } from "@graphical-agents/ir";
+import { graphAtPath, updateGraphAtPath } from "./subgraph.ts";
 
 export type AddableNodeType = NodeType;
 
@@ -280,22 +281,48 @@ function makeDefaultNode(
 }
 
 /**
- * Add a new node of `type` to `ir`. Returns a new IR and the minted node id
- * so the store can select it without re-deriving. Pure: `ir` is untouched.
+ * Add a new node of `type` to the graph at `path` inside `root` (ADR-0050).
+ * Id and name are minted against the **root** — the flat global namespace
+ * spans every nesting level (ADR-0017) — but the staggered default position
+ * is computed against the **target graph**, so the node lands in the canvas
+ * the user is looking at. `root` is also what `minimalSubIR` reserves names
+ * against when adding a workflow-inside-a-workflow.
+ *
+ * No-op (same `ir` reference, empty `nodeId`) when `path` doesn't resolve.
+ * Pure: `root` is untouched.
+ */
+export function addNodeAt(
+  root: GraphIR,
+  path: readonly string[],
+  type: AddableNodeType,
+  position?: UiPosition,
+): { ir: GraphIR; nodeId: string } {
+  const target = graphAtPath(root, path);
+  if (!target) return { ir: root, nodeId: "" };
+  const id = makeNodeId(root, type);
+  const name = makeNodeName(root, type);
+  // Explicit position (drag-and-drop drop point, ADR-0034) wins; otherwise
+  // fall back to the staggered default used by click-to-add.
+  const ui = position ?? defaultPositionFor(target);
+  const node = makeDefaultNode(root, type, id, name, ui);
+  return {
+    ir: updateGraphAtPath(root, path, (g) => ({
+      ...g,
+      nodes: [...g.nodes, node],
+    })),
+    nodeId: id,
+  };
+}
+
+/**
+ * Add a new node of `type` to `ir` (top level). Returns a new IR and the
+ * minted node id so the store can select it without re-deriving. Pure:
+ * `ir` is untouched.
  */
 export function addNode(
   ir: GraphIR,
   type: AddableNodeType,
   position?: UiPosition,
 ): { ir: GraphIR; nodeId: string } {
-  const id = makeNodeId(ir, type);
-  const name = makeNodeName(ir, type);
-  // Explicit position (drag-and-drop drop point, ADR-0034) wins; otherwise
-  // fall back to the staggered default used by click-to-add.
-  const ui = position ?? defaultPositionFor(ir);
-  const node = makeDefaultNode(ir, type, id, name, ui);
-  return {
-    ir: { ...ir, nodes: [...ir.nodes, node] },
-    nodeId: id,
-  };
+  return addNodeAt(ir, [], type, position);
 }

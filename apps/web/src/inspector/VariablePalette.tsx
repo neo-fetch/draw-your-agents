@@ -14,6 +14,7 @@
 import type { CSSProperties } from "react";
 import type { AgentNode } from "@graphical-agents/ir";
 import { useIRStore } from "../store/irStore.ts";
+import { selectActiveGraph } from "../store/subgraph.ts";
 import {
   candidateVariables,
   chipSchemas,
@@ -57,7 +58,10 @@ export interface VariablePaletteProps {
 }
 
 export function VariablePalette({ agent, onInsert }: VariablePaletteProps) {
-  const ir = useIRStore((s) => s.ir);
+  // Candidates come from the *active* graph (ADR-0050): the validator
+  // resolves var-segment sources strictly per-level, so only producers in
+  // the agent's own graph are legal.
+  const ir = useIRStore(selectActiveGraph);
   const candidates = candidateVariables(ir, agent.id);
   const locked = chipSchemas(agent);
   const lockedSchema = locked.size === 1 ? [...locked][0] : undefined;

@@ -125,6 +125,70 @@
   box-shadow: 0 0 0 3px var(--accent-wash);
 }
 
+/* hint shown inside an emptied sub-graph — the example-loading empty state
+   only belongs at the root (ADR-0050) */
+.canvas-empty-subgraph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 4;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------- sub-graph breadcrumb (ADR-0050) */
+
+.subgraph-breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-raised);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.subgraph-breadcrumb__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.subgraph-breadcrumb__sep {
+  color: var(--ink-faint);
+  padding: 0 3px;
+}
+.subgraph-breadcrumb__segment {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-soft);
+}
+button.subgraph-breadcrumb__segment {
+  cursor: pointer;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+button.subgraph-breadcrumb__segment:hover {
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+}
+button.subgraph-breadcrumb__segment:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.subgraph-breadcrumb__segment--current {
+  font-weight: 600;
+  color: var(--ink);
+}
+
 .ir-node {
   --type: var(--ink-faint);
   position: relative;

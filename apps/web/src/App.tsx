@@ -1,5 +1,6 @@
 import { AnimatePresence, LazyMotion, MotionConfig, domMax, m } from "motion/react";
 import { Canvas } from "./canvas/Canvas.tsx";
+import { SubgraphBreadcrumb } from "./canvas/SubgraphBreadcrumb.tsx";
 import { Inspector } from "./inspector/Inspector.tsx";
 import { Landing } from "./landing/Landing.tsx";
 import { Palette } from "./palette/Palette.tsx";
@@ -53,6 +54,7 @@ function Workbench() {
         <PaneResizeHandle pane="left" edge="end" />
         <m.section className="pane pane--canvas" variants={paneItem}>
           <header>Canvas</header>
+          <SubgraphBreadcrumb />
           <Canvas />
         </m.section>
         <PaneResizeHandle pane="inspector" edge="start" />
