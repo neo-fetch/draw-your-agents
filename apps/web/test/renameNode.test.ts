@@ -7,9 +7,9 @@
  * (id-keyed) are left alone. Install-free per ADR-0011 / ADR-0013 / ADR-0022
  * / ADR-0032: only IR types, the validator, codegen, and Node builtins.
  *
- * Top-level only — nested `workflow.config.graph.nodes` rename is out of
- * scope, mirroring the nested-graph editing deferral across
- * ADR-0017 / ADR-0023 / ADR-0026 / ADR-0029 / ADR-0035.
+ * Since ADR-0050 the cascade also recurses into nested
+ * `workflow.config.graph` levels; the nested-specific contracts live in
+ * `subgraphReducers.test.ts`. This suite remains the top-level oracle.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

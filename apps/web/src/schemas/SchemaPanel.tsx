@@ -13,6 +13,7 @@ import { useState } from "react";
 import type { CSSProperties } from "react";
 import type { SchemaDef, SchemaField } from "@graphical-agents/ir";
 import { useIRStore } from "../store/irStore.ts";
+import { breadcrumbItems, selectActiveGraph } from "../store/subgraph.ts";
 import { fieldTypeCandidates, scalarTypes } from "../store/schemas.ts";
 
 const ROW: CSSProperties = { marginBottom: 8 };
@@ -58,7 +59,7 @@ function FieldRow({
   schemaName: string;
   field: SchemaField;
 }) {
-  const schemas = useIRStore((s) => s.ir.schemas);
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas);
   const updateField = useIRStore((s) => s.updateField);
   const deleteField = useIRStore((s) => s.deleteField);
   // Scalars stay listed under the `scalar` group; foreign schema names appear
@@ -160,10 +161,24 @@ function SchemaCard({ schema }: { schema: SchemaDef }) {
 }
 
 export function SchemaPanel() {
-  const schemas = useIRStore((s) => s.ir.schemas);
+  // The panel edits the *active* graph's schemas (ADR-0050): schema refs
+  // resolve strictly per-level in the validator, so these are the only
+  // legal ref targets for the nodes on the canvas.
+  const schemas = useIRStore((s) => selectActiveGraph(s).schemas);
+  const subgraphPath = useIRStore((s) => s.subgraphPath);
+  const scopeName = useIRStore((s) =>
+    s.subgraphPath.length === 0
+      ? null
+      : breadcrumbItems(s.ir, s.subgraphPath)?.at(-1)?.name ?? null,
+  );
   const addSchema = useIRStore((s) => s.addSchema);
   return (
     <div className="schema-panel">
+      {scopeName !== null && (
+        <div className="schema-scope">
+          schemas of <strong>{scopeName}</strong>
+        </div>
+      )}
       <div style={ROW}>
         <button type="button" className="schema-add" onClick={() => addSchema()}>
           + Schema
@@ -171,8 +186,11 @@ export function SchemaPanel() {
       </div>
       {schemas.length === 0 ? (
         <div className="schema-empty">
-          No schemas. Add one to make its fields available as variable chips on
-          downstream agents.
+          {subgraphPath.length === 0
+            ? "No schemas. Add one to make its fields available as variable " +
+              "chips on downstream agents."
+            : "No schemas in this sub-graph. Nested nodes can only reference " +
+              "schemas declared at their own level."}
         </div>
       ) : (
         <div className="schema-list">

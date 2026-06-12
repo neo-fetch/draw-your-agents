@@ -2463,3 +2463,56 @@ hate groups). That story lived nowhere user-facing.
   the intent ("built to be free for…") without claiming a usage restriction.
 **Verify.** `npm test` (tier-1 gate, unaffected but must stay green); `apps/web` type-check —
 the change is presentational JSX/CSS only.
+
+## ADR-0050 — Nested workflow editing: zoom-into-sub-graph via `subgraphPath`
+**Context.** Workflow nodes carry a complete inline sub-IR (`config.graph`, ADR-0017), but
+every editing surface was top-level only — a deferral threaded through ADR-0023 / 0026 /
+0029 / 0035 and pinned in `WorkflowForm`'s "sub-graph editing in a later slice" hint. The
+validator, codegen, and `addNode`'s global name minting already handled arbitrary nesting;
+only the UI lacked a way in.
+**Decisions.**
+- **Navigation model: `subgraphPath: string[]` in the IR store** — workflow node ids,
+  root→current, `[]` = root. Three ways to navigate: double-click a workflow card on the
+  canvas, the Inspector's "Open sub-graph" button, and a breadcrumb bar above the canvas
+  (root segment = `ir.name`, ancestor segments clickable, current segment inert).
+  Navigation clears both selections (they're scoped to a graph); `replaceIR` resets the
+  path (loaded ids don't match, same reasoning as the existing selection clear); read
+  sites fall back to the root on a transiently invalid path (`selectActiveGraph`);
+  `deleteNode` prunes the path defensively (`prunePath` — unreachable from the UI, but the
+  dev-window store can delete an ancestor).
+- **New pure module `store/subgraph.ts`** (`graphAtPath` / `updateGraphAtPath` /
+  `breadcrumbItems` / `prunePath` / `resolveFindingPath` / `selectActiveGraph`), joining
+  the ADR-0022 reducer family. Every existing reducer is **retargeted by wrapping, not
+  rewriting**: store mutators apply their graph-local reducer via
+  `updateGraphAtPath(s.ir, s.subgraphPath, …)`. Mutations are *path-scoped*, never
+  "search the tree for this id" — node ids are only conventionally global
+  (`DUPLICATE_NODE_ID` is per-graph), so a hand-loaded IR may legally reuse an id across
+  levels and a tree search could land on the wrong node.
+- **Two reducers are genuinely global.** `addNodeAt` mints id + name against the **root**
+  (flat namespace, ADR-0017; `collectAllIds`/`collectAllNames` already recurse) but
+  inserts at the path and staggers the default position against the target graph.
+  `renameNodeAt` renames path-scoped, then cascades agent var-sources and `tools[]`
+  across **all** levels — safe because names are globally unique, necessary because
+  `tools[]` resolve globally by name (var sources are per-level, so the superset cascade
+  is correct for both). Behavior change: a root-level `renameNode` now also cascades into
+  nested graphs (previously deferred). `renameSchema` stays active-graph-only and that is
+  *complete*: the validator resolves schema refs strictly per-level, so no cross-level
+  schema reference can exist.
+- **All editing surfaces project the active graph.** Canvas (sub-graphs carry their own
+  START edges and `ui` positions, so the synthetic-START projection works unchanged at
+  any depth), Inspector (`pickNode` + the 6 schema-ref dropdowns + EdgeForm),
+  VariablePalette (matches the validator's per-level var-source scoping), and SchemaPanel
+  (with a "schemas of <name>" scope caption). The example-loading canvas empty state is
+  gated to the root — its buttons call `replaceIR`; an emptied sub-graph shows a hint
+  instead. Preview still compiles the **root** IR; clicking a path-prefixed finding
+  (`n_outer/n_inner`, ADR-0017) now navigates into the owning sub-graph and centers the
+  node via `focusFinding` + `resolveFindingPath` (deepest-valid-prefix fallback;
+  `findingTarget.ts` kept as the documented top-level resolver). Viewport re-frames with
+  a rAF'd `fitView` on navigation, and the ADR-0043 focus effect retries once on the next
+  frame when the target graph hasn't been ingested by React Flow yet — best-effort, same
+  posture as ADR-0043.
+**Verify.** `npm test` (new `subgraph.test.ts` + `subgraphReducers.test.ts`; existing
+reducer oracles green via the `addNode`/`renameNode` compatibility wrappers); manual:
+load the `nested` example, double-click `nested_workflow`, add/connect/rename nodes and
+edit schemas inside it, breadcrumb back out, export — the generated project reflects the
+nested edits.

@@ -22,6 +22,20 @@
   color: var(--accent-deep);
   background: var(--accent-wash);
 }
+/* scope caption shown while zoomed into a sub-graph (ADR-0050) */
+.schema-scope {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.schema-scope strong {
+  color: var(--ink-soft);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+}
 .schema-empty {
   color: var(--ink-faint);
   font-size: 12px;

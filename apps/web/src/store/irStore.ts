@@ -17,10 +17,16 @@ import {
   applyNodeConfigPatch,
   applyNodePosition,
   cloneFixture,
-  renameNode as renameNodeReducer,
+  renameNodeAt as renameNodeAtReducer,
   type ModelParamKey,
 } from "./irReducer.ts";
-import { addNode as addNodeReducer, type AddableNodeType } from "./addNode.ts";
+import { addNodeAt as addNodeAtReducer, type AddableNodeType } from "./addNode.ts";
+import {
+  graphAtPath,
+  prunePath,
+  resolveFindingPath,
+  updateGraphAtPath,
+} from "./subgraph.ts";
 import {
   connectEdge as connectEdgeReducer,
   deleteEdge as deleteEdgeReducer,
@@ -51,6 +57,14 @@ export interface SelectedEdge {
 
 export interface IRState {
   ir: GraphIR;
+  /**
+   * Workflow node ids from the root down to the sub-graph being edited
+   * (ADR-0050). `[]` = the root. Canvas, palette, Inspector, and SchemaPanel
+   * all operate on the graph at this path; every mutator below retargets its
+   * reducer through `updateGraphAtPath`. Read sites fall back to the root
+   * when the path is transiently invalid (`selectActiveGraph`).
+   */
+  subgraphPath: string[];
   selectedNodeId: string | null;
   selectedEdge: SelectedEdge | null;
   /**
@@ -64,8 +78,28 @@ export interface IRState {
   /**
    * Select a node *and* ask the canvas to center on it (ADR-0043) — the
    * clickable-finding path. Selection semantics match `setSelectedNode`.
+   * The node is looked up in the *active* graph (ADR-0050).
    */
   focusNode: (nodeId: string) => void;
+  /**
+   * Zoom into the sub-graph of a workflow node in the active graph
+   * (ADR-0050): double-click on its canvas card or the Inspector's
+   * "Open sub-graph" button. No-op when the id doesn't name a workflow node
+   * there. Navigation clears both selections — they're scoped to a graph.
+   */
+  enterSubgraph: (workflowNodeId: string) => void;
+  /**
+   * Jump to an arbitrary depth (breadcrumb click). Falls back to the root
+   * when the path doesn't resolve. Clears both selections.
+   */
+  setSubgraphPath: (path: string[]) => void;
+  /**
+   * Navigate to + select + center the node a validator finding points at,
+   * resolving the path-prefixed nested ids ("n_outer/n_inner", ADR-0017).
+   * Falls back to the deepest resolvable prefix; no-op when nothing
+   * resolves. Supersedes `focusNode` for the Preview findings list.
+   */
+  focusFinding: (findingNodeId: string) => void;
   /** Shallow-merge `patch` into the node's `config`, returning a new IR. */
   updateNodeConfig: (nodeId: string, patch: Record<string, unknown>) => void;
   /** Patch one nested `modelParams` key (undefined clears it). */
@@ -82,25 +116,26 @@ export interface IRState {
    */
   setNodePosition: (nodeId: string, x: number, y: number) => void;
   /**
-   * Rename a top-level node and cascade every top-level reference to its old
-   * name (ADR-0036): var-segment `source` in every agent's
-   * `instruction.segments` and every entry of every agent's `config.tools[]`.
-   * Edges are id-keyed and left alone. No-op when the id is unknown or the
-   * name is unchanged. Identifier validity / uniqueness is the validator's
-   * job (invariant 1); Preview surfaces findings honestly.
+   * Rename a node in the active graph and cascade every reference to its old
+   * name across all nesting levels (ADR-0036, ADR-0050): var-segment `source`
+   * in every agent's `instruction.segments` and every entry of every agent's
+   * `config.tools[]`. Edges are id-keyed and left alone. No-op when the id is
+   * unknown or the name is unchanged. Identifier validity / uniqueness is the
+   * validator's job (invariant 1); Preview surfaces findings honestly.
    */
   renameNode: (nodeId: string, newName: string) => void;
   /**
    * Swap the entire IR (used by Load IR — ADR-0024). Clears the selection
-   * because node ids from the loaded IR don't match the previous graph.
+   * and resets `subgraphPath` because node ids from the loaded IR don't
+   * match the previous graph.
    */
   replaceIR: (ir: GraphIR) => void;
   /**
-   * Append a new disconnected node of the given type to the IR (ADR-0025).
-   * Mints a unique id + name across the entire IR (including nested
-   * sub-graphs), selects the new node so the inspector opens on it. The
-   * fresh node is unwired by design; Preview will surface the expected
-   * graph-shape findings until edges land in the next slice.
+   * Append a new disconnected node of the given type to the active graph
+   * (ADR-0025, ADR-0050). Mints a unique id + name across the entire root IR
+   * (including nested sub-graphs), selects the new node so the inspector
+   * opens on it. The fresh node is unwired by design; Preview will surface
+   * the expected graph-shape findings until the user connects it.
    */
   addNode: (type: AddableNodeType, position?: { x: number; y: number }) => void;
   /**
@@ -120,10 +155,10 @@ export interface IRState {
     newRoute: string | undefined,
   ) => void;
   /**
-   * Delete a top-level node and cascade-remove every edge that references it.
-   * Clears `selectedNodeId` if it matched the removed node — selection
-   * lifecycle is a store concern, not part of the pure reducer (ADR-0026).
-   * Also clears `selectedEdge` if it referenced the removed node.
+   * Delete a node from the active graph and cascade-remove every edge that
+   * references it. Clears `selectedNodeId` if it matched the removed node —
+   * selection lifecycle is a store concern, not part of the pure reducer
+   * (ADR-0026). Also clears `selectedEdge` if it referenced the removed node.
    */
   deleteNode: (nodeId: string) => void;
   /**
@@ -134,9 +169,12 @@ export interface IRState {
   /** Append a new schema with one default `field1: str` (ADR-0035). */
   addSchema: () => void;
   /**
-   * Rename a schema and cascade every top-level reference (agent / function /
-   * router / tool / humanInput refs + agent var-chip `schema` fields). No-op
-   * when `newName === oldName` or the schema doesn't exist.
+   * Rename a schema in the active graph and cascade every reference there
+   * (agent / function / router / tool / humanInput refs + agent var-chip
+   * `schema` fields). Active-graph-only is *complete*: schema refs resolve
+   * strictly per-level in the validator, so no cross-level reference can
+   * exist (ADR-0050). No-op when `newName === oldName` or the schema doesn't
+   * exist.
    */
   renameSchema: (oldName: string, newName: string) => void;
   /**
@@ -165,6 +203,7 @@ function edgeMatches(sel: SelectedEdge, from: string, to: string): boolean {
 export function createIRStore(initial: GraphIR): IRStore {
   return create<IRState>((set) => ({
     ir: initial,
+    subgraphPath: [],
     selectedNodeId: null,
     selectedEdge: null,
     focusRequest: null,
@@ -174,6 +213,32 @@ export function createIRStore(initial: GraphIR): IRStore {
         selectedEdge: null,
         focusRequest: { nodeId, nonce: (s.focusRequest?.nonce ?? 0) + 1 },
       })),
+    enterSubgraph: (workflowNodeId) =>
+      set((s) => {
+        const path = [...s.subgraphPath, workflowNodeId];
+        if (!graphAtPath(s.ir, path)) return {};
+        return { subgraphPath: path, selectedNodeId: null, selectedEdge: null };
+      }),
+    setSubgraphPath: (path) =>
+      set((s) => ({
+        subgraphPath: graphAtPath(s.ir, path) ? path : [],
+        selectedNodeId: null,
+        selectedEdge: null,
+      })),
+    focusFinding: (findingNodeId) =>
+      set((s) => {
+        const loc = resolveFindingPath(s.ir, findingNodeId);
+        if (!loc) return {};
+        return {
+          subgraphPath: loc.path,
+          selectedNodeId: loc.nodeId,
+          selectedEdge: null,
+          focusRequest: {
+            nodeId: loc.nodeId,
+            nonce: (s.focusRequest?.nonce ?? 0) + 1,
+          },
+        };
+      }),
     setSelectedNode: (id) =>
       set((s) => ({
         selectedNodeId: id,
@@ -187,24 +252,51 @@ export function createIRStore(initial: GraphIR): IRStore {
         selectedNodeId: edge === null ? s.selectedNodeId : null,
       })),
     updateNodeConfig: (nodeId, patch) =>
-      set((s) => ({ ir: applyNodeConfigPatch(s.ir, nodeId, patch) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          applyNodeConfigPatch(g, nodeId, patch),
+        ),
+      })),
     updateModelParam: (nodeId, key, value) =>
-      set((s) => ({ ir: applyModelParamPatch(s.ir, nodeId, key, value) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          applyModelParamPatch(g, nodeId, key, value),
+        ),
+      })),
     setNodePosition: (nodeId, x, y) =>
-      set((s) => ({ ir: applyNodePosition(s.ir, nodeId, x, y) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          applyNodePosition(g, nodeId, x, y),
+        ),
+      })),
     renameNode: (nodeId, newName) =>
-      set((s) => ({ ir: renameNodeReducer(s.ir, nodeId, newName) })),
-    replaceIR: (ir) => set({ ir, selectedNodeId: null, selectedEdge: null }),
+      set((s) => ({
+        ir: renameNodeAtReducer(s.ir, s.subgraphPath, nodeId, newName),
+      })),
+    replaceIR: (ir) =>
+      set({ ir, subgraphPath: [], selectedNodeId: null, selectedEdge: null }),
     addNode: (type, position) =>
       set((s) => {
-        const { ir, nodeId } = addNodeReducer(s.ir, type, position);
+        const { ir, nodeId } = addNodeAtReducer(
+          s.ir,
+          s.subgraphPath,
+          type,
+          position,
+        );
+        if (ir === s.ir) return {};
         return { ir, selectedNodeId: nodeId, selectedEdge: null };
       }),
     connectEdge: (fromId, toId, route) =>
-      set((s) => ({ ir: connectEdgeReducer(s.ir, fromId, toId, route) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          connectEdgeReducer(g, fromId, toId, route),
+        ),
+      })),
     setEdgeRoute: (fromId, toId, oldRoute, newRoute) =>
       set((s) => {
-        const ir = setEdgeRouteReducer(s.ir, fromId, toId, oldRoute, newRoute);
+        const ir = updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          setEdgeRouteReducer(g, fromId, toId, oldRoute, newRoute),
+        );
         // Keep the edge-selection coherent so the dropdown's value follows
         // the relabel without the user re-clicking the edge.
         const sel = s.selectedEdge;
@@ -220,7 +312,9 @@ export function createIRStore(initial: GraphIR): IRStore {
       }),
     deleteNode: (nodeId) =>
       set((s) => {
-        const ir = deleteNodeReducer(s.ir, nodeId);
+        const ir = updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          deleteNodeReducer(g, nodeId),
+        );
         const selectedNodeId =
           s.selectedNodeId === nodeId ? null : s.selectedNodeId;
         const selectedEdge =
@@ -228,11 +322,17 @@ export function createIRStore(initial: GraphIR): IRStore {
           (s.selectedEdge.from === nodeId || s.selectedEdge.to === nodeId)
             ? null
             : s.selectedEdge;
-        return { ir, selectedNodeId, selectedEdge };
+        // Defensive: unreachable from the UI (the workflow you're inside is
+        // not in the active graph's nodes), but the dev-window store can
+        // dispatch a delete of an ancestor — don't strand the path.
+        const subgraphPath = prunePath(s.subgraphPath, nodeId) as string[];
+        return { ir, selectedNodeId, selectedEdge, subgraphPath };
       }),
     deleteEdge: (fromId, toId) =>
       set((s) => {
-        const ir = deleteEdgeReducer(s.ir, fromId, toId);
+        const ir = updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          deleteEdgeReducer(g, fromId, toId),
+        );
         const selectedEdge =
           s.selectedEdge && edgeMatches(s.selectedEdge, fromId, toId)
             ? null
@@ -240,20 +340,39 @@ export function createIRStore(initial: GraphIR): IRStore {
         return { ir, selectedEdge };
       }),
     addSchema: () =>
-      set((s) => {
-        const { ir } = addSchemaReducer(s.ir);
-        return { ir };
-      }),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) => addSchemaReducer(g).ir),
+      })),
     renameSchema: (oldName, newName) =>
-      set((s) => ({ ir: renameSchemaReducer(s.ir, oldName, newName) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          renameSchemaReducer(g, oldName, newName),
+        ),
+      })),
     deleteSchema: (name) =>
-      set((s) => ({ ir: deleteSchemaReducer(s.ir, name) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          deleteSchemaReducer(g, name),
+        ),
+      })),
     addField: (schemaName) =>
-      set((s) => ({ ir: addFieldReducer(s.ir, schemaName) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          addFieldReducer(g, schemaName),
+        ),
+      })),
     updateField: (schemaName, fieldName, patch) =>
-      set((s) => ({ ir: updateFieldReducer(s.ir, schemaName, fieldName, patch) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          updateFieldReducer(g, schemaName, fieldName, patch),
+        ),
+      })),
     deleteField: (schemaName, fieldName) =>
-      set((s) => ({ ir: deleteFieldReducer(s.ir, schemaName, fieldName) })),
+      set((s) => ({
+        ir: updateGraphAtPath(s.ir, s.subgraphPath, (g) =>
+          deleteFieldReducer(g, schemaName, fieldName),
+        ),
+      })),
   }));
 }
 

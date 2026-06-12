@@ -13,6 +13,7 @@ import type {
   GraphNode,
   InstructionSegment,
 } from "@graphical-agents/ir";
+import { graphAtPath, updateGraphAtPath } from "./subgraph.ts";
 
 /** Shallow-merge `patch` into the named node's `config`, returning a new IR. */
 export function applyNodeConfigPatch(
@@ -85,9 +86,10 @@ export function applyNodePosition(
 }
 
 /**
- * Rename a top-level node AND cascade every top-level reference to the old
- * name. Node analog of `renameSchema` (ADR-0035): without the cascade a single
- * rename click would silently break codegen — the var-chip source binding
+ * Rename the node `nodeId` in the graph at `path` AND cascade every
+ * reference to the old name across **all** nesting levels (ADR-0050). Node
+ * analog of `renameSchema` (ADR-0035): without the cascade a single rename
+ * click would silently break codegen — the var-chip source binding
  * `<Schema.field from name>` (IR-SCHEMA invariant 1) and an agent's
  * `config.tools[]` both address other nodes by `name`.
  *
@@ -95,42 +97,85 @@ export function applyNodePosition(
  *   - var-segment `source` in every agent's `instruction.segments`
  *   - every entry of every agent's `config.tools[]`
  *
+ * The cascade recurses through every `workflow.config.graph`. Var sources
+ * only resolve per-level in the validator, but `tools[]` entries resolve
+ * globally by name; node names are globally unique (ADR-0017), so a
+ * tree-wide cascade is correct for both and needs no scoping logic.
+ *
+ * The rename itself is path-scoped (never "find this id anywhere"): node ids
+ * are only conventionally global, so a hand-loaded IR may reuse an id across
+ * levels.
+ *
  * Edges are NOT touched: `Edge.from` / `Edge.to` carry node `id`s, not names.
  *
- * No-op (returns the input IR ref) when `nodeId` doesn't name a top-level node
- * or `newName === oldName`. Identifier validity / uniqueness is NOT
- * re-implemented here — invariant 1 lives in `validate.ts` and Preview
- * surfaces `INVALID_NODE_NAME` / `DUPLICATE_NODE_NAME` honestly
+ * No-op (returns the input IR ref) when `path` doesn't resolve, `nodeId`
+ * isn't in that graph, or `newName === oldName`. Identifier validity /
+ * uniqueness is NOT re-implemented here — invariant 1 lives in `validate.ts`
+ * and Preview surfaces `INVALID_NODE_NAME` / `DUPLICATE_NODE_NAME` honestly
  * (ADR-0023 mirror-the-validator posture).
- *
- * Top-level only: nested `workflow.config.graph.nodes` are out of scope,
- * consistent with the nested-graph editing deferral across
- * ADR-0017 / ADR-0023 / ADR-0026 / ADR-0029 / ADR-0035. When sub-graph editing
- * lands, the cascade will need to recurse (or the sub-graph slice picks it up
- * as a sibling concern).
  *
  * Pure: new IR, original untouched, unaffected sibling nodes preserve
  * referential identity so React Flow doesn't re-render unrelated cards.
  */
+export function renameNodeAt(
+  ir: GraphIR,
+  path: readonly string[],
+  nodeId: string,
+  newName: string,
+): GraphIR {
+  const graph = graphAtPath(ir, path);
+  if (!graph) return ir;
+  const target = graph.nodes.find((n) => n.id === nodeId);
+  if (!target) return ir;
+  const oldName = target.name;
+  if (newName === oldName) return ir;
+
+  // Pass 1: rename the target node, path-scoped.
+  const renamed = updateGraphAtPath(ir, path, (g) => ({
+    ...g,
+    nodes: g.nodes.map((n): GraphNode =>
+      n.id === nodeId ? ({ ...n, name: newName } as GraphNode) : n,
+    ),
+  }));
+
+  // Pass 2: cascade references across every level. The renamed node itself
+  // no longer carries `oldName`, so the cascade can't touch it.
+  return cascadeGraph(renamed, oldName, newName);
+}
+
+/** Back-compat top-level entry point: `renameNodeAt` with the root path. */
 export function renameNode(
   ir: GraphIR,
   nodeId: string,
   newName: string,
 ): GraphIR {
-  const target = ir.nodes.find((n) => n.id === nodeId);
-  if (!target) return ir;
-  const oldName = target.name;
-  if (newName === oldName) return ir;
+  return renameNodeAt(ir, [], nodeId, newName);
+}
 
-  const nodes = ir.nodes.map((n): GraphNode => {
-    if (n.id === nodeId) {
-      return { ...n, name: newName } as GraphNode;
+/**
+ * Apply `cascadeAgent` to every agent at every nesting level. Same-reference
+ * no-op discipline throughout so untouched graphs and nodes keep referential
+ * identity.
+ */
+function cascadeGraph(g: GraphIR, oldName: string, newName: string): GraphIR {
+  let changed = false;
+  const nodes = g.nodes.map((n): GraphNode => {
+    if (n.type === "agent") {
+      const next = cascadeAgent(n as AgentNode, oldName, newName);
+      if (next !== n) changed = true;
+      return next;
     }
-    if (n.type !== "agent") return n;
-    return cascadeAgent(n as AgentNode, oldName, newName);
+    if (n.type === "workflow") {
+      const nextSub = cascadeGraph(n.config.graph, oldName, newName);
+      if (nextSub !== n.config.graph) {
+        changed = true;
+        return { ...n, config: { ...n.config, graph: nextSub } };
+      }
+      return n;
+    }
+    return n;
   });
-
-  return { ...ir, nodes };
+  return changed ? { ...g, nodes } : g;
 }
 
 function cascadeAgent(

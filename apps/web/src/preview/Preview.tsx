@@ -8,7 +8,7 @@ import { useIRStore } from "../store/irStore.ts";
 // compile path; black formatting is opt-in and lives in later slices.
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
 import type { GeneratedProject } from "../../../../packages/codegen/src/project.ts";
-import { resolveFindingTarget } from "../store/findingTarget.ts";
+import { resolveFindingPath } from "../store/subgraph.ts";
 import { EASE_OUT, findingItem } from "../anim/presets.ts";
 import type { CodegenTarget } from "../target/targets.ts";
 import { useTargetStore } from "../target/targetStore.ts";
@@ -40,7 +40,7 @@ const DEFAULT_FILE = "agents.py";
  */
 function Findings({ findings }: { findings: ValidationError["findings"] }) {
   const ir = useIRStore((s) => s.ir);
-  const focusNode = useIRStore((s) => s.focusNode);
+  const focusFinding = useIRStore((s) => s.focusFinding);
 
   // Stable per-finding keys; duplicates (same code+node+message) get a
   // disambiguating counter so React keys stay unique.
@@ -64,7 +64,11 @@ function Findings({ findings }: { findings: ValidationError["findings"] }) {
       <ul className="findings">
         <AnimatePresence mode="popLayout" initial={false}>
           {rows.map(({ f, key }) => {
-            const target = resolveFindingTarget(f.nodeId, ir);
+            // Path-prefixed nested ids ("n_outer/n_inner", ADR-0017)
+            // navigate into the owning sub-graph and center the actual
+            // node, instead of landing on the enclosing workflow card
+            // (ADR-0050).
+            const target = resolveFindingPath(ir, f.nodeId);
             const body = (
               <>
                 <span className="finding-row__dot" aria-hidden="true" />
@@ -90,7 +94,7 @@ function Findings({ findings }: { findings: ValidationError["findings"] }) {
                     type="button"
                     className="finding-row__btn"
                     title="Show this node on the canvas"
-                    onClick={() => focusNode(target)}
+                    onClick={() => focusFinding(f.nodeId!)}
                   >
                     {body}
                   </button>

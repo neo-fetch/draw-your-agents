@@ -12,6 +12,7 @@ import {
   type ReactFlowInstance,
 } from "@xyflow/react";
 import { useIRStore } from "../store/irStore.ts";
+import { selectActiveGraph } from "../store/subgraph.ts";
 import { IRNode, type IRNodeData } from "./IRNode.tsx";
 import { StartNode } from "./StartNode.tsx";
 import { CanvasEmptyState } from "./CanvasEmptyState.tsx";
@@ -51,7 +52,13 @@ function startNodePosition(nodes: { ui?: { x: number; y: number } }[]): {
 }
 
 export function Canvas() {
-  const ir = useIRStore((s) => s.ir);
+  // The canvas projects the *active* graph (ADR-0050): the root, or the
+  // sub-graph of the workflow node the user zoomed into. Sub-graphs are
+  // complete IRs with their own START edges and ui positions, so the
+  // projection below works unchanged at any depth.
+  const graph = useIRStore(selectActiveGraph);
+  const subgraphPath = useIRStore((s) => s.subgraphPath);
+  const enterSubgraph = useIRStore((s) => s.enterSubgraph);
   // Grid colors come from the theme registry, not CSS — React Flow's
   // <Background color> lands on SVG presentation attributes, which don't
   // resolve var() (ADR-0044).
@@ -79,15 +86,36 @@ export function Canvas() {
   // instance or node is missing; `measured` is undefined before first layout,
   // so fall back to nominal half-extents. Cannot loop: `focusRequest` only
   // changes on a finding click, and `setCenter` never writes the store.
+  // When `focusFinding` also switched the sub-graph (ADR-0050), React Flow
+  // may not have ingested the new `nodes` prop yet — retry once on the next
+  // frame before giving up.
   const focusRequest = useIRStore((s) => s.focusRequest);
   useEffect(() => {
-    if (!focusRequest || !rfInstance.current) return;
-    const node = rfInstance.current.getNode(focusRequest.nodeId);
-    if (!node) return;
-    const cx = node.position.x + (node.measured?.width ?? 180) / 2;
-    const cy = node.position.y + (node.measured?.height ?? 60) / 2;
-    void rfInstance.current.setCenter(cx, cy, { duration: 300 });
+    if (!focusRequest) return;
+    const center = (retry: boolean): void => {
+      const inst = rfInstance.current;
+      if (!inst) return;
+      const node = inst.getNode(focusRequest.nodeId);
+      if (!node) {
+        if (retry) requestAnimationFrame(() => center(false));
+        return;
+      }
+      const cx = node.position.x + (node.measured?.width ?? 180) / 2;
+      const cy = node.position.y + (node.measured?.height ?? 60) / 2;
+      void inst.setCenter(cx, cy, { duration: 300 });
+    };
+    center(true);
   }, [focusRequest]);
+
+  // Re-frame the viewport when navigating between graphs (zoom in via
+  // double-click / breadcrumb jump back out). rAF: React Flow ingests the
+  // new `nodes` prop in its own effect, so fitting synchronously would frame
+  // the *previous* graph. Best-effort, same posture as ADR-0043.
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      void rfInstance.current?.fitView({ duration: 300 });
+    });
+  }, [subgraphPath]);
 
   // Map IR nodes to React Flow nodes, prepending the synthetic START node
   // so users can drag from it like any other source handle (ADR-0026).
@@ -98,13 +126,13 @@ export function Canvas() {
     const start: RFNode = {
       id: START_NODE_ID,
       type: "ir-start",
-      position: startNodePosition(ir.nodes),
+      position: startNodePosition(graph.nodes),
       data: {},
       deletable: false,
       selectable: false,
       draggable: false,
     };
-    const rest: RFNode<IRNodeData>[] = ir.nodes.map((n) => ({
+    const rest: RFNode<IRNodeData>[] = graph.nodes.map((n) => ({
       id: n.id,
       type: "ir",
       position: { x: n.ui?.x ?? 0, y: n.ui?.y ?? 0 },
@@ -112,7 +140,7 @@ export function Canvas() {
       data: { node: n, selected: n.id === selectedNodeId },
     }));
     return [start, ...rest];
-  }, [ir.nodes, selectedNodeId]);
+  }, [graph.nodes, selectedNodeId]);
 
   // Every IR edge — including START edges — becomes a React Flow edge now
   // that START is a real (synthetic) node. `selected` drives RF's Delete
@@ -120,7 +148,7 @@ export function Canvas() {
   // selection-bridge round-trips back to the right IR edge (ADR-0027).
   const rfEdges: RFEdge[] = useMemo(
     () =>
-      ir.edges.map((e) => {
+      graph.edges.map((e) => {
         const id = edgeId(e.from, e.to, e.route);
         const isSelected =
           selectedEdge !== null &&
@@ -135,7 +163,7 @@ export function Canvas() {
           selected: isSelected,
         };
       }),
-    [ir.edges, selectedEdge],
+    [graph.edges, selectedEdge],
   );
 
   // Resolve an RF edge id back to the IR edge triple. Necessary because
@@ -143,9 +171,9 @@ export function Canvas() {
   // dispatch into the store.
   const edgeByRFId = useMemo(() => {
     const m = new Map<string, { from: string; to: string; route?: string }>();
-    for (const e of ir.edges) m.set(edgeId(e.from, e.to, e.route), e);
+    for (const e of graph.edges) m.set(edgeId(e.from, e.to, e.route), e);
     return m;
-  }, [ir.edges]);
+  }, [graph.edges]);
 
   // Bridge React Flow's internal selection + drag events back into our
   // store. `select` events drive node selection (and React Flow's Delete
@@ -195,7 +223,7 @@ export function Canvas() {
     // routes (the validator would already be flagging ROUTER_NO_ROUTES),
     // leave the edge unlabeled and surface ROUTER_UNLABELED_EDGE honestly
     // (ADR-0027, follows ADR-0026's honest-surface posture).
-    const source = ir.nodes.find((n) => n.id === conn.source);
+    const source = graph.nodes.find((n) => n.id === conn.source);
     const route =
       source?.type === "router" ? source.config.routes[0] : undefined;
     connectEdge(conn.source, conn.target, route);
@@ -236,6 +264,12 @@ export function Canvas() {
         if (n.id === START_NODE_ID) return;
         setSelectedNode(n.id);
       }}
+      onNodeDoubleClick={(_e, n) => {
+        // Zoom into a workflow node's sub-graph (ADR-0050). The Inspector's
+        // "Open sub-graph" button is the discoverable alternative.
+        const irNode = graph.nodes.find((x) => x.id === n.id);
+        if (irNode?.type === "workflow") enterSubgraph(irNode.id);
+      }}
       onPaneClick={() => {
         setSelectedNode(null);
         setSelectedEdge(null);
@@ -275,7 +309,16 @@ export function Canvas() {
       />
       <Controls />
     </ReactFlow>
-    {ir.nodes.length === 0 && <CanvasEmptyState />}
+    {/* The example-loading empty state swaps the whole IR (`replaceIR`), so
+        it only belongs at the root; an emptied sub-graph gets a hint. */}
+    {graph.nodes.length === 0 &&
+      (subgraphPath.length === 0 ? (
+        <CanvasEmptyState />
+      ) : (
+        <div className="canvas-empty-subgraph">
+          Empty sub-graph — add nodes from the palette.
+        </div>
+      ))}
     </div>
   );
 }
