@@ -131,13 +131,25 @@
   user-select: none;
 }
 
-.landing__foot a {
+.landing__foot a,
+.landing__foot .landing__link {
   color: inherit;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* The Bathory tribute is now an in-app nav button styled as the inline link. */
+.landing__foot .landing__link {
+  font: inherit;
+  letter-spacing: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
 .landing__foot a:hover,
-.landing__foot a:focus-visible {
+.landing__foot a:focus-visible,
+.landing__foot .landing__link:hover,
+.landing__foot .landing__link:focus-visible {
   color: var(--ink-soft);
 }
 

@@ -56,6 +56,22 @@ test("returnToLanding: back to the picker, target kept in-session", () => {
   assert.equal(store.getState().target, "langgraph");
 });
 
+test("showBathory: opens the inspiration page, target untouched", () => {
+  const store = createTargetStore();
+  store.getState().chooseTarget("langgraph");
+  store.getState().showBathory();
+  assert.equal(store.getState().phase, "bathory");
+  assert.equal(store.getState().target, "langgraph");
+});
+
+test("returnToLanding: backs out of the bathory page to the picker", () => {
+  const store = createTargetStore();
+  store.getState().showBathory();
+  assert.equal(store.getState().phase, "bathory");
+  store.getState().returnToLanding();
+  assert.equal(store.getState().phase, "landing");
+});
+
 test("the store's target values drive distinct compile() outputs", () => {
   const ir = loadFixture();
   const adk = compile(ir, { target: "adk" });

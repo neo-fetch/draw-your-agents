@@ -1,0 +1,163 @@
+/* =========================================================================
+   Bathory inspiration page — full-screen story behind the theme.
+   The wallpaper is a rotating reel of greyscale late-'80s extreme-metal
+   album sleeves (the source of the base16 "Black Metal (Bathory)" palette).
+   The page root carries data-theme="bathory", so tokens here resolve to the
+   bone-on-black-with-one-red palette no matter the user's active theme.
+   Tokens only, like landing.css; the gif is hotlinked (external URL) so the
+   vite-plugin-singlefile build needs no asset handling.
+   ========================================================================= */
+
+.bathory-page {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow: auto;
+  background: var(--paper);
+  color: var(--ink);
+  /* The rotating greyscale sleeves, tiled small so several covers show at
+     once; grayscale() guards against any color creeping into the reel. */
+  background-image: url("https://64.media.tumblr.com/7bae6b83be5277a6dc5279e348346f47/tumblr_odeek1BJT91utocyeo1_400.gif");
+  background-repeat: repeat;
+  background-size: 220px auto;
+  background-attachment: fixed;
+}
+
+/* Dark scrim over the wallpaper so the bone-white text stays legible; a touch
+   of grayscale + contrast keeps the reel monochrome and recessive. */
+.bathory-page__scrim {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  backdrop-filter: grayscale(1) contrast(0.9) brightness(0.7);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(6, 6, 7, 0.78) 0%,
+    rgba(6, 6, 7, 0.92) 70%,
+    rgba(6, 6, 7, 0.97) 100%
+  );
+}
+
+.bathory-page__inner {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 56px 28px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.bathory-page__head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.bathory-page__back {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.bathory-page__back:hover,
+.bathory-page__back:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.bathory-page__kicker {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.bathory-page__title {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: clamp(48px, 12vmin, 96px);
+  line-height: 0.9;
+  letter-spacing: -0.01em;
+  margin: 0;
+  color: var(--ink);
+  text-shadow: var(--wordmark-glow, none);
+}
+
+.bathory-card {
+  background: rgba(11, 11, 13, 0.66);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-md);
+  padding: 18px 20px;
+}
+
+.bathory-card h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 19px;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+
+.bathory-card p {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.bathory-card code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--code-ink, var(--ink));
+}
+
+.bathory-card a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.bathory-card a:hover,
+.bathory-card a:focus-visible {
+  color: var(--accent-deep, var(--accent));
+}
+
+.bathory-card strong {
+  color: var(--ink);
+}
+
+.bathory-accent {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.bathory-page__foot {
+  margin-top: 10px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-style: italic;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 640px) {
+  .bathory-page__inner {
+    padding: 40px 18px 56px;
+  }
+}

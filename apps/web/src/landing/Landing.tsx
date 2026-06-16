@@ -16,6 +16,7 @@ import { LangGraphLogo } from "./logos/LangGraphLogo.tsx";
 
 export function Landing() {
   const chooseTarget = useTargetStore((s) => s.chooseTarget);
+  const showBathory = useTargetStore((s) => s.showBathory);
   const langgraph = TARGET_BY_ID.get("langgraph")!;
   const adk = TARGET_BY_ID.get("adk")!;
 
@@ -59,13 +60,9 @@ export function Landing() {
         <m.footer className="landing__foot" variants={paneItem}>
           runs in your browser · free for individuals &amp; non-profits · in memory of
           Quorthon — the dark theme is a{" "}
-          <a
-            href="https://github.com/neo-fetch/draw-your-agents#-why-bathory"
-            target="_blank"
-            rel="noreferrer"
-          >
+          <button type="button" className="landing__link" onClick={showBathory}>
             tribute to Bathory
-          </a>
+          </button>
         </m.footer>
       </m.div>
     </m.div>
