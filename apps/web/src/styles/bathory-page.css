@@ -23,18 +23,21 @@
   background-attachment: fixed;
 }
 
-/* Dark scrim over the wallpaper so the bone-white text stays legible; a touch
-   of grayscale + contrast keeps the reel monochrome and recessive. */
+/* Vignette over the wallpaper: dark enough to frame the content and seat the
+   header, light enough that the rotating sleeves stay clearly visible. Text
+   legibility is owned by the cards (their own backgrounds), not this layer, so
+   it can stay translucent. grayscale() keeps the reel monochrome; no
+   brightness cut here — that was burying the gif. */
 .bathory-page__scrim {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  backdrop-filter: grayscale(1) contrast(0.9) brightness(0.7);
+  backdrop-filter: grayscale(1);
   background: radial-gradient(
     ellipse at center,
-    rgba(6, 6, 7, 0.78) 0%,
-    rgba(6, 6, 7, 0.92) 70%,
-    rgba(6, 6, 7, 0.97) 100%
+    rgba(6, 6, 7, 0.35) 0%,
+    rgba(6, 6, 7, 0.52) 70%,
+    rgba(6, 6, 7, 0.66) 100%
   );
 }
 
