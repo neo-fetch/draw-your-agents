@@ -61,6 +61,7 @@ export function Toolbar() {
   const expandPane = useUIStore((s) => s.expandPane);
   const target = useTargetStore((s) => s.target);
   const setTarget = useTargetStore((s) => s.setTarget);
+  const showBathory = useTargetStore((s) => s.showBathory);
   const returnToLanding = useTargetStore((s) => s.returnToLanding);
   const otherTarget = target === "adk" ? "langgraph" : "adk";
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -177,6 +178,15 @@ export function Toolbar() {
             onClick={returnToLanding}
           >
             ⌂
+          </button>
+          <button
+            type="button"
+            className="wordmark__bathory"
+            title="Why Bathory — the theme and the ethos"
+            aria-label="Why Bathory"
+            onClick={showBathory}
+          >
+            🖤
           </button>
         </div>
         {/* file cluster — plan: start, save, resume */}

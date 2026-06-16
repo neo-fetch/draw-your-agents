@@ -58,7 +58,8 @@
 }
 
 /* back to the landing target picker */
-.wordmark__home {
+.wordmark__home,
+.wordmark__bathory {
   background: none;
   border: none;
   padding: 0 2px;
@@ -67,11 +68,22 @@
   align-self: center;
   color: var(--ink-faint);
   cursor: pointer;
-  transition: color 120ms ease;
+  transition: color 120ms ease, filter 120ms ease;
 }
 .wordmark__home:hover,
-.wordmark__home:focus-visible {
+.wordmark__home:focus-visible,
+.wordmark__bathory:hover,
+.wordmark__bathory:focus-visible {
   color: var(--accent);
+}
+/* The 🖤 glyph carries its own color; lean on grayscale/opacity for the
+   resting state and let it bloom on hover. */
+.wordmark__bathory {
+  filter: grayscale(1) opacity(0.55);
+}
+.wordmark__bathory:hover,
+.wordmark__bathory:focus-visible {
+  filter: grayscale(0) opacity(1);
 }
 
 .toolbar {

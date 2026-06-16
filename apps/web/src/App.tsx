@@ -1,4 +1,5 @@
 import { AnimatePresence, LazyMotion, MotionConfig, domMax, m } from "motion/react";
+import { BathoryPage } from "./bathory/BathoryPage.tsx";
 import { Canvas } from "./canvas/Canvas.tsx";
 import { SubgraphBreadcrumb } from "./canvas/SubgraphBreadcrumb.tsx";
 import { Inspector } from "./inspector/Inspector.tsx";
@@ -88,6 +89,8 @@ export function App() {
         <AnimatePresence mode="wait" initial={false}>
           {phase === "landing" ? (
             <Landing key="landing" />
+          ) : phase === "bathory" ? (
+            <BathoryPage key="bathory" />
           ) : (
             <Workbench key="builder" />
           )}

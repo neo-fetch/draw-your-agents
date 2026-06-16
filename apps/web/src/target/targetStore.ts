@@ -14,7 +14,7 @@
 import { create, type StoreApi, type UseBoundStore } from "zustand";
 import { DEFAULT_TARGET, type CodegenTarget } from "./targets.ts";
 
-export type AppPhase = "landing" | "builder";
+export type AppPhase = "landing" | "builder" | "bathory";
 
 export interface TargetState {
   phase: AppPhase;
@@ -23,6 +23,12 @@ export interface TargetState {
   chooseTarget: (target: CodegenTarget) => void;
   /** In-builder switch (toolbar tag); the phase is untouched. */
   setTarget: (target: CodegenTarget) => void;
+  /**
+   * Open the Bathory inspiration page (the "why" behind the theme and the
+   * project's ethos). Like the other phase moves, the target and IR store
+   * are untouched, so the graph survives the round-trip.
+   */
+  showBathory: () => void;
   /**
    * Back to the landing page. The target and the IR store are untouched —
    * the graph survives the round-trip because it lives in the module-level
@@ -40,6 +46,7 @@ export function createTargetStore(): TargetStore {
     target: DEFAULT_TARGET,
     chooseTarget: (target) => set({ target, phase: "builder" }),
     setTarget: (target) => set({ target }),
+    showBathory: () => set({ phase: "bathory" }),
     returnToLanding: () => set({ phase: "landing" }),
   }));
 }
