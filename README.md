@@ -292,6 +292,8 @@ pip install black
 
 ## 🖤 Why Bathory
 
+![Quorthon](https://images.squarespace-cdn.com/content/v1/59c9b7ead2b857a85063e490/1559530848175-P00RZPJTEQSMGSQZKIYD/Quorthon.jpg)
+
 The dark theme in this builder is called **bathory**, and it isn't just a color choice — it's the reason this project looks, ships, and licenses the way it does.
 
 **Free and browser-only, by design.** Everything runs client-side: validation, code generation, the live preview, even the `.zip` bundler is pure TypeScript executing in your tab. No server, no account, no telemetry, nothing to pay. The project is built to be free for individuals and non-profits, and the [AGPL-3.0 license](#-license) keeps it that way — whoever builds on it must pass the same freedom downstream.
