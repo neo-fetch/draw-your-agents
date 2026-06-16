@@ -204,6 +204,26 @@ node scripts/compile.ts packages/ir/fixtures/city-time.ir.json
 
 ---
 
+## 🆚 Not a Workflow Runtime (How This Differs from n8n)
+
+People often see a node-graph editor for AI workflows and assume it's "n8n for agents." It isn't — they're different categories of tool. **This project is a compiler; n8n is a runtime.** Graphical Agents takes the graph you draw and emits a standalone, framework-native Python project that *you* own and run on your own infrastructure. n8n keeps your workflow inside its own engine and executes it for you; its "export" is a JSON snapshot of the visual config for moving between n8n instances, not source code you can run independently.
+
+| | Graphical Agents | n8n |
+|---|---|---|
+| **Category** | Visual → code compiler for agent graphs | Workflow-automation / iPaaS runtime |
+| **Output** | Standalone ADK / LangGraph Python project (`.zip`) | Running automations + a JSON config snapshot |
+| **Execution** | None — you run the generated code on your infra | n8n's own engine executes everything |
+| **Scope** | Multi-agent AI graphs (8 node types) | 400+ app integrations, triggers, ETL, broad automation |
+| **Triggers / connectors** | None | Webhooks, cron, polling, 400+ service connectors |
+| **Backend** | Browser-only, no server, no account | Self-hosted or cloud server |
+| **Lock-in** | Zero after export — the output is plain framework code | Workflows live inside n8n |
+
+In short: n8n answers *"build and operate this automation for me"*; Graphical Agents answers *"draw the agent graph and hand me the source code to run however I want."* Its real peers are tools like LangGraph Studio, Google's ADK tooling, Flowise, and Langflow — and even among those, the **code-export** (rather than run-it-for-you) posture is what sets it apart.
+
+> n8n details above reflect publicly documented behavior as of 2025–2026 and are summarized at a high level for positioning.
+
+---
+
 ## 🧪 Testing
 
 ### Two-Tier Test Architecture
