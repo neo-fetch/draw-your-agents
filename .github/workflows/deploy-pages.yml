@@ -1,0 +1,57 @@
+# Builds the visual builder (apps/web) and publishes it to GitHub Pages on
+# every push to main. Replaces the previous manual "rebuild docs/ and commit"
+# step that let the live site drift behind main (e.g. ADR-0051 shipped but the
+# deployed bundle kept the old validator).
+#
+# ONE-TIME SETUP (repo admin): Settings → Pages → Build and deployment →
+# Source → "GitHub Actions". This supersedes the old "Deploy from a branch
+# → /docs" setting; the committed docs/index.html artifact is no longer the
+# deploy source (the markdown docs under docs/ are unaffected).
+#
+# The build uses vite-plugin-singlefile, so the whole app is one self-contained
+# index.html — no base-path config is needed and it serves correctly at any URL.
+name: Deploy web app to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Least-privilege token plus the OIDC + pages scopes the deploy action needs.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One in-flight deploy at a time; newer pushes supersede older runs.
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24" # ≥23 for the native-TS test gate (CLAUDE.md)
+          cache: npm
+      - run: npm ci
+      # Gate: don't deploy a build that fails validation/codegen/web tests.
+      - run: npm test
+      - run: npm run build:pages # → docs/index.html (single self-contained file)
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
