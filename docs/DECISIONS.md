@@ -2516,3 +2516,48 @@ reducer oracles green via the `addNode`/`renameNode` compatibility wrappers); ma
 load the `nested` example, double-click `nested_workflow`, add/connect/rename nodes and
 edit schemas inside it, breadcrumb back out, export — the generated project reflects the
 nested edits.
+
+## ADR-0051 — Non-adjacent variables via session `state` (closes ADR-0006's deferral)
+**Context.** Until now data flow was **positional/adjacent only**: an agent reads exactly its
+immediate upstream's `Event(output=...)` as `node_input`, and every prompt chip
+(`<schema.field from source>`) had to come from that one schema — the single-schema rail
+(`VAR_INPUT_SCHEMA_MISMATCH`). Referencing a node three hops back meant re-emitting its output
+through every intermediate node. ADR-0006 ("schema-passing first") deferred the fix to a
+*second variable category* backed by session `state`; ARCHITECTURE §3 listed the `state`
+channel as Phase 3. This ADR implements that category.
+**Decisions.**
+- **One segment type, a `via` discriminant.** `VarSegment` gains `via?: "input" | "state"`
+  (omitted ⇒ `"input"`). Omitting it on every existing fixture keeps all goldens and fixtures
+  **byte-identical** — zero churn in the existing corpus. `"state"` is the non-adjacent form:
+  the source may be **any ancestor**, the value is read from session `state`, and the
+  single-schema rail does **not** apply (an agent may mix one positional input schema with
+  several state refs from different ancestor schemas).
+- **Two ADK prompt forms, both already blessed by the brief.** A positional var renders to the
+  source-bound `<schema.field from source>` (ADR-0008); a state var renders to the
+  `{schema.field}` ADK session form. **LangGraph needs no codegen change** — `renderPromptAssign`
+  already reads every var as `state["<source>_output"].<field>`, which is inherently non-adjacent;
+  only validation/UI gated it before. So state data flow stays **out of `edges`** (it is not
+  control flow); the edges compiler, React Flow graph, and both assemblers are untouched.
+- **Ancestor rule is a hard error (the one new control).** New codes
+  `STATE_VAR_SOURCE_NOT_NODE / _NOT_STRUCTURED / _SCHEMA_MISMATCH_SOURCE / _UNKNOWN_SCHEMA /
+  _FIELD_NOT_FOUND / _SOURCE_NOT_ANCESTOR`. Unlike the positional *UI advisory* (a non-upstream
+  source is only a hint, PHASE-2-DESIGN decision 7), a **state** source that is not a
+  control-flow ancestor is a guaranteed-empty key at runtime → `STATE_VAR_SOURCE_NOT_ANCESTOR`
+  blocks codegen. The validator computes ancestors with a reverse-BFS over `edges`, mirroring
+  `upstreamProducers` in `apps/web/src/store/insertVariable.ts` so palette and validator agree.
+- **Web: a second, rail-free insertion path.** `insertStateVariable` appends a `via:"state"`
+  segment and does **not** touch `inputSchemaRef` or the producer; `stateCandidateVariables`
+  offers only ancestors and drops the single-schema rail. The Lexical `VariableNode`, the
+  segments↔editor bridge, and a "From session state" palette section carry `via` end-to-end;
+  state chips render with the `{schema.field}` label and a distinct dashed style.
+- **Scope.** State refs inside `loop` sub-agents (plain-string instructions) and across
+  `workflow` nesting boundaries are out (consistent with the flat-namespace deferrals); state
+  deps are not yet drawn as canvas edges. The exact ADK runtime resolution of `{schema.field}`
+  from session state is the documented item for the Phase-5 fidelity service — goldens here are
+  pinned at the `py_compile` level, same posture as the rest of the codegen suite.
+**Verify.** `npm test` — new `state-vars` fixture + ADK/LangGraph goldens; validator spec
+(`state-vars` clean; `invalid/state-var-not-ancestor` reports the ancestor + field codes and
+proves `VAR_INPUT_SCHEMA_MISMATCH` does **not** fire); web oracles (`insertStateVariable.test.ts`,
+`segmentsBridge` `via` round-trip). Manual: load the "Session-state variables" example, open
+`summarize`, insert a "From session state" chip from a non-adjacent ancestor — the chip reads
+`{Schema.field}`, no edge or `inputSchemaRef` change, and the preview emits the state read.

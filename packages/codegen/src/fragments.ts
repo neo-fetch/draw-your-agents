@@ -269,12 +269,20 @@ export function renderToolWrapper(node: ToolNode): Fragment {
   return { imports, code: body };
 }
 
-/** Render an Agent instruction template as one source-bound string (ADR-0008). */
+/**
+ * Render an Agent instruction template as one string. A positional var renders
+ * to the source-bound form `<schema.field from source>` (ADR-0008); a
+ * non-adjacent `via: "state"` var renders to the `{schema.field}` ADK
+ * session-state form (ADR-0051) — read from session state, not `node_input`.
+ */
 function renderInstruction(template: InstructionTemplate): string {
   const text = template.segments
-    .map((seg) =>
-      seg.type === "text" ? seg.value : `<${seg.schema}.${seg.field} from ${seg.source}>`,
-    )
+    .map((seg) => {
+      if (seg.type === "text") return seg.value;
+      return seg.via === "state"
+        ? `{${seg.schema}.${seg.field}}`
+        : `<${seg.schema}.${seg.field} from ${seg.source}>`;
+    })
     .join("");
   return pyStr(text);
 }

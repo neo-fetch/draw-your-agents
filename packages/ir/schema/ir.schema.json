@@ -80,7 +80,8 @@
                   "type": { "const": "var" },
                   "schema": { "$ref": "#/definitions/identifier" },
                   "field": { "$ref": "#/definitions/identifier" },
-                  "source": { "$ref": "#/definitions/identifier" }
+                  "source": { "$ref": "#/definitions/identifier" },
+                  "via": { "enum": ["input", "state"] }
                 }
               }
             ]

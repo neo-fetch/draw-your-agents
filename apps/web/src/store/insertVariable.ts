@@ -75,6 +75,42 @@ export function insertVariable(
   return { ...ir, nodes };
 }
 
+/**
+ * Append a `VarSegment` with `via: "state"` to the named agent's instruction
+ * (ADR-0051). Unlike {@link insertVariable}, this does **not** set
+ * `inputSchemaRef` or mutate the producer — non-adjacent (session-`state`)
+ * variables are a second category exempt from the single-schema rail. Returns a
+ * new IR; original untouched. No-op when `agentId` is unknown or not an agent.
+ */
+export function insertStateVariable(
+  ir: GraphIR,
+  agentId: string,
+  ref: VariableRef,
+): GraphIR {
+  const target = ir.nodes.find((n) => n.id === agentId);
+  if (!target || target.type !== "agent") return ir;
+
+  const varSeg: VarSegment = {
+    type: "var",
+    schema: ref.schema,
+    field: ref.field,
+    source: ref.source,
+    via: "state",
+  };
+  const nodes = ir.nodes.map((n): GraphNode => {
+    if (n.id !== agentId) return n;
+    const a = n as AgentNode;
+    return {
+      ...a,
+      config: {
+        ...a.config,
+        instruction: { segments: [...a.config.instruction.segments, varSeg] },
+      },
+    };
+  });
+  return { ...ir, nodes };
+}
+
 // ---- palette candidate computation --------------------------------------
 
 /**
@@ -210,6 +246,45 @@ export function candidateVariables(
         field,
         isUpstream: upstream.has(n.name),
       });
+    }
+  }
+  return out;
+}
+
+/**
+ * Candidate state-variable triples for `agentId`: the fields of every
+ * **ancestor** node's structured output schema (ADR-0051). Two differences from
+ * {@link candidateVariables}:
+ *  - no single-schema rail — an agent may mix state variables from several
+ *    upstream schemas;
+ *  - only ancestors are offered, since a non-ancestor's state key is empty at
+ *    runtime (the validator hard-errors `STATE_VAR_SOURCE_NOT_ANCESTOR`).
+ * Reuses `upstreamProducers` so the palette and the validator agree on "ancestor".
+ */
+export function stateCandidateVariables(
+  ir: GraphIR,
+  agentId: string,
+): VariableRef[] {
+  const agent = ir.nodes.find((n) => n.id === agentId);
+  if (!agent || agent.type !== "agent") return [];
+
+  const ancestors = upstreamProducers(ir, agentId);
+  const schemaIndex = new Map<string, readonly string[]>();
+  for (const s of ir.schemas) {
+    schemaIndex.set(
+      s.name,
+      s.fields.map((f) => f.name),
+    );
+  }
+
+  const out: VariableRef[] = [];
+  for (const n of ir.nodes) {
+    if (n.id === agentId) continue;
+    if (!ancestors.has(n.name)) continue;
+    const ref = producerOutput(n);
+    if (!isStructuredSchema(ir, ref)) continue;
+    for (const field of schemaIndex.get(ref) ?? []) {
+      out.push({ source: n.name, schema: ref, field });
     }
   }
   return out;

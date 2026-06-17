@@ -87,6 +87,22 @@ test("chip at start and chip at end: [var, text, var] round-trips losslessly", (
   assert.deepStrictEqual(roundTrip(segs), segs);
 });
 
+test("state var chip (via: state) round-trips with its via flag and {schema.field} label", () => {
+  const segs: InstructionSegment[] = [
+    { type: "text", value: "Anchor: " },
+    {
+      type: "var",
+      schema: "Analysis",
+      field: "key_point",
+      source: "analyze",
+      via: "state",
+    },
+  ];
+  assert.deepStrictEqual(roundTrip(segs), segs);
+  // The chip label uses the {schema.field} session form, matching codegen.
+  assert.equal(varLabel("Analysis", "key_point", "analyze", "state"), "{Analysis.key_point}");
+});
+
 test("adjacent text segments coalesce on the way out", () => {
   // Two adjacent text segments are indistinguishable from one once they hit
   // the editor — coalescing is the documented behavior, not a bug.

@@ -26,7 +26,7 @@ Agents must be single-turn / task mode (ADK constraint).
 
 ## 3. Data-flow & variable model (the headline feature)
 - ADK Event channels: `output` (standard payload → next node's `node_input`, **one per node**),
-  `message` (user-facing), `state` (session-wide, deferred to Phase 3).
+  `message` (user-facing), `state` (session-wide; **non-adjacent variables shipped** — ADR-0051).
 - Agent `instruction` is stored as a **structured template** (segments), not a raw string, so it
   can be re-rendered on rename and validated:
 
@@ -43,6 +43,10 @@ Agents must be single-turn / task mode (ADK constraint).
 - **Dropping a chip can mutate the producer:** if the source emits `str`, it must be upgraded to a
   structured `output_schema` that contains the field; the consumer's `inputSchemaRef` is set to that
   schema. Validator enforces this. ([ADR-0006](DECISIONS.md))
+- **Non-adjacent variables** (`via: "state"`, [ADR-0051](DECISIONS.md)): a `var` segment may instead
+  read from session `state` for **any ancestor** node — rendered as the `{schema.field}` ADK session
+  form (LangGraph reads `state["<source>_output"].<field>`). Exempt from the single-schema rail;
+  the validator hard-errors a non-ancestor source (`STATE_VAR_SOURCE_NOT_ANCESTOR`).
 
 ## 4. Edges compiler (`packages/codegen`)
 The IR is a plain directed graph. The compiler linearizes it into ADK `edges=[...]`:
@@ -91,6 +95,6 @@ codegen; FastAPI Python fidelity service.
 - **Phase 0** — IR schema + edges compiler + templates + golden tests (headless). *In progress.*
 - **Phase 1** — Visual builder MVP (Agent/Function/Router/START, inspector, live preview, zip).
 - **Phase 2** — Variable system (chips, source-bound rendering, schema mutation, dependency inference).
-- **Phase 3** — Join, parallel, HumanInput, nested Workflow, Tools, session-state variables.
+- **Phase 3** — Join, parallel, HumanInput, nested Workflow, Tools, session-state variables (ADR-0051).
 - **Phase 4** — draw.io ingestion.
 - **Phase 5** — Python fidelity service + polish.

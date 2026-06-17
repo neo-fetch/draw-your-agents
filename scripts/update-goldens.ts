@@ -30,6 +30,7 @@ const PROJECTS = [
   { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json" },
   { name: "nested-schema", fixture: "packages/ir/fixtures/nested-schema.ir.json" },
   { name: "critic-loop", fixture: "packages/ir/fixtures/critic-loop.ir.json" },
+  { name: "state-vars", fixture: "packages/ir/fixtures/state-vars.ir.json" },
 ];
 
 const TARGETS = [

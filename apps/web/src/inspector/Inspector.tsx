@@ -387,6 +387,13 @@ function AgentForm({ node }: { node: AgentNode }) {
               updateNodeConfig(node.id, { inputSchemaRef: ref.schema });
             }
           }}
+          onInsertState={(ref) => {
+            // Non-adjacent session-state chip (ADR-0051): insert with
+            // `via: "state"`. The OnChangePlugin dispatches the new segments;
+            // unlike the positional path, `inputSchemaRef` is NOT touched —
+            // state variables are exempt from the single-schema rail.
+            editorApiRef.current?.insertVariable(ref, "state");
+          }}
         />
       </div>
       </FormSection>

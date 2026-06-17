@@ -57,9 +57,10 @@ export interface VariableEditorAPI {
   /**
    * Insert a chip at the editor's last-captured selection. Falls back to
    * the end of the prompt when no selection was ever made (e.g. the user
-   * never focused the editor before clicking the palette).
+   * never focused the editor before clicking the palette). `via: "state"`
+   * inserts a non-adjacent session-state chip (ADR-0051).
    */
-  insertVariable: (ref: VariableRef) => void;
+  insertVariable: (ref: VariableRef, via?: "input" | "state") => void;
 }
 
 export interface VariableEditorProps {
@@ -108,7 +109,7 @@ function InsertVariablePlugin({
   useEffect(() => {
     if (!apiRef) return;
     apiRef.current = {
-      insertVariable: (ref) => {
+      insertVariable: (ref, via) => {
         editor.update(() => {
           const saved = lastSelectionRef.current;
           if (saved !== null) {
@@ -117,7 +118,7 @@ function InsertVariablePlugin({
             // Fallback: no caret was ever set — append at the end.
             $getRoot().selectEnd();
           }
-          $insertNodes([$createVariableNode(ref)]);
+          $insertNodes([$createVariableNode({ ...ref, via })]);
         });
       },
     };
