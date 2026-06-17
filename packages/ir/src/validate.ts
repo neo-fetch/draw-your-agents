@@ -77,6 +77,13 @@ export const ValidationCode = {
   VAR_UNKNOWN_SCHEMA: "VAR_UNKNOWN_SCHEMA",
   VAR_FIELD_NOT_FOUND: "VAR_FIELD_NOT_FOUND",
   VAR_INPUT_SCHEMA_MISMATCH: "VAR_INPUT_SCHEMA_MISMATCH",
+  // Non-adjacent (session-`state`) prompt variables (ADR-0051)
+  STATE_VAR_SOURCE_NOT_NODE: "STATE_VAR_SOURCE_NOT_NODE",
+  STATE_VAR_SOURCE_NOT_STRUCTURED: "STATE_VAR_SOURCE_NOT_STRUCTURED",
+  STATE_VAR_SCHEMA_MISMATCH_SOURCE: "STATE_VAR_SCHEMA_MISMATCH_SOURCE",
+  STATE_VAR_UNKNOWN_SCHEMA: "STATE_VAR_UNKNOWN_SCHEMA",
+  STATE_VAR_FIELD_NOT_FOUND: "STATE_VAR_FIELD_NOT_FOUND",
+  STATE_VAR_SOURCE_NOT_ANCESTOR: "STATE_VAR_SOURCE_NOT_ANCESTOR",
   // Edges
   EDGE_FROM_UNKNOWN: "EDGE_FROM_UNKNOWN",
   EDGE_TO_START: "EDGE_TO_START",
@@ -311,8 +318,58 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
     return "outputType" in c ? c.outputType : c.outputSchemaRef;
   };
 
+  // Reverse-reachability: the set of node *names* that can transitively reach a
+  // given node id through `edgeList` (its control-flow ancestors). Memoized;
+  // mirrors `upstreamProducers` in apps/web/src/store/insertVariable.ts. State
+  // variables require their source to be an ancestor — otherwise the source's
+  // state key is not populated when the consumer runs.
+  const revAdj = new Map<string, string[]>(); // node id -> upstream node ids
+  for (const e of edgeList) {
+    const frm = e?.from;
+    const to = e?.to;
+    if (frm === START || frm === undefined || frm === null) continue;
+    if (!nodesById.has(to) || !nodesById.has(frm)) continue;
+    const list = revAdj.get(to);
+    if (list) list.push(frm);
+    else revAdj.set(to, [frm]);
+  }
+  const ancestorCache = new Map<string, Set<string>>();
+  const ancestorNamesOf = (nodeId: string): Set<string> => {
+    const cached = ancestorCache.get(nodeId);
+    if (cached) return cached;
+    const names = new Set<string>();
+    const seenIds = new Set<string>();
+    const work: string[] = [...(revAdj.get(nodeId) ?? [])];
+    while (work.length > 0) {
+      const cur = work.pop()!;
+      if (seenIds.has(cur)) continue;
+      seenIds.add(cur);
+      const nm = nodesById.get(cur)?.name;
+      if (typeof nm === "string") names.add(nm);
+      for (const prev of revAdj.get(cur) ?? []) work.push(prev);
+    }
+    ancestorCache.set(nodeId, names);
+    return names;
+  };
+
   // -- per-type checks --
-  const checkVarSegment = (ctx: string, agentCfg: Loose, seg: Loose, nodeId: string): void => {
+  // Schema/field existence — shared by both variable categories. `viaState`
+  // selects the finding codes so the UI can distinguish the two rails.
+  const checkVarSchemaField = (ctx: string, seg: Loose, nodeId: string, viaState: boolean): void => {
+    const sch = seg?.schema;
+    const fld = seg?.field;
+    const unknownSchema = viaState ? ValidationCode.STATE_VAR_UNKNOWN_SCHEMA : ValidationCode.VAR_UNKNOWN_SCHEMA;
+    const fieldNotFound = viaState ? ValidationCode.STATE_VAR_FIELD_NOT_FOUND : ValidationCode.VAR_FIELD_NOT_FOUND;
+    if (typeof sch !== "string" || !schemaFields.has(sch)) {
+      err(unknownSchema, `${ctx}: unknown schema ${repr(sch)}`, nodeId);
+    } else if (!schemaFields.get(sch)!.has(fld)) {
+      err(fieldNotFound, `${ctx}: schema ${sch} has no field ${repr(fld)}`, nodeId);
+    }
+  };
+
+  // Positional (adjacent) variable: source threads through `node_input`, so the
+  // agent's `inputSchemaRef` must equal the variable's schema (single-schema rail).
+  const checkInputVarSegment = (ctx: string, agentCfg: Loose, seg: Loose, nodeId: string): void => {
     const sch = seg?.schema;
     const fld = seg?.field;
     const src = seg?.source;
@@ -334,11 +391,7 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
         );
       }
     }
-    if (typeof sch !== "string" || !schemaFields.has(sch)) {
-      err(ValidationCode.VAR_UNKNOWN_SCHEMA, `${ctx}: unknown schema ${repr(sch)}`, nodeId);
-    } else if (!schemaFields.get(sch)!.has(fld)) {
-      err(ValidationCode.VAR_FIELD_NOT_FOUND, `${ctx}: schema ${sch} has no field ${repr(fld)}`, nodeId);
-    }
+    checkVarSchemaField(ctx, seg, nodeId, false);
     if (agentCfg?.inputSchemaRef !== sch) {
       err(
         ValidationCode.VAR_INPUT_SCHEMA_MISMATCH,
@@ -346,6 +399,45 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
         nodeId,
       );
     }
+  };
+
+  // Non-adjacent (session-`state`) variable: source may be **any ancestor**, the
+  // value is read from session state, and `inputSchemaRef` does not apply.
+  const checkStateVarSegment = (ctx: string, seg: Loose, nodeId: string): void => {
+    const sch = seg?.schema;
+    const fld = seg?.field;
+    const src = seg?.source;
+    if (typeof src !== "string" || !nameToId.has(src)) {
+      err(ValidationCode.STATE_VAR_SOURCE_NOT_NODE, `${ctx}: state variable source ${repr(src)} is not a node`, nodeId);
+    } else {
+      const out = producerOutput(nodesById.get(nameToId.get(src)!)!);
+      if (out === "str" || out === null || out === undefined) {
+        err(
+          ValidationCode.STATE_VAR_SOURCE_NOT_STRUCTURED,
+          `${ctx}: state variable {${sch}.${fld}} requires ${src} to output a structured schema, but it outputs ${repr(out)}`,
+          nodeId,
+        );
+      } else if (out !== sch) {
+        err(
+          ValidationCode.STATE_VAR_SCHEMA_MISMATCH_SOURCE,
+          `${ctx}: state variable schema ${repr(sch)} does not match ${src} output schema ${repr(out)}`,
+          nodeId,
+        );
+      }
+      if (!ancestorNamesOf(nodeId).has(src)) {
+        err(
+          ValidationCode.STATE_VAR_SOURCE_NOT_ANCESTOR,
+          `${ctx}: state variable source ${repr(src)} is not an upstream (ancestor) node — its session-state value would be empty at runtime`,
+          nodeId,
+        );
+      }
+    }
+    checkVarSchemaField(ctx, seg, nodeId, true);
+  };
+
+  const checkVarSegment = (ctx: string, agentCfg: Loose, seg: Loose, nodeId: string): void => {
+    if (seg?.via === "state") checkStateVarSegment(ctx, seg, nodeId);
+    else checkInputVarSegment(ctx, agentCfg, seg, nodeId);
   };
 
   for (const n of nodesById.values()) {

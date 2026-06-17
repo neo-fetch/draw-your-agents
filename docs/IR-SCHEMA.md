@@ -103,6 +103,9 @@ across parent + every nested sub-graph (invariant 1 holds across nesting).
 4. The graph is a DAG (no cycles in v1).
 5. Every type reference resolves to a scalar, `null` (where allowed), or a declared schema. Schema-typed field references must form a DAG — `SchemaField.type` may name another declared schema, but cycles (including self-reference) are rejected (ADR-0037).
 6. For each prompt `var` segment: `source` is a node; its output is the structured `schema`
-   (not `str`); the schema has `field`; the consuming agent's `inputSchemaRef` equals `schema`.
+   (not `str`); the schema has `field`. **Positional** (`via` omitted/`"input"`): the consuming
+   agent's `inputSchemaRef` equals `schema` (single-schema rail). **Session-state** (`via: "state"`,
+   ADR-0051): `source` must be a control-flow **ancestor** of the consumer; `inputSchemaRef` does
+   **not** apply (an agent may mix state variables from several ancestor schemas).
 7. Router: declared `routes` ⇔ out-edge `route` labels (no missing, no extra, none unlabeled).
    Non-router out-edges carry no `route` label.

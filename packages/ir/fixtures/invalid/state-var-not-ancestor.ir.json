@@ -1,0 +1,44 @@
+{
+  "irVersion": "0.1.0",
+  "name": "bad_state_var",
+  "description": "Deliberately invalid: a state variable whose source is a parallel sibling (not an ancestor) and whose field does not exist. Exercises STATE_VAR_SOURCE_NOT_ANCESTOR and STATE_VAR_FIELD_NOT_FOUND, and confirms the single-schema rail (VAR_INPUT_SCHEMA_MISMATCH) does NOT apply to state variables.",
+  "schemas": [
+    {
+      "name": "Foo",
+      "fields": [{ "name": "val", "type": "str" }]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_producer",
+      "type": "agent",
+      "name": "producer",
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": { "segments": [{ "type": "text", "value": "Produce a value." }] },
+        "inputSchemaRef": null,
+        "outputSchemaRef": "Foo"
+      }
+    },
+    {
+      "id": "n_consumer",
+      "type": "agent",
+      "name": "consumer",
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Use this: " },
+            { "type": "var", "schema": "Foo", "field": "nonexistent", "source": "producer", "via": "state" }
+          ]
+        },
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_producer" },
+    { "from": "START", "to": "n_consumer" }
+  ]
+}

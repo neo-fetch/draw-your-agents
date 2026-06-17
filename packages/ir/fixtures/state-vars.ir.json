@@ -1,0 +1,81 @@
+{
+  "irVersion": "0.1.0",
+  "name": "state_vars_workflow",
+  "description": "Non-adjacent data flow (ADR-0051): the summarizer combines its immediate input (the expander's detail) with the original analysis key point, pulled from session state two hops upstream.",
+  "schemas": [
+    {
+      "name": "Analysis",
+      "fields": [{ "name": "key_point", "type": "str" }]
+    },
+    {
+      "name": "Expanded",
+      "fields": [{ "name": "detail", "type": "str" }]
+    },
+    {
+      "name": "Summary",
+      "fields": [{ "name": "text", "type": "str" }]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_analyze",
+      "type": "agent",
+      "name": "analyze",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Identify the single most important key point of the topic." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "Analysis"
+      }
+    },
+    {
+      "id": "n_expand",
+      "type": "agent",
+      "name": "expand",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Expand this key point into a detailed paragraph: " },
+            { "type": "var", "schema": "Analysis", "field": "key_point", "source": "analyze" }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": "Analysis",
+        "outputSchemaRef": "Expanded"
+      }
+    },
+    {
+      "id": "n_summarize",
+      "type": "agent",
+      "name": "summarize",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Write a one-line summary of the detail below, staying anchored to the original key point.\n\nDetail: " },
+            { "type": "var", "schema": "Expanded", "field": "detail", "source": "expand" },
+            { "type": "text", "value": "\nOriginal key point: " },
+            { "type": "var", "schema": "Analysis", "field": "key_point", "source": "analyze", "via": "state" }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": "Expanded",
+        "outputSchemaRef": "Summary"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_analyze" },
+    { "from": "n_analyze", "to": "n_expand" },
+    { "from": "n_expand", "to": "n_summarize" }
+  ]
+}

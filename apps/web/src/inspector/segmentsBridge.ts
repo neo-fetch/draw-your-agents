@@ -39,6 +39,8 @@ export interface SerializedVariableNode {
   schema: string;
   field: string;
   source: string;
+  /** Data-flow category (ADR-0051); omitted ⇒ positional (`"input"`). */
+  via?: "input" | "state";
 }
 
 export interface SerializedLineBreakNode {
@@ -94,22 +96,31 @@ function lineBreak(): SerializedLineBreakNode {
 }
 
 /**
- * Render label for a var chip. Matches the codegen source-bound form
- * ([ADR-0008](../../../docs/DECISIONS.md)) so the on-screen chip text is
- * exactly what compiles into the agent instruction.
+ * Render label for a var chip. A positional chip matches the codegen
+ * source-bound form `<schema.field from source>` ([ADR-0008]); a non-adjacent
+ * `via: "state"` chip matches the `{schema.field}` ADK session form (ADR-0051).
+ * The on-screen chip text is exactly what compiles into the agent instruction.
  */
-export function varLabel(schema: string, field: string, source: string): string {
-  return `<${schema}.${field} from ${source}>`;
+export function varLabel(
+  schema: string,
+  field: string,
+  source: string,
+  via?: "input" | "state",
+): string {
+  return via === "state"
+    ? `{${schema}.${field}}`
+    : `<${schema}.${field} from ${source}>`;
 }
 
 function variableNode(
   schema: string,
   field: string,
   source: string,
+  via?: "input" | "state",
 ): SerializedVariableNode {
   return {
     type: "variable",
-    text: varLabel(schema, field, source),
+    text: varLabel(schema, field, source, via),
     format: 0,
     detail: 0,
     mode: "token",
@@ -118,6 +129,7 @@ function variableNode(
     schema,
     field,
     source,
+    ...(via === "state" ? { via } : {}),
   };
 }
 
@@ -153,7 +165,7 @@ export function segmentsToEditorState(
   const children: SerializedInlineNode[] = [];
   for (const seg of segments) {
     if (seg.type === "var") {
-      children.push(variableNode(seg.schema, seg.field, seg.source));
+      children.push(variableNode(seg.schema, seg.field, seg.source, seg.via));
       continue;
     }
     // text
@@ -223,6 +235,7 @@ export function editorStateToSegments(
           schema: child.schema,
           field: child.field,
           source: child.source,
+          ...(child.via === "state" ? { via: "state" as const } : {}),
         });
       }
       // unknown types are skipped — see docblock

@@ -22,6 +22,7 @@ import nested from "../../../../packages/ir/fixtures/nested.ir.json" with { type
 import nestedSchema from "../../../../packages/ir/fixtures/nested-schema.ir.json" with { type: "json" };
 import criticLoop from "../../../../packages/ir/fixtures/critic-loop.ir.json" with { type: "json" };
 import showcaseAllNodes from "../../../../packages/ir/fixtures/showcase-all-nodes.ir.json" with { type: "json" };
+import stateVars from "../../../../packages/ir/fixtures/state-vars.ir.json" with { type: "json" };
 
 export interface Example {
   /** Fixture filename stem — `<id>.ir.json` under `packages/ir/fixtures/`. */
@@ -42,6 +43,7 @@ export const EXAMPLES: readonly Example[] = [
   { id: "nested-schema", label: "Nested schemas (order)", raw: nestedSchema },
   { id: "critic-loop", label: "Critic loop", raw: criticLoop },
   { id: "showcase-all-nodes", label: "Showcase: every node type", raw: showcaseAllNodes },
+  { id: "state-vars", label: "Session-state variables", raw: stateVars },
 ];
 
 /** Load an example by id through the Load IR path. Unknown id → `ok: false`. */

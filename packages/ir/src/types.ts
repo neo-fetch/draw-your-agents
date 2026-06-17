@@ -36,6 +36,16 @@ export interface VarSegment {
   field: string;
   /** `name` of the node that produces the value (rendered as `<schema.field from source>`). */
   source: string;
+  /**
+   * Data-flow category (ADR-0006, ADR-0051). Omitted/`"input"` is the positional
+   * form: the source is the immediate upstream and the value arrives as the
+   * agent's `node_input` (subject to the single-schema rail). `"state"` is the
+   * non-adjacent form: the source may be **any upstream (ancestor)** node and the
+   * value is read from session `state` — rendered as the `{schema.field}` ADK
+   * session form (LangGraph reads `state["<source>_output"].<field>`), and **not**
+   * constrained by `inputSchemaRef`.
+   */
+  via?: "input" | "state";
 }
 export type InstructionSegment = TextSegment | VarSegment;
 export interface InstructionTemplate {

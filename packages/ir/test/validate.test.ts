@@ -401,3 +401,26 @@ test("loop's reserved wrapper-schema names collide with user schemas → DUPLICA
   const codes = new Set(r.errors.map((e) => e.code));
   assert.ok(codes.has(ValidationCode.DUPLICATE_SCHEMA_NAME));
 });
+
+// -- non-adjacent (session-`state`) variables (ADR-0051) --
+
+test("state-vars fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/state-vars.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("state-var-not-ancestor fixture reports ancestor + field codes, not the input-schema rail", () => {
+  const r = validate(loadIR("../fixtures/invalid/state-var-not-ancestor.ir.json"));
+  assert.equal(r.ok, false);
+  const codes = new Set(r.errors.map((f) => f.code));
+  // The source is a parallel sibling, not an ancestor; the field is undeclared.
+  assert.ok(codes.has(ValidationCode.STATE_VAR_SOURCE_NOT_ANCESTOR));
+  assert.ok(codes.has(ValidationCode.STATE_VAR_FIELD_NOT_FOUND));
+  // The single-schema rail does NOT apply to state variables.
+  assert.ok(!codes.has(ValidationCode.VAR_INPUT_SCHEMA_MISMATCH));
+  // The ancestor finding is located on the consuming agent.
+  const f = r.errors.find((e) => e.code === ValidationCode.STATE_VAR_SOURCE_NOT_ANCESTOR);
+  assert.equal(f?.nodeId, "n_consumer");
+});

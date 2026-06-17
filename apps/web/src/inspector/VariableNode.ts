@@ -27,6 +27,8 @@ export interface VariableNodePayload {
   schema: string;
   field: string;
   source: string;
+  /** Data-flow category (ADR-0051); omitted ⇒ positional (`"input"`). */
+  via?: "input" | "state";
 }
 
 export type SerializedVariableNode = Spread<
@@ -35,12 +37,14 @@ export type SerializedVariableNode = Spread<
 >;
 
 const VARIABLE_CHIP_CLASS = "ga-variable-chip";
+const STATE_CHIP_CLASS = "ga-variable-chip--state";
 
 export class VariableNode extends TextNode {
-  /** {schema, field, source} — the IR fields that round-trip through the bridge. */
+  /** {schema, field, source, via} — the IR fields that round-trip through the bridge. */
   __schema: string;
   __field: string;
   __source: string;
+  __via?: "input" | "state";
 
   static getType(): string {
     return "variable";
@@ -48,16 +52,22 @@ export class VariableNode extends TextNode {
 
   static clone(node: VariableNode): VariableNode {
     return new VariableNode(
-      { schema: node.__schema, field: node.__field, source: node.__source },
+      {
+        schema: node.__schema,
+        field: node.__field,
+        source: node.__source,
+        via: node.__via,
+      },
       node.__key,
     );
   }
 
   constructor(payload: VariableNodePayload, key?: NodeKey) {
-    super(varLabel(payload.schema, payload.field, payload.source), key);
+    super(varLabel(payload.schema, payload.field, payload.source, payload.via), key);
     this.__schema = payload.schema;
     this.__field = payload.field;
     this.__source = payload.source;
+    this.__via = payload.via;
     // NOTE: token mode is set in `$createVariableNode`, NOT here. Calling the
     // mutating `setMode()` from the constructor recurses infinitely: Lexical's
     // `clone()` (invoked when an *attached* node is edited/deleted) calls
@@ -70,9 +80,11 @@ export class VariableNode extends TextNode {
   createDOM(...args: Parameters<TextNode["createDOM"]>): HTMLElement {
     const dom = super.createDOM(...args);
     dom.classList.add(VARIABLE_CHIP_CLASS);
+    if (this.__via === "state") dom.classList.add(STATE_CHIP_CLASS);
     dom.setAttribute("data-ga-schema", this.__schema);
     dom.setAttribute("data-ga-field", this.__field);
     dom.setAttribute("data-ga-source", this.__source);
+    if (this.__via === "state") dom.setAttribute("data-ga-via", "state");
     return dom;
   }
 
@@ -81,6 +93,7 @@ export class VariableNode extends TextNode {
       schema: serialized.schema,
       field: serialized.field,
       source: serialized.source,
+      via: serialized.via,
     }).updateFromJSON(serialized);
   }
 
@@ -91,6 +104,7 @@ export class VariableNode extends TextNode {
     this.__schema = serialized.schema;
     this.__field = serialized.field;
     this.__source = serialized.source;
+    this.__via = serialized.via;
     return this;
   }
 
@@ -102,6 +116,7 @@ export class VariableNode extends TextNode {
       schema: this.__schema,
       field: this.__field,
       source: this.__source,
+      ...(this.__via === "state" ? { via: this.__via } : {}),
     };
   }
 

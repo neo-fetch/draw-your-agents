@@ -68,6 +68,7 @@ const PROJECTS = [
   { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json", extras: [] },
   { name: "nested-schema", fixture: "packages/ir/fixtures/nested-schema.ir.json", extras: [] },
   { name: "critic-loop", fixture: "packages/ir/fixtures/critic-loop.ir.json", extras: ["loops.py"] },
+  { name: "state-vars", fixture: "packages/ir/fixtures/state-vars.ir.json", extras: [] },
 ];
 
 for (const { name, fixture, extras } of PROJECTS) {

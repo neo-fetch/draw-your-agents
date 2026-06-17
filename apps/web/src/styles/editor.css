@@ -38,3 +38,12 @@
   font-weight: 500;
   white-space: nowrap;
 }
+
+/* Non-adjacent session-state chips (ADR-0051) — visually distinct from the
+   positional source-bound chips so the two data-flow categories read apart. */
+.ga-variable-chip--state {
+  background: #eef3ff;
+  color: #1b3a82;
+  border-color: #5b8def;
+  border-style: dashed;
+}
