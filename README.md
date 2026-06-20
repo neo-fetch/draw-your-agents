@@ -236,7 +236,8 @@ The same graph compiles to either framework — you never edit two projects, jus
 | **Data flow** | positional `Event(output=)` → `node_input` | shared `state` TypedDict (`<node>_output`) |
 | **Best when** | you're targeting Google's ADK stack | you're already on the LangChain/LangGraph ecosystem |
 
-<!-- screenshot: LangGraph live preview (toolbar target = LangGraph, preview pane showing graph.py/state.py). Drop the PNG at assets/langgraph-preview.png and reference it here. -->
+![LangGraph live preview](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/langgraph-preview.png?raw=true)
+*The same graph with the target set to **LangGraph** — the preview emits `init_chat_model(...).with_structured_output(...)` node functions reading from a shared `state` TypedDict.*
 
 ### CLI: Compile an IR to a .zip
 
