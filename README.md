@@ -222,6 +222,22 @@ npm run dev
 
 Opens the visual builder at the Vite dev URL. Load an IR fixture from `packages/ir/fixtures/` via the toolbar's **Load IR** button.
 
+### Choosing a Target (ADK or LangGraph)
+
+The same graph compiles to either framework — you never edit two projects, just flip the target:
+
+1. **On the landing page**, pick **Google ADK** or **LangGraph** before entering the builder ([ADR-0047](docs/DECISIONS.md)).
+2. **Switch anytime** from the toolbar's target selector — the live preview and the **Download `.zip`** both follow the active target instantly. Nothing in your graph changes; only the emitted code does.
+3. **Validation is target-independent** — the IR is validated once; a graph that's valid produces a valid project for *both* targets.
+
+| | Google ADK | LangGraph |
+|---|---|---|
+| **Runtime** | `google-adk==2.0.0` graph-workflows | `langgraph` 1.x `StateGraph` |
+| **Data flow** | positional `Event(output=)` → `node_input` | shared `state` TypedDict (`<node>_output`) |
+| **Best when** | you're targeting Google's ADK stack | you're already on the LangChain/LangGraph ecosystem |
+
+<!-- screenshot: LangGraph live preview (toolbar target = LangGraph, preview pane showing graph.py/state.py). Drop the PNG at assets/langgraph-preview.png and reference it here. -->
+
 ### CLI: Compile an IR to a .zip
 
 ```bash
