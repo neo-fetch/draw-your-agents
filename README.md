@@ -171,6 +171,8 @@ graphical-agents/
 ├── scripts/
 │   ├── check-ir.ts            # CLI: validate IR fixtures
 │   ├── compile.ts             # CLI: IR → .zip end-to-end
+│   ├── e2e.ts                 # CLI: execute generated projects (dry-run + live)
+│   ├── e2e/stubs/             # Deterministic stub overlays for live e2e runs
 │   └── check_ir.py            # Superseded Python validator (historical reference)
 │
 ├── docs/
@@ -262,6 +264,7 @@ In short: n8n answers *"build and operate this automation for me"*; Graphical Ag
 |------|---------|-------------------|----------------|
 | **1 — Default gate** | `npm test` | No | IR validator, codegen goldens, pure reducers, segments bridge |
 | **2 — DOM tests** | `npm run test:web:app` | Yes (`apps/web`) | Lexical integration, VariableNode regressions, real editor round-trips |
+| **3 — E2E execution** | `npm run test:e2e` / `test:e2e:live` | Yes (network, pip; live needs `GOOGLE_API_KEY`) | Generated projects run against the real `google-adk` / `langgraph` libraries |
 
 **Tier 1** is the cold-checkout gate — it proves the IR contract, codegen output, and every pure reducer without pulling in React, Zustand, or Lexical.
 
@@ -276,6 +279,26 @@ npm run test:codegen      # Golden-file codegen tests
 npm run test:web          # Pure reducer / bridge tests (install-free)
 npm run test:web:app      # DOM / Lexical tests (install-required)
 ```
+
+### End-to-end execution tests (opt-in)
+
+Tier 3 compiles every IR fixture for both targets, installs the generated
+`requirements.txt` into one venv per target (under the gitignored
+`.e2e-work/`), and runs each project's generated pytest dry-run against the
+**real** libraries — the tiers above never execute generated code beyond
+`py_compile`.
+
+```bash
+npm run test:e2e          # dry-run matrix: all fixtures × adk + langgraph
+npm run test:e2e:live     # + live subset: real Gemini calls via main.py
+```
+
+Live runs need a Google AI Studio key in `GOOGLE_API_KEY` (env, or a
+gitignored `.env` at the repo root). Only a 4-fixture subset runs live
+(`city-time`, `routing`, `parallel`, `tool`), with deterministic stub
+overlays from `scripts/e2e/stubs/` filling the generated `TODO`s and 20 s
+pacing between runs for free-tier rate limits. Results land in
+`.e2e-work/report.md`; findings are curated in `docs/E2E-FINDINGS.md`.
 
 ### Optional: Python trust gate
 
