@@ -2561,3 +2561,33 @@ proves `VAR_INPUT_SCHEMA_MISMATCH` does **not** fire); web oracles (`insertState
 `segmentsBridge` `via` round-trip). Manual: load the "Session-state variables" example, open
 `summarize`, insert a "From session state" chip from a non-adjacent ancestor — the chip reads
 `{Schema.field}`, no edge or `inputSchemaRef` change, and the preview emits the state read.
+
+## ADR-0052 — Opt-in e2e execution harness: generated projects meet the real libraries
+**Context.** Every prior tier stops before execution: goldens pin bytes, `py_compile` proves
+syntax, black proves shape — nothing ever installed `google-adk==2.0.0` / `langgraph` or ran
+a generated project. Whether the emitted `Workflow(edges=…)` / `StateGraph` code actually
+constructs (and runs) against the real libraries was untested.
+**Decisions.**
+- **`scripts/e2e.ts`, NOT in `npm test`.** The harness needs network (pip) and, for live
+  runs, a real `GOOGLE_API_KEY` — the tier-1 cold-checkout gate must stay hermetic. Exposed
+  as `npm run test:e2e` (dry) and `test:e2e:live`. All state under gitignored `.e2e-work/`.
+- **One venv per target, not per project.** Requirements are the union of the staged
+  projects' `requirements.txt` (identical per target in practice); a sha256 stamp skips
+  reinstalls. 2 pip installs instead of 22.
+- **Phase A (dry) runs the generated pytest** (`test_workflow.py` / `test_graph.py`) for
+  every fixture × target — deps install, imports resolve, graph constructs. **Failures are
+  findings, never fail-fast**: the run aggregates a full matrix (`.e2e-work/report.{md,json}`),
+  exits non-zero iff a non-skipped cell failed. Curated results live in `docs/E2E-FINDINGS.md`.
+- **Phase B (live) executes `main.py`** with a real key for a fixed 4-fixture subset
+  (`city-time`, `routing`, `parallel`, `tool` — all free-tier-friendly models), after copying
+  **full-file stub overlays** from `scripts/e2e/stubs/<target>/<fixture>/` over the generated
+  `TODO` stubs (deterministic bodies; agent nodes still call Gemini for real). Overlays are
+  full files, not patches: codegen drift makes the run fail loudly, which is the re-sync
+  signal. Explicit recorded skips: `human-input` (interactive stdin), `critic-loop`
+  (gemini-2.5-pro on free tier), `showcase-all-nodes` (humanInput + loop). 20 s pacing
+  between live runs (AI Studio free tier ≈ 10 RPM).
+- **Key sourcing:** `GOOGLE_API_KEY` from the environment or the gitignored repo-root
+  `.env`; absent key ⇒ live cells record `skipped`, exit stays green.
+**Verify.** `npm run test:e2e` — 22-cell dry matrix; `npm run test:e2e:live` with a key —
+8 live cells (4 fixtures × 2 targets) plus recorded skips; re-run hits the venv stamp
+(no reinstall); `npm test` unaffected.
