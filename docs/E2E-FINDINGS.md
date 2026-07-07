@@ -97,6 +97,26 @@ faithful article summaries); no 429s with 20 s pacing.
 - **Fix direction:** emit `result.text` (or normalize blocks to text) in the
   agent fragment; goldens update mechanically.
 
+### F5 — ADK: generated projects are not `adk run` compatible as shipped
+- **Cell:** manual `adk run` check on the staged `city-time` project
+  (google-adk 2.0.0 CLI).
+- **Symptom:** `adk run <project_dir> "…"` fails at the agent loader: it
+  requires the folder to expose `root_agent` via `agent.py`, `__init__.py`,
+  or `root_agent.yaml` — but codegen defines `root_agent` in `workflow.py`.
+  The generated README's "`adk run workflow.py`" is doubly wrong: the CLI
+  takes an agent *folder*, not a file, and the folder name must be a valid
+  Python identifier (zips are prefixed with `ir.name`, e.g.
+  `city_time_workflow`, so shipped layout is safe on that count).
+- **Verified fix:** a one-line shim `agent.py` containing
+  `from workflow import root_agent` makes the CLI work completely — a full
+  live run through the whole graph produced
+  `[city_generator]: "Kyoto"` → `[city_report]: "It is 12:00 PM in Kyoto
+  right now."` → `[city_time_workflow]: [workflow complete] …`.
+- **Fix direction:** emit `agent.py` (the shim) in the ADK scaffold
+  (`packages/codegen/src/project.ts` `BASE_FILES`) and correct the README
+  template's `adk run` / `adk web` instructions to
+  `adk run <parent_dir>/<project_name>`; golden file-sets gain one file.
+
 ## Verification pointers
 
 - Reproduce dry matrix: `npm run test:e2e` (network for pip; no key).
@@ -104,5 +124,5 @@ faithful article summaries); no 429s with 20 s pacing.
 - Raw per-cell logs land in `.e2e-work/logs/`; machine-readable results in
   `.e2e-work/report.json`.
 
-Fixes for F1–F4 are follow-up slices (each moves goldens, the codegen spec);
+Fixes for F1–F5 are follow-up slices (each moves goldens, the codegen spec);
 this document plus the harness is the deliverable of the testing slice.
