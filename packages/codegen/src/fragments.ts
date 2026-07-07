@@ -103,15 +103,23 @@ export function renderSchema(
   return { imports, code: `class ${schema.name}(BaseModel):\n${body}\n` };
 }
 
-/** functions.py: one `def` per function node — body, or a TODO stub. */
+/**
+ * functions.py: one `def` per function node — body, or a TODO stub.
+ *
+ * `joinFed` (E2E finding F2): a `JoinNode` hands its downstream node a dict of
+ * branch outputs keyed by upstream node name — and ADK 2.0 coerces `node_input`
+ * against the annotation via pydantic before the body runs. A join-fed function
+ * must therefore be annotated `dict`, not the IR `inputType`.
+ */
 export function renderFunction(
   node: FunctionNode,
   schemas: ReadonlyMap<string, SchemaDef>,
+  joinFed = false,
 ): Fragment {
   const cfg = node.config;
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Event"] }];
 
-  const input = resolveRef(cfg.inputType, schemas);
+  const input = joinFed ? { py: "dict", imports: [] } : resolveRef(cfg.inputType, schemas);
   imports.push(...input.imports);
   const output = resolveRef(cfg.outputType, schemas);
   imports.push(...output.imports);
@@ -139,15 +147,21 @@ export function renderFunction(
   return { imports, code: `${header.join("\n")}\n${body}\n` };
 }
 
-/** functions.py: one `def` per router — returns `Event(route=...)`, or a TODO stub. */
+/**
+ * functions.py: one `def` per router — returns `Event(route=...)`, or a TODO
+ * stub. `joinFed` follows the same rule as `renderFunction` (F2).
+ */
 export function renderRouter(
   node: RouterNode,
   schemas: ReadonlyMap<string, SchemaDef>,
+  joinFed = false,
 ): Fragment {
   const cfg = node.config;
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Event"] }];
 
-  const input = resolveRef(cfg.inputType ?? "str", schemas);
+  const input = joinFed
+    ? { py: "dict", imports: [] }
+    : resolveRef(cfg.inputType ?? "str", schemas);
   imports.push(...input.imports);
 
   const header: string[] = [`def ${node.name}(node_input: ${input.py}) -> Event:`];
@@ -216,30 +230,33 @@ export function renderJoin(node: JoinNode): Fragment {
   return { imports, code: body };
 }
 
-/** Codegen-internal symbol for a tool node's underlying function (ADR-0019). */
-export function toolImplName(node: ToolNode): string {
-  return `${node.name}_impl`;
-}
-
 /**
- * functions.py: one `def <name>_impl(node_input: <inputType>) -> Event:` per
- * tool node (ADR-0019). Mirrors `renderFunction` (output channel only — tools
- * have no `emits` choice).
+ * functions.py: one `def <name>(node_input: <inputType>) -> Event:` per tool
+ * node. Mirrors `renderFunction` (output channel only — tools have no `emits`
+ * choice), including the join-fed `dict` annotation rule (F2).
+ *
+ * A graph-positioned tool is a pipeline step, so it renders as a plain
+ * function that ADK wraps as a FunctionNode (E2E finding F3): real ADK 2.0
+ * treats a `FunctionTool` in an edge row as a ToolNode that expects tool-call
+ * arguments (a dict), not the upstream `Content` — the old
+ * `FunctionTool(func=<name>_impl)` wrapper (ADR-0019) broke at runtime.
+ * This matches the LangGraph target, which has always emitted tool nodes as
+ * plain node functions.
  */
-export function renderToolImpl(
+export function renderTool(
   node: ToolNode,
   schemas: ReadonlyMap<string, SchemaDef>,
+  joinFed = false,
 ): Fragment {
   const cfg = node.config;
   const imports: ImportReq[] = [{ module: "google.adk", names: ["Event"] }];
 
-  const input = resolveRef(cfg.inputType, schemas);
+  const input = joinFed ? { py: "dict", imports: [] } : resolveRef(cfg.inputType, schemas);
   imports.push(...input.imports);
   const output = resolveRef(cfg.outputType, schemas);
   imports.push(...output.imports);
 
-  const implName = toolImplName(node);
-  const header: string[] = [`def ${implName}(node_input: ${input.py}) -> Event:`];
+  const header: string[] = [`def ${node.name}(node_input: ${input.py}) -> Event:`];
   if (cfg.description) header.push(indent(`"""${cfg.description}"""`));
 
   let body: string;
@@ -256,17 +273,6 @@ export function renderToolImpl(
   }
 
   return { imports, code: `${header.join("\n")}\n${body}\n` };
-}
-
-/**
- * workflow.py: one `<name> = FunctionTool(func=<name>_impl)` per tool node
- * (ADR-0019). Emitted inline before that level's joins and `Workflow(...)`
- * assignment, in the same slot pattern as `renderJoin`.
- */
-export function renderToolWrapper(node: ToolNode): Fragment {
-  const imports: ImportReq[] = [{ module: "google.adk.tools", names: ["FunctionTool"] }];
-  const body = `${node.name} = FunctionTool(func=${toolImplName(node)})\n`;
-  return { imports, code: body };
 }
 
 /**
@@ -287,7 +293,13 @@ function renderInstruction(template: InstructionTemplate): string {
   return pyStr(text);
 }
 
-/** ADK model-param kwargs (snake_case), in a stable order. */
+/**
+ * ADK sampling params rendered as a `generate_content_config` kwarg block
+ * (E2E finding F1): real `LlmAgent` is a closed pydantic model, so bare
+ * `temperature=`/`top_p=`/… kwargs are rejected with `extra_forbidden` —
+ * they ride inside `types.GenerateContentConfig`. The trailing comma on the
+ * last param is black's magic trailing comma, keeping the block exploded.
+ */
 function renderModelParams(params: ModelParams): string[] {
   const map: [keyof ModelParams, string][] = [
     ["temperature", "temperature"],
@@ -295,12 +307,13 @@ function renderModelParams(params: ModelParams): string[] {
     ["topK", "top_k"],
     ["maxOutputTokens", "max_output_tokens"],
   ];
-  const lines: string[] = [];
+  const inner: string[] = [];
   for (const [key, py] of map) {
     const value = params[key];
-    if (value !== undefined) lines.push(`${py}=${value},`);
+    if (value !== undefined) inner.push(`    ${py}=${value},`);
   }
-  return lines;
+  if (inner.length === 0) return [];
+  return ["generate_content_config=types.GenerateContentConfig(", ...inner, "),"];
 }
 
 /** agents.py: one `Agent(...)` per agent node. */
@@ -317,7 +330,13 @@ export function renderAgent(
     `instruction=${renderInstruction(cfg.instruction)},`,
   ];
 
-  if (cfg.modelParams) kwargs.push(...renderModelParams(cfg.modelParams));
+  if (cfg.modelParams) {
+    const paramLines = renderModelParams(cfg.modelParams);
+    if (paramLines.length > 0) {
+      imports.push({ module: "google.genai", names: ["types"] });
+      kwargs.push(...paramLines);
+    }
+  }
 
   if (cfg.inputSchemaRef != null) {
     const input = resolveRef(cfg.inputSchemaRef, schemas);

@@ -42,10 +42,8 @@ import {
   renderLoopOrchestrator,
   renderRouter,
   renderSchema,
-  renderToolImpl,
-  renderToolWrapper,
+  renderTool,
   renderValidateNodeOutputHelper,
-  toolImplName,
   type Fragment,
 } from "./fragments.ts";
 import {
@@ -79,7 +77,6 @@ interface WorkflowContext {
   readonly symbol: string;
   readonly rows: readonly EdgeRow[];
   readonly joins: readonly JoinNode[];
-  readonly tools: readonly ToolNode[];
 }
 
 /**
@@ -135,10 +132,32 @@ function collectWorkflowContexts(ir: GraphIR): WorkflowContext[] {
       symbol,
       rows: compileEdges(g),
       joins: g.nodes.filter((n): n is JoinNode => n.type === "join"),
-      tools: g.nodes.filter((n): n is ToolNode => n.type === "tool"),
     });
   };
   visit(ir, "root_agent", true);
+  return out;
+}
+
+/**
+ * Node ids that receive their `node_input` from a `JoinNode`, across every
+ * nesting level (E2E finding F2). A join delivers a **dict of branch outputs**
+ * keyed by upstream node name, so these nodes' functions must be annotated
+ * `dict` — ADK 2.0 pydantic-coerces `node_input` against the annotation.
+ */
+function joinFedNodeIds(ir: GraphIR): ReadonlySet<string> {
+  const out = new Set<string>();
+  const visit = (g: GraphIR): void => {
+    const joinIds = new Set(
+      g.nodes.filter((n) => n.type === "join").map((n) => n.id),
+    );
+    for (const e of g.edges) {
+      if (e.from !== "START" && joinIds.has(e.from)) out.add(e.to);
+    }
+    for (const n of g.nodes) {
+      if (n.type === "workflow") visit(n.config.graph);
+    }
+  };
+  visit(ir);
   return out;
 }
 
@@ -172,6 +191,7 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   }
 
   const schemas = indexSchemas({ ...ir, schemas: allSchemaDefs });
+  const joinFed = joinFedNodeIds(ir);
   const agents = allNodes.filter((n): n is AgentNode => n.type === "agent");
   const functions = allNodes.filter((n): n is FunctionNode => n.type === "function");
   const routers = allNodes.filter((n): n is RouterNode => n.type === "router");
@@ -187,7 +207,7 @@ export function generateProject(ir: GraphIR): GeneratedProject {
   files.set("schemas.py", schemasModule(ir, allSchemaDefs, schemas));
   files.set(
     "functions.py",
-    functionsModule(ir, allNodes, functions, routers, humanInputs, tools, schemas),
+    functionsModule(ir, allNodes, functions, routers, humanInputs, tools, schemas, joinFed),
   );
   files.set("agents.py", agentsModule(ir, agents, schemas));
   if (loops.length > 0) {
@@ -197,6 +217,7 @@ export function generateProject(ir: GraphIR): GeneratedProject {
     "workflow.py",
     workflowModule(ir, workflowContexts, agents, functions, routers, humanInputs, tools, loops),
   );
+  files.set("agent.py", agentShim(ir));
   files.set("main.py", mainModule(ir));
   files.set("test_workflow.py", testModule(ir));
   files.set("requirements.txt", REQUIREMENTS);
@@ -331,6 +352,7 @@ function functionsModule(
   humanInputs: readonly HumanInputNode[],
   tools: readonly ToolNode[],
   schemas: ReadonlyMap<string, SchemaDef>,
+  joinFed: ReadonlySet<string>,
 ): string {
   const head = header("Function bodies (implement the TODO stubs)", ir);
   if (
@@ -352,13 +374,13 @@ function functionsModule(
     .map((n) => {
       switch (n.type) {
         case "router":
-          return renderRouter(n as RouterNode, schemas);
+          return renderRouter(n as RouterNode, schemas, joinFed.has(n.id));
         case "humanInput":
           return renderHumanInput(n as HumanInputNode, schemas);
         case "tool":
-          return renderToolImpl(n as ToolNode, schemas);
+          return renderTool(n as ToolNode, schemas, joinFed.has(n.id));
         default:
-          return renderFunction(n as FunctionNode, schemas);
+          return renderFunction(n as FunctionNode, schemas, joinFed.has(n.id));
       }
     });
   return joinModule(head, frags.flatMap((f) => f.imports), frags.map((f) => f.code), "def");
@@ -391,30 +413,27 @@ function workflowModule(
   if (loops.length > 0) {
     imports.push({ module: "loops", names: loops.map((l) => loopOrchestratorName(l)) });
   }
-  // Routers and humanInput generators live in functions.py too — their symbols
-  // appear in the edge rows alongside plain function nodes. Tool impls live
-  // in functions.py as `<name>_impl`; the FunctionTool wrapper (which is what
-  // the edge rows reference) is declared inline below.
+  // Routers, humanInput generators, and tool functions live in functions.py
+  // too — their symbols appear in the edge rows alongside plain function
+  // nodes. (Tools used to get a `FunctionTool(func=<name>_impl)` wrapper here
+  // per ADR-0019, but real ADK 2.0 treats a FunctionTool in an edge row as a
+  // ToolNode expecting tool-call args, not the upstream Content — E2E finding
+  // F3 — so a graph-positioned tool is now a plain function node.)
   const fnNames = [
     ...functions.map((f) => f.name),
     ...routers.map((r) => r.name),
     ...humanInputs.map((h) => h.name),
-    ...tools.map((t) => toolImplName(t)),
+    ...tools.map((t) => t.name),
   ];
   if (fnNames.length > 0) imports.push({ module: "functions", names: fnNames });
 
-  // Walk contexts deepest-first: emit each level's tool wrappers, then its
-  // join declarations, then this level's `Workflow(...)` assignment. The root
-  // context comes last and renders as `root_agent = Workflow(...)`; every
-  // nested context renders as `<workflow_node_name> = Workflow(...)` so the
-  // parent's edge rows can reference the symbol by name (ADR-0018 / ADR-0019).
+  // Walk contexts deepest-first: emit each level's join declarations, then
+  // this level's `Workflow(...)` assignment. The root context comes last and
+  // renders as `root_agent = Workflow(...)`; every nested context renders as
+  // `<workflow_node_name> = Workflow(...)` so the parent's edge rows can
+  // reference the symbol by name (ADR-0018).
   const bodies: string[] = [];
   for (const ctx of contexts) {
-    for (const tool of ctx.tools) {
-      const frag = renderToolWrapper(tool);
-      imports.push(...frag.imports);
-      bodies.push(frag.code);
-    }
     for (const join of ctx.joins) {
       const frag = renderJoin(join);
       imports.push(...frag.imports);
@@ -445,6 +464,23 @@ function loopsModule(
   const helper = renderValidateNodeOutputHelper();
   const frags: Fragment[] = [helper, ...loops.map((l) => renderLoopOrchestrator(l, schemas))];
   return joinModule(head, frags.flatMap((f) => f.imports), frags.map((f) => f.code), "def");
+}
+
+/**
+ * `agent.py` — ADK CLI discovery shim (E2E finding F5): `adk run <project>` /
+ * `adk web` load `root_agent` from the project folder's `agent.py` (or
+ * `__init__.py` / `root_agent.yaml`) — never from `workflow.py`, where the
+ * graph itself lives. One import line keeps workflow.py the single source of
+ * the graph while making the generated folder CLI-runnable as shipped.
+ */
+function agentShim(ir: GraphIR): string {
+  const head = header("ADK CLI entry shim (`adk run` / `adk web`)", ir);
+  return `${head}
+
+from workflow import root_agent
+
+__all__ = ["root_agent"]
+`;
 }
 
 /**
@@ -546,6 +582,7 @@ ${description}Generated by **graphical-agents** from the Graph IR — a runnable
 | \`functions.py\` | One function per function node. **Implement the \`TODO\` stubs.** |
 | \`agents.py\` | One \`Agent\` per agent node. |
 ${loopsRow}| \`workflow.py\` | \`root_agent = Workflow(edges=[...])\` — the graph entry point. |
+| \`agent.py\` | ADK CLI discovery shim — exposes \`root_agent\` for \`adk run\` / \`adk web\`. |
 | \`main.py\` | Runs the workflow once with \`SAMPLE_INPUT\`. |
 | \`test_workflow.py\` | Pytest dry-run — constructs the graph, calls no model API. |
 
@@ -557,7 +594,8 @@ ${loopsRow}| \`workflow.py\` | \`root_agent = Workflow(edges=[...])\` — the gr
 4. \`pytest\` — free dry-run that verifies the graph constructs (no API key needed).
 5. Edit \`SAMPLE_INPUT\` in \`main.py\`, then \`python main.py\` to run the workflow once.
 
-Alternatively, use the ADK runtime directly (e.g. \`adk run workflow.py\` or \`adk web\`).
+Alternatively, use the ADK CLI from the directory that **contains** this project
+folder: \`adk run ${ir.name} "your input"\` (one-shot) or \`adk web .\` (browser UI).
 Workflows containing human-input nodes pause for a response — prefer an interactive
 ADK runtime for those.
 `;

@@ -5,7 +5,7 @@ from google.adk import Event
 from schemas import Article
 
 
-def fetch_data_impl(node_input: str) -> Event:
+def fetch_data(node_input: str) -> Event:
     """Fetch an article from a remote source."""
     # TODO: implement fetch_data — body not yet provided in the IR.
     output: Article = ...
