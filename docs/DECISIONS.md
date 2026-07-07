@@ -2591,3 +2591,40 @@ constructs (and runs) against the real libraries was untested.
 **Verify.** `npm run test:e2e` — 22-cell dry matrix; `npm run test:e2e:live` with a key —
 8 live cells (4 fixtures × 2 targets) plus recorded skips; re-run hits the venv stamp
 (no reinstall); `npm test` unaffected.
+
+## ADR-0053 — Fix E2E findings F1–F5: generated projects run against the real libraries
+**Context.** The first tier-3 e2e run (ADR-0052, docs/E2E-FINDINGS.md) surfaced five
+codegen↔runtime mismatches: 41/44 matrix cells passed, and `adk run` could not load a
+generated project. Each fix moves goldens — the codegen spec — so they land together as one
+deliberate spec change (regenerated via `scripts/update-goldens.ts`).
+**Decisions.**
+- **F1 — sampling params ride in `generate_content_config`.** Real `LlmAgent` is a closed
+  pydantic model; bare `temperature=`/`top_p=`/… kwargs die with `extra_forbidden`. The
+  fragment now emits `generate_content_config=types.GenerateContentConfig(...)` (magic
+  trailing comma keeps the block exploded; `from google.genai import types` joins the
+  imports only when params are present).
+- **F2 — join-fed nodes are annotated `dict`.** ADK 2.0 pydantic-coerces `node_input`
+  against the function annotation *before* the body runs, and a `JoinNode` delivers a dict
+  of branch outputs keyed by upstream node name. `joinFedNodeIds` (project.ts) walks every
+  nesting level; functions, routers, and tools fed by a join get `node_input: dict` instead
+  of the IR `inputType`. The LangGraph target already modeled this (explicit merge node) —
+  this closes an ADK-side parity gap.
+- **F3 — a graph-positioned tool is a plain function node.** Real ADK treats a
+  `FunctionTool` in an edge row as a ToolNode expecting tool-call arguments, not the
+  upstream `Content` — so the ADR-0019 `FunctionTool(func=<name>_impl)` wrapper broke at
+  runtime. Tool nodes now emit `def <name>(node_input) -> Event` in functions.py and the
+  edge row references the function directly; `<name>_impl` and the wrapper are gone.
+  Agent-*attached* tools (`AgentConfig.tools`) remain a separate, unimplemented feature in
+  both targets.
+- **F4 — LangGraph agents return `result.text`.** Under langchain 1.x + Gemini,
+  `.content` is a list of content blocks (with thinking signatures) that leaked verbatim
+  into str-typed state keys and downstream prompts; `.text` is the plain-text accessor.
+- **F5 — every ADK project ships an `agent.py` shim.** `adk run`/`adk web` discover
+  `root_agent` only via `agent.py` / `__init__.py` / `root_agent.yaml`; the graph stays in
+  workflow.py and agent.py is one import (`from workflow import root_agent`). The README
+  template now says `adk run <project_name>` from the containing directory — the old
+  `adk run workflow.py` was never a valid invocation.
+**Verify.** `npm test` (goldens repinned, 152 pass); `npm run test:e2e:live` — **44/44**
+cells (was 41/44), with clean text in LangGraph state and a fresh project running under
+`adk run` with zero manual edits. Stub overlays under `scripts/e2e/stubs/` re-synced to the
+new signatures (the overlay-drift contract working as designed).

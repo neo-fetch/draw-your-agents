@@ -1,5 +1,11 @@
 # E2E Execution Findings
 
+> **Status: all five findings (F1–F5) are FIXED** — see the
+> [re-run after fixes](#re-run-after-fixes-4444) at the bottom: 44/44 cells
+> pass, and freshly generated projects run under `adk run` as shipped
+> (ADR-0053). The matrix and finding entries below are preserved as the record
+> of the *first* run.
+
 First full run of the tier-3 e2e harness (`npm run test:e2e:live`, ADR-0052):
 every IR fixture compiled for both targets, generated projects installed and
 executed against the **real** libraries, live subset run with a real Google AI
@@ -124,5 +130,42 @@ faithful article summaries); no 429s with 20 s pacing.
 - Raw per-cell logs land in `.e2e-work/logs/`; machine-readable results in
   `.e2e-work/report.json`.
 
-Fixes for F1–F5 are follow-up slices (each moves goldens, the codegen spec);
-this document plus the harness is the deliverable of the testing slice.
+## Re-run after fixes (44/44)
+
+All five findings were fixed in codegen (ADR-0053; commit `8b29c35`) and the
+full harness re-run the same day came back completely green:
+
+| fixture | adk-dry | adk-live | langgraph-dry | langgraph-live |
+|---|---|---|---|---|
+| city-time | ✅ | ✅ | ✅ | ✅ |
+| critic-loop | ✅ | ⏭ | ✅ | ⏭ |
+| human-input | ✅ | ⏭ | ✅ | ⏭ |
+| nested | ✅ | ⏭ | ✅ | ⏭ |
+| nested-schema | ✅ | ⏭ | ✅ | ⏭ |
+| parallel | ✅ | ✅ | ✅ | ✅ |
+| parallel-mid | ✅ | ⏭ | ✅ | ⏭ |
+| routing | ✅ | ✅ | ✅ | ✅ |
+| showcase-all-nodes | ✅ | ⏭ | ✅ | ⏭ |
+| state-vars | ✅ | ⏭ | ✅ | ⏭ |
+| tool | ✅ | ✅ | ✅ | ✅ |
+
+Spot checks beyond the matrix:
+
+- **F4:** the LangGraph `city-time` live final state is now clean text —
+  `'city_generator_output': 'Tokyo'`, final report
+  `It is 12:00 PM in Tokyo right now.` — no content-block dumps.
+- **F5:** a freshly generated project (no manual edits) loads under
+  `adk run city_time_workflow "…"` via the emitted `agent.py` shim and
+  executes with real model calls. (Later same-day CLI repeats hit the AI
+  Studio free-tier daily quota — 429 `RESOURCE_EXHAUSTED`, limit 20/day per
+  model — which is a key-tier constraint, not a codegen issue.)
+
+Per-finding fixes (all in commit `8b29c35`):
+
+| Finding | Fix |
+|---|---|
+| F1 | `modelParams` → `generate_content_config=types.GenerateContentConfig(...)` (`fragments.ts`) |
+| F2 | join-fed functions/routers/tools annotate `node_input: dict` (`project.ts` `joinFedNodeIds` + fragments) |
+| F3 | graph-positioned tools emit as plain functions named after the node; `FunctionTool` wrapper removed |
+| F4 | LangGraph agents return `result.text` instead of `result.content` |
+| F5 | every ADK project ships `agent.py` (`from workflow import root_agent`); README run instructions corrected |
