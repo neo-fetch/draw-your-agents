@@ -34,6 +34,7 @@ const BASE_FILES = [
   "functions.py",
   "agents.py",
   "workflow.py",
+  "agent.py",
   "main.py",
   "test_workflow.py",
   "requirements.txt",

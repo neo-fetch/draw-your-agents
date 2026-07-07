@@ -9,4 +9,4 @@ def summarize(state: WorkflowState) -> dict:
     model = init_chat_model("google_genai:gemini-flash-latest")
     prompt = f"Summarize the article in one sentence.\n\nInput:\n{state['fetch_data_output'].model_dump_json()}"
     result = model.invoke(prompt)
-    return {"summarize_output": result.content}
+    return {"summarize_output": result.text}

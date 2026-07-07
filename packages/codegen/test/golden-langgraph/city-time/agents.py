@@ -9,11 +9,11 @@ def city_generator(state: WorkflowState) -> dict:
     model = init_chat_model("google_genai:gemini-flash-latest")
     prompt = f"Return the name of a random city. Return only the name, nothing else.\n\nInput:\n{state['workflow_input']}"
     result = model.invoke(prompt)
-    return {"city_generator_output": result.content}
+    return {"city_generator_output": result.text}
 
 
 def city_report(state: WorkflowState) -> dict:
     model = init_chat_model("google_genai:gemini-flash-latest")
     prompt = f"Output the following line:\nIt is {state['lookup_time_output'].time_info} in {state['lookup_time_output'].city} right now."
     result = model.invoke(prompt)
-    return {"city_report_output": result.content}
+    return {"city_report_output": result.text}

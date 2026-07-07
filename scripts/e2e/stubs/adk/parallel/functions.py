@@ -19,6 +19,6 @@ def task_c(node_input: str) -> Event:
     return Event(output=f"task_c done ({node_input})")
 
 
-def final_task_d(node_input: str) -> Event:
+def final_task_d(node_input: dict) -> Event:
     """Final task after the join."""
     return Event(output=f"combined after join: {node_input}")

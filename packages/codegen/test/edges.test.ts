@@ -256,8 +256,8 @@ test("human-input: produces one linear row with START + humanInput + downstream"
 // -- tool linear chain (ADR-0019) --
 //
 // A tool node is a plain linear-chain member in its parent's rows — the edge
-// symbol is the FunctionTool wrapper (`<node_name>`), and the underlying impl
-// (`<node_name>_impl`) lives in functions.py.
+// symbol is the tool's function (`<node_name>`), defined in functions.py
+// (plain function node since E2E finding F3; no FunctionTool wrapper).
 
 test("tool: linear chain through fetch_data → summarize matches golden", () => {
   const ir = loadIR("packages/ir/fixtures/tool.ir.json");

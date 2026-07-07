@@ -9,25 +9,25 @@ def process_message(state: WorkflowState) -> dict:
     model = init_chat_model("google_genai:gemini-flash-latest")
     prompt = f"Read the incoming support message and summarize the customer's intent in one line.\n\nInput:\n{state['workflow_input']}"
     result = model.invoke(prompt)
-    return {"process_message_output": result.content}
+    return {"process_message_output": result.text}
 
 
 def handle_bug(state: WorkflowState) -> dict:
     model = init_chat_model("google_genai:gemini-flash-latest")
     prompt = f"Triage the reported bug, ask for reproduction steps if missing, and draft an engineering ticket.\n\nInput:\n{state['process_message_output']}"
     result = model.invoke(prompt)
-    return {"handle_bug_output": result.content}
+    return {"handle_bug_output": result.text}
 
 
 def handle_customer_support(state: WorkflowState) -> dict:
     model = init_chat_model("google_genai:gemini-flash-latest")
     prompt = f"Answer the customer's support question directly and offer next steps.\n\nInput:\n{state['process_message_output']}"
     result = model.invoke(prompt)
-    return {"handle_customer_support_output": result.content}
+    return {"handle_customer_support_output": result.text}
 
 
 def handle_logistics(state: WorkflowState) -> dict:
     model = init_chat_model("google_genai:gemini-flash-latest")
     prompt = f"Resolve the shipping or logistics request and provide tracking or delivery details.\n\nInput:\n{state['process_message_output']}"
     result = model.invoke(prompt)
-    return {"handle_logistics_output": result.content}
+    return {"handle_logistics_output": result.text}

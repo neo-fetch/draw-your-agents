@@ -171,7 +171,10 @@ export function renderLgAgent(
   ];
   if (cfg.outputSchemaRef === "str") {
     lines.push(indent(`result = model.invoke(prompt)`));
-    lines.push(indent(`return {${pyStr(outputKey(node))}: result.content}`));
+    // `.text`, not `.content` (E2E finding F4): under langchain 1.x + Gemini,
+    // `.content` is a list of content blocks (with thinking signatures) that
+    // would leak verbatim into str-typed state keys and downstream prompts.
+    lines.push(indent(`return {${pyStr(outputKey(node))}: result.text}`));
   } else {
     const output = resolveRef(cfg.outputSchemaRef, schemas);
     imports.push(...output.imports);

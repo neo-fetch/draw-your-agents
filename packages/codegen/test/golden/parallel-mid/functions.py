@@ -24,7 +24,7 @@ def task_b(node_input: str) -> Event:
     return Event(output=output)
 
 
-def final_task(node_input: str) -> Event:
+def final_task(node_input: dict) -> Event:
     """Final task after the join."""
     # TODO: implement final_task — body not yet provided in the IR.
     output: str = ...
