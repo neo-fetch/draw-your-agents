@@ -28,6 +28,7 @@ import type { ModelParamKey } from "../store/irReducer.ts";
 import { formSwap } from "../anim/presets.ts";
 import { VariableEditor, type VariableEditorAPI } from "./VariableEditor.tsx";
 import { VariablePalette } from "./VariablePalette.tsx";
+import { BodyEditor } from "./BodyEditor.tsx";
 
 // ----- shared widgets -----------------------------------------------------
 
@@ -165,26 +166,16 @@ function NumberOrEmpty({ id, value, onChange, step }: NumberOrEmptyProps) {
   );
 }
 
-interface TextAreaProps {
-  id: string;
-  /** `string`/`null` → null when empty (per IR `body` semantics). */
-  value: string | null | undefined;
-  onChange: (next: string | null) => void;
-  rows?: number;
-}
-
-function TextArea({ id, value, onChange, rows = 6 }: TextAreaProps) {
-  return (
-    <textarea
-      id={id}
-      rows={rows}
-      value={value ?? ""}
-      onChange={(e) => {
-        const raw = e.target.value;
-        onChange(raw === "" ? null : raw);
-      }}
-    />
-  );
+/**
+ * The def header codegen writes around an IR `body` (ADR-0056), shown above the
+ * body editor so the contract — `node_input` is in scope, return a plain value —
+ * is visible while typing. Deliberately the real `_<name>_impl` name that lands
+ * in the generated file, so reading the output later matches what was shown
+ * here. `TextArea` used to live at this spot; it existed only for the three
+ * body fields the editor replaced.
+ */
+function implSignature(name: string, inputType: string, outputType: string): string {
+  return `def _${name}_impl(node_input: ${inputType}) -> ${outputType}:`;
 }
 
 // ----- header -------------------------------------------------------------
@@ -455,12 +446,13 @@ function FunctionForm({ node }: { node: FunctionNode }) {
         </select>
       </div>
       <div className="field">
-        <label htmlFor="fn-body">body</label>
-        <div className="field__hint">empty ⇒ null (codegen emits a TODO stub)</div>
-        <TextArea
-          id="fn-body"
+        <label>body</label>
+        <BodyEditor
+          key={node.id}
           value={node.config.body}
-          onChange={(v) => updateNodeConfig(node.id, { body: v })}
+          signature={implSignature(node.name, node.config.inputType, node.config.outputType)}
+          returns={`return a ${node.config.outputType}`}
+          onCommit={(v) => updateNodeConfig(node.id, { body: v })}
         />
       </div>
       </FormSection>
@@ -507,12 +499,13 @@ function ToolForm({ node }: { node: ToolNode }) {
         />
       </div>
       <div className="field">
-        <label htmlFor="tool-body">body</label>
-        <div className="field__hint">empty ⇒ null (codegen emits a TODO stub)</div>
-        <TextArea
-          id="tool-body"
+        <label>body</label>
+        <BodyEditor
+          key={node.id}
           value={node.config.body}
-          onChange={(v) => updateNodeConfig(node.id, { body: v })}
+          signature={implSignature(node.name, node.config.inputType, node.config.outputType)}
+          returns={`return a ${node.config.outputType}`}
+          onCommit={(v) => updateNodeConfig(node.id, { body: v })}
         />
       </div>
       </FormSection>
@@ -562,12 +555,17 @@ function RouterForm({ node }: { node: RouterNode }) {
         />
       </div>
       <div className="field">
-        <label htmlFor="router-body">body</label>
-        <div className="field__hint">empty ⇒ null (codegen emits a TODO stub)</div>
-        <TextArea
-          id="router-body"
+        <label>body</label>
+        <BodyEditor
+          key={node.id}
           value={node.config.body}
-          onChange={(v) => updateNodeConfig(node.id, { body: v })}
+          signature={implSignature(node.name, node.config.inputType ?? "str", "str")}
+          returns={
+            node.config.routes.length > 0
+              ? `return one of: ${node.config.routes.join(", ")}`
+              : "return a route label"
+          }
+          onCommit={(v) => updateNodeConfig(node.id, { body: v })}
         />
       </div>
       </FormSection>

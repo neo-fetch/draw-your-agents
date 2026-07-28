@@ -57,12 +57,29 @@ symbol and as the `<... from name>` source), `config`, optional `ui: {x, y}`.
               "emits": "output", "body": null } }   // body null → generate a TODO stub
 ```
 
+#### `body` — the target-neutral contract (ADR-0056)
+A `body` is the inside of a plain Python function: **`node_input` is in scope** and the body
+**returns a plain value** — never an `Event`, never a state dict. Codegen puts it verbatim in
+`_<name>_impl` and adapts the return value per target:
+
+| node | body returns | ADK wrapper | LangGraph wrapper |
+|---|---|---|---|
+| function / tool | `outputType` | `Event(output=…)` (or `message`, per `emits`) | `{"<name>_output": …}` |
+| router | one of `routes` (a `str`) | `Event(route=…)` | `{"<name>_output": …}` |
+
+The body is dedented before emission, so leading indentation carried in from a copy-paste is
+harmless. `body: null` emits a TODO stub instead. Because the wrapper *calls* the body rather than
+rewriting its `return`s, early returns and nested defs work unchanged.
+
 ### router
 ```jsonc
 { "id": "n_route", "type": "router", "name": "router",
   "config": { "description": "...", "routes": ["BUG", "SUPPORT"], "inputType": "str", "body": null } }
 ```
-Branch targets are edges out of the router carrying a matching `route` label.
+Branch targets are edges out of the router carrying a matching `route` label. A router produces
+**no output** — on ADK a `function`/`tool` placed directly after a router therefore receives
+`node_input=None` and fails pydantic coercion (finding F6); use an `agent` branch target, or put
+the function one hop further down. LangGraph is unaffected.
 
 ### join / humanInput
 ```jsonc
@@ -112,7 +129,13 @@ across parent + every nested sub-graph (invariant 1 holds across nesting).
    (a *branch continuation*, ADR-0054) — it compiles to a row headed by that target, verified
    against a live ADK run (ADR-0055). Two declared routes may share one branch target.
 
+8. A `body` follows the target-neutral contract above: it must not construct `Event(...)`
+   (`BODY_ADK_FLAVORED`, ADR-0056) — that is the pre-ADR-0056 form and would compile to
+   `Event(output=Event(...))`.
+
 ## Warnings (do not block codegen)
 `compile` throws on errors only, so these annotate a graph that still generates:
 - `JOIN_MISSING_FAILSAFE` — a join upstream that may never emit on the output channel.
+- `BODY_NO_RETURN` — a body with no `return`/`raise`/`yield`; the node produces `None`.
+- `BODY_ROUTE_UNDECLARED` — every route literal a router body returns is undeclared.
 - `INCOMPATIBLE_INTEGRATION` — reserved, Phase 3.

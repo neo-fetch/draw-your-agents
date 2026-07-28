@@ -2737,3 +2737,70 @@ ending `continuation check OK`. `npm test` — 492 pass (one fewer than ADR-0054
 replaced by one clean-validation spec). `npm run test:e2e` — 24/24 dry, overlays staged without
 breaking the generated pytest (overlaid projects were re-run against `test_workflow.py` /
 `test_graph.py` before spending any quota). `npm run check:ir` — no fixture reports a warning.
+
+## ADR-0056 — Function bodies are target-neutral, and get a real editor
+**Context.** An IR `body` was ADK-flavored: written against `node_input`, required to
+`return Event(output=...)`, and rejected outright by the LangGraph target (`rejectBody` in
+`langgraph/fragments.ts`). Three consequences, only the last of which was visible:
+- Typing into the Inspector's body box silently made a graph un-exportable to LangGraph. The
+  Inspector gave no hint; the failure appeared only on switching targets.
+- `indent(cfg.body)` pasted the body in blind — four spaces onto every line, no dedent, no shape
+  check — and the validator never inspected `body` at all (ADR-0023 deliberately kept free-form
+  fields free-form). A body pasted with its original indentation produced Python that failed at
+  `black`, three stages downstream of the typo.
+- The path was almost entirely unexercised: every fixture was `body: null`, so there was no golden
+  and no unit test for body rendering. The e2e harness supplied real Python through **stub
+  overlays applied outside the IR** — the project routed around body authoring rather than
+  through it.
+**Decision.**
+- **A body is target-neutral.** `node_input` is in scope and the body returns a plain value —
+  never an `Event`, never a state dict. function/tool return `outputType`; a router returns one of
+  its declared `routes`. Both targets already bound `node_input` and already named the result
+  `output` (`fragments.ts`, `langgraph/fragments.ts`), so this is what the generated stubs always
+  implied; it was only the *contract* that was ADK-specific.
+- **Two defs, not a rewrite.** A bodied node compiles to `_<name>_impl` holding the verbatim body,
+  plus a thin wrapper adapting its return value: `Event(output=…)` / `Event(route=…)` on ADK,
+  `{"<name>_output": …}` on LangGraph. The alternative — rewriting the body's `return X` into
+  `return Event(output=X)` — needs a Python parser in TypeScript and breaks on ordinary code: a
+  guard clause, a return inside a nested def or lambda. Calling a second def costs one name and
+  works for any body. `_impl` was free: the old `FunctionTool(func=<name>_impl)` wrapper was
+  removed when it broke at runtime (ADR-0053 / finding F3).
+- **Null bodies keep the original single-def stub**, so every pre-existing golden is byte-identical
+  — the same safety signal ADR-0054 used. Since every fixture was `body: null`, no existing golden
+  moved at all.
+- **Bodies are dedented before emission** (`dedent` in `python.ts`), fixing the leading-whitespace
+  class of breakage rather than reporting it.
+- **Three validator findings**, all line-level string checks over comment/literal-stripped source —
+  the validator still parses no Python and takes no dependency. `BODY_ADK_FLAVORED` (**error**) is
+  the migration guard: a body written under the old contract would otherwise compile to
+  `Event(output=Event(...))`, and nothing else would catch it, since `irVersion` is only checked
+  for presence and never its value. `BODY_NO_RETURN` and `BODY_ROUTE_UNDECLARED` are warnings —
+  a body may legitimately `raise`, and a router may compute its route rather than return a literal.
+- **CodeMirror 6 replaces the three `<textarea>` body fields** with one `BodyEditor`: Python
+  highlighting, a line-number gutter, Tab-to-indent, and a read-only **signature strip** showing
+  the exact `def _<name>_impl(...) -> ...:` header codegen will write, so the contract is visible
+  while typing rather than discoverable only from generated output. It commits **on blur**
+  (ADR-0036's `NodeNameInput` posture), because a body write re-runs validate + compile and doing
+  that per keystroke flashes findings for half-typed Python. Themes ride the existing `--code-*` /
+  `--ink-*` custom properties, so `vellum` and `bathory` both follow with no second theme. Cost:
+  the Pages artifact grows 881 KB → 1,247 KB (gzip 276 → 400 KB), accepted deliberately.
+- **Verified by execution, not just compilation.** The new `bodies` fixture has no agent nodes, so
+  its generated project runs end to end for **zero API quota**. Both targets produce
+  `'10 words, 5.2 chars/word'` from the same bodies — the neutral contract demonstrated rather
+  than asserted. It is in `LIVE_SUBSET` for that reason.
+- **Router bodies are specced by unit test, not by a golden fixture** — see finding F6 below.
+**Consequences / found along the way.** Executing the first draft of the fixture surfaced
+**finding F6**: on ADK a router emits `Event(route=…)` with **no output**, so a `function`/`tool`
+node placed directly after a router receives `node_input=None` and dies in pydantic coercion
+(`output=None … output_for=None` in the event stream). Every fixture predating this used *agent*
+branch targets, which tolerate an empty input — which is why it stayed hidden. LangGraph is
+unaffected (a branch target reads the router's input key from state), so this is a target parity
+gap in the opposite direction from F2. **Not fixed here** — it needs an IR-level decision about
+whether routers gain a pass-through output, which is a slice of its own. The `bodies` fixture is
+linear because of it, and the constraint is recorded in docs/E2E-FINDINGS.md and docs/IR-SCHEMA.md.
+**Verify.** `npm test` — 529 pass (38 IR + 339 codegen + 152 web), every pre-existing golden
+byte-identical. `npm run check:ir` — clean on all 13 fixtures. `npm run test:e2e --fixture=bodies`
+— 2/2 dry; both generated projects then executed directly, producing identical output. Browser
+check on the built artifact: the signature strip renders, Tab indents instead of moving focus, the
+preview does **not** update while the editor holds focus and does update on blur (showing the
+`_impl` def and the wrapper call), in both themes.

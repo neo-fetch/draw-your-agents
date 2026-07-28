@@ -12,6 +12,7 @@
  * with `packages/ir/fixtures/*.ir.json`.
  */
 import { loadIRFromText, type LoadResult } from "./irIO.ts";
+import bodies from "../../../../packages/ir/fixtures/bodies.ir.json" with { type: "json" };
 import cityTime from "../../../../packages/ir/fixtures/city-time.ir.json" with { type: "json" };
 import routing from "../../../../packages/ir/fixtures/routing.ir.json" with { type: "json" };
 import routingContinue from "../../../../packages/ir/fixtures/routing-continue.ir.json" with { type: "json" };
@@ -35,6 +36,7 @@ export interface Example {
 
 export const EXAMPLES: readonly Example[] = [
   { id: "city-time", label: "City time (sequence)", raw: cityTime },
+  { id: "bodies", label: "Function bodies (no model)", raw: bodies },
   { id: "routing", label: "Support router (branch)", raw: routing },
   { id: "routing-continue", label: "Router branch continuation", raw: routingContinue },
   { id: "parallel", label: "Parallel fan-out + join", raw: parallel },

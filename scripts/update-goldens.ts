@@ -21,6 +21,7 @@ import { generateLangGraphProject } from "../packages/codegen/src/langgraph/proj
 // Keep in sync with PROJECTS in packages/codegen/test/project.test.ts (the
 // same fixture list backs both targets' goldens, ADR-0045).
 const PROJECTS = [
+  { name: "bodies", fixture: "packages/ir/fixtures/bodies.ir.json" },
   { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json" },
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
   { name: "routing-continue", fixture: "packages/ir/fixtures/routing-continue.ir.json" },

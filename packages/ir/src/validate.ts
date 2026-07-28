@@ -97,8 +97,12 @@ export const ValidationCode = {
   // Graph shape
   UNREACHABLE_NODE: "UNREACHABLE_NODE",
   CYCLE_DETECTED: "CYCLE_DETECTED",
+  // Function bodies (ADR-0056).
+  BODY_ADK_FLAVORED: "BODY_ADK_FLAVORED",
   // Warnings (ARCHITECTURE.md §7).
   JOIN_MISSING_FAILSAFE: "JOIN_MISSING_FAILSAFE",
+  BODY_NO_RETURN: "BODY_NO_RETURN",
+  BODY_ROUTE_UNDECLARED: "BODY_ROUTE_UNDECLARED",
   // Reserved — stubbed until Phase 3.
   INCOMPATIBLE_INTEGRATION: "INCOMPATIBLE_INTEGRATION",
 } as const;
@@ -692,6 +696,131 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
 
   // -- warning pass (ARCHITECTURE.md §7) --
   checkJoinFailsafe(findings, nodesById, edgeList, composeId);
+  checkBodies(findings, nodesById, composeId);
+}
+
+/**
+ * Function/tool/router `body` checks (ADR-0056).
+ *
+ * A body is **target-neutral**: `node_input` is in scope and it returns a plain
+ * value, which each codegen target wraps for its own calling convention. These
+ * are deliberately line-level string checks — the validator parses no Python
+ * and stays dependency-free (the ADR at DECISIONS.md:645 keeps free-form fields
+ * free-form; this is the narrow exception where a body's *contract*, not its
+ * correctness, is checkable).
+ *
+ * `BODY_ADK_FLAVORED` is the migration guard. Before ADR-0056 a body was
+ * written against ADK and returned `Event(...)`; wrapping such a body now would
+ * emit `Event(output=Event(...))`. Nothing else would catch it — `irVersion` is
+ * only checked for presence, never its value.
+ */
+function checkBodies(
+  findings: Finding[],
+  nodesById: ReadonlyMap<string, Loose>,
+  composeId: (nid: string) => string,
+): void {
+  const push = (
+    severity: Severity,
+    code: string,
+    message: string,
+    nodeId: string,
+  ): void => {
+    findings.push({ severity, code, message, nodeId: composeId(nodeId) });
+  };
+
+  for (const [nodeId, node] of nodesById) {
+    if (node.type !== "function" && node.type !== "tool" && node.type !== "router") continue;
+    const cfg = (node.config ?? {}) as Loose;
+    const body = cfg.body;
+    if (typeof body !== "string" || body.trim() === "") continue;
+
+    // Strip comments and string literals before pattern-matching, so a body that
+    // merely *mentions* Event in prose isn't flagged.
+    const code = stripPyLiterals(body);
+
+    if (/\bEvent\s*\(/.test(code)) {
+      push(
+        "error",
+        ValidationCode.BODY_ADK_FLAVORED,
+        `node "${node.name}" body constructs Event(...) — bodies are target-neutral ` +
+          `(ADR-0056): return the plain value and codegen wraps it for the target`,
+        nodeId,
+      );
+    }
+
+    if (!/(^|\n)\s*(return|raise|yield)\b/.test(code)) {
+      push(
+        "warning",
+        ValidationCode.BODY_NO_RETURN,
+        `node "${node.name}" body never returns — the node will produce None`,
+        nodeId,
+      );
+    } else if (node.type === "router" && Array.isArray(cfg.routes)) {
+      // Only flag when *every* returned literal is undeclared; a body that
+      // computes its route (returns a variable) yields no literals at all.
+      const declared = new Set(cfg.routes.filter((r: unknown) => typeof r === "string"));
+      const literals = [...body.matchAll(/(^|\n)\s*return\s+(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/gm)]
+        .map((m) => m[2] ?? m[3])
+        .filter((s): s is string => s !== undefined);
+      const undeclared = literals.filter((s) => !declared.has(s));
+      if (literals.length > 0 && undeclared.length === literals.length) {
+        push(
+          "warning",
+          ValidationCode.BODY_ROUTE_UNDECLARED,
+          `node "${node.name}" body returns ${undeclared.map(repr).join(", ")}, ` +
+            `which ${undeclared.length === 1 ? "is" : "are"} not among its declared routes ` +
+            `(${[...declared].join(", ")})`,
+          nodeId,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * Blank out `#` comments and quoted strings so a pattern match sees only code.
+ * Length-preserving (replaces in place with spaces) so nothing downstream has to
+ * care about offsets shifting.
+ */
+function stripPyLiterals(src: string): string {
+  let out = "";
+  let quote: string | null = null;
+  let inComment = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === "\n") {
+      inComment = false;
+      quote = null; // an unterminated literal cannot span a line here
+      out += ch;
+      continue;
+    }
+    if (inComment) {
+      out += " ";
+      continue;
+    }
+    if (quote !== null) {
+      if (ch === "\\") {
+        out += "  ";
+        i++;
+        continue;
+      }
+      out += " ";
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      out += " ";
+      continue;
+    }
+    if (ch === "#") {
+      inComment = true;
+      out += " ";
+      continue;
+    }
+    out += ch;
+  }
+  return out;
 }
 
 /**
