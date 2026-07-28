@@ -1,0 +1,109 @@
+{
+  "irVersion": "0.1.0",
+  "name": "feasibility_workflow",
+  "description": "Assess an incoming feature request, then branch: a feasible request continues through code generation and a test run, an infeasible one stops at an explanation. Exercises a router branch continuation (ADR-0054) alongside a terminal branch.",
+  "schemas": [],
+  "nodes": [
+    {
+      "id": "n_assess",
+      "type": "agent",
+      "name": "assess_request",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Read the incoming feature request and summarize what it would take to build, in one paragraph." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_router",
+      "type": "router",
+      "name": "feasibility_router",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Decide whether the assessed request is feasible to build now.",
+        "routes": ["FEASIBLE", "INFEASIBLE"],
+        "inputType": "str",
+        "body": null
+      }
+    },
+    {
+      "id": "n_generate",
+      "type": "agent",
+      "name": "generate_code",
+      "ui": { "x": 520, "y": -100 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Write the implementation for the assessed feature request. Return only the code." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_run_tests",
+      "type": "function",
+      "name": "run_tests",
+      "ui": { "x": 780, "y": -100 },
+      "config": {
+        "description": "Run the project's test suite against the generated code and return the report.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": null
+      }
+    },
+    {
+      "id": "n_summarize",
+      "type": "agent",
+      "name": "summarize_result",
+      "ui": { "x": 1040, "y": -100 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Summarize the test report for the requester: what passed, what failed, and what to do next." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_blockers",
+      "type": "agent",
+      "name": "explain_blockers",
+      "ui": { "x": 520, "y": 100 },
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": {
+          "segments": [
+            { "type": "text", "value": "Explain why the request cannot be built as stated, and describe what would have to change." }
+          ]
+        },
+        "mode": "task",
+        "inputSchemaRef": null,
+        "outputSchemaRef": "str"
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_assess" },
+    { "from": "n_assess", "to": "n_router" },
+    { "from": "n_router", "to": "n_generate", "route": "FEASIBLE" },
+    { "from": "n_router", "to": "n_blockers", "route": "INFEASIBLE" },
+    { "from": "n_generate", "to": "n_run_tests" },
+    { "from": "n_run_tests", "to": "n_summarize" }
+  ]
+}

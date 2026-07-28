@@ -54,7 +54,9 @@ A session works in **one** package. Load `packages/ir` types + that package; not
 - `Workflow(edges=[...])` where a row is a sequence chain; `("START", ...)` begins a graph;
   `START` may repeat (parallel fan-out); an interior row head may repeat likewise
   (mid-graph fan-out, ADR-0048).
-- Router: a function returns `Event(route=...)` → a row `(router, {route: target})`.
+- Router: a function returns `Event(route=...)` → a row `(router, {route: target})`. A branch target
+  that isn't terminal continues in its own row headed by that target (ADR-0054); a branch target
+  that is itself a router chains a further route-map row.
 - Data flow is **positional**: `Event(output=...)` → next node's `node_input`. **One output per node.**
 - Agent prompt variables: `{Schema.field}` or source-bound `<Schema.field from node_name>`.
   **We always emit the source-bound form.**

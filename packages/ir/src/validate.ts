@@ -7,9 +7,10 @@
  * (codegen's `compile`, the `check:ir` gate, the future visual builder) can
  * present, filter, and locate problems.
  *
- * `severity: "warning"` is reserved for the join-failsafe and
- * incompatible-integration rules (ARCHITECTURE.md §7); those constructs arrive
- * in Phase 3, so the warning pass is stubbed and emits nothing yet.
+ * `severity: "warning"` marks a graph that compiles but carries a caveat worth
+ * naming (ARCHITECTURE.md §7). Live rule: `JOIN_MISSING_FAILSAFE` (a join
+ * upstream that may never emit). `INCOMPATIBLE_INTEGRATION` is still reserved
+ * for Phase 3. Warnings never block codegen — `compile` throws on errors only.
  */
 import type { GraphIR } from "./types.js";
 
@@ -96,8 +97,9 @@ export const ValidationCode = {
   // Graph shape
   UNREACHABLE_NODE: "UNREACHABLE_NODE",
   CYCLE_DETECTED: "CYCLE_DETECTED",
-  // Reserved warnings (ARCHITECTURE.md §7) — stubbed until Phase 3.
+  // Warnings (ARCHITECTURE.md §7).
   JOIN_MISSING_FAILSAFE: "JOIN_MISSING_FAILSAFE",
+  // Reserved — stubbed until Phase 3.
   INCOMPATIBLE_INTEGRATION: "INCOMPATIBLE_INTEGRATION",
 } as const;
 

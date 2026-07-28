@@ -61,6 +61,26 @@ test("join-missing-failsafe fixture produces the warning, no errors", () => {
   assert.equal(w.severity, "warning");
 });
 
+// -- router branch continuations (ADR-0054) --
+//
+// A non-terminal branch target is ordinary valid IR: it compiles on both
+// targets, and the ADK row form was confirmed against a live run (ADR-0055), so
+// it carries no finding of any severity.
+
+test("routing fixture (terminal branches) validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/routing.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("routing-continue fixture validates clean — a branch continuation is not a caveat", () => {
+  const r = validate(loadIR("../fixtures/routing-continue.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
 test("human-input fixture validates with zero errors and zero warnings", () => {
   const r = validate(loadIR("../fixtures/human-input.ir.json"));
   assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);

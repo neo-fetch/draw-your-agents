@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { GraphIR } from "@graphical-agents/ir";
+import type { GraphIR, GraphNode } from "@graphical-agents/ir";
 import { compileEdges, renderEdgeRows, EdgesCompilerError } from "../src/edges.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -78,23 +78,149 @@ test("routing: produces an entry chain row + a route-map row in declared order",
   ]);
 });
 
-test("rejects a branch continuation (a non-terminal router target) loud", () => {
+// -- router branch continuations (ADR-0054) --
+//
+// A branch target need not be terminal. A target with its own out-edges gets a
+// continuation row **headed by that target** — the same interior-row-head rule
+// ADR-0015's `(join, continuation)` row and ADR-0048's fan-out rows use.
+
+const fn = (name: string): GraphNode => ({
+  id: name,
+  type: "function",
+  name,
+  config: { inputType: "str", outputType: "str" },
+});
+
+test("routing-continue: entry chain + route map + a branch continuation row", () => {
+  const ir = loadIR("packages/ir/fixtures/routing-continue.ir.json");
+  const rendered = renderEdgeRows(compileEdges(ir));
+  assert.equal(rendered, loadGolden("routing-continue.edges.txt"));
+});
+
+test("routing-continue: the continuation row is headed by the branch target", () => {
+  const rows = compileEdges(loadIR("packages/ir/fixtures/routing-continue.ir.json"));
+  assert.equal(rows.length, 3, "expected entry chain + route map + 1 continuation row");
+  assert.deepEqual(rows[0], [
+    { kind: "start" },
+    { kind: "node", name: "assess_request" },
+    { kind: "node", name: "feasibility_router" },
+  ]);
+  assert.deepEqual(rows[1], [
+    { kind: "node", name: "feasibility_router" },
+    {
+      kind: "routeMap",
+      entries: [
+        { route: "FEASIBLE", target: "generate_code" },
+        { route: "INFEASIBLE", target: "explain_blockers" },
+      ],
+    },
+  ]);
+  // The terminal branch (explain_blockers) contributes no row at all.
+  assert.deepEqual(rows[2], [
+    { kind: "node", name: "generate_code" },
+    { kind: "node", name: "run_tests" },
+    { kind: "node", name: "summarize_result" },
+  ]);
+});
+
+test("branch continuations follow declared route order, not edge order", () => {
   const ir: GraphIR = {
     irVersion: "0.1.0",
-    name: "branch_continues",
+    name: "declared_order",
     schemas: [],
     nodes: [
-      { id: "r", type: "router", name: "r", config: { routes: ["X"] } },
-      { id: "a", type: "function", name: "a", config: { inputType: "str", outputType: "str" } },
-      { id: "b", type: "function", name: "b", config: { inputType: "str", outputType: "str" } },
+      { id: "r", type: "router", name: "r", config: { routes: ["X", "Y"] } },
+      fn("a"),
+      fn("a_next"),
+      fn("b"),
+      fn("b_next"),
+    ],
+    // Edges deliberately list the Y branch first.
+    edges: [
+      { from: "START", to: "r" },
+      { from: "r", to: "b", route: "Y" },
+      { from: "r", to: "a", route: "X" },
+      { from: "b", to: "b_next" },
+      { from: "a", to: "a_next" },
+    ],
+  };
+  assert.equal(
+    renderEdgeRows(compileEdges(ir)),
+    'edges=[("START", r), (r, {"X": a, "Y": b}), (a, a_next), (b, b_next)]',
+  );
+});
+
+test("a nested router as a branch target chains a second route-map row", () => {
+  const ir: GraphIR = {
+    irVersion: "0.1.0",
+    name: "nested_router",
+    schemas: [],
+    nodes: [
+      { id: "r1", type: "router", name: "r1", config: { routes: ["X", "Y"] } },
+      { id: "r2", type: "router", name: "r2", config: { routes: ["P", "Q"] } },
+      fn("p"),
+      fn("p_next"),
+      fn("q"),
+      fn("y"),
+    ],
+    edges: [
+      { from: "START", to: "r1" },
+      { from: "r1", to: "r2", route: "X" },
+      { from: "r1", to: "y", route: "Y" },
+      { from: "r2", to: "p", route: "P" },
+      { from: "r2", to: "q", route: "Q" },
+      { from: "p", to: "p_next" },
+    ],
+  };
+  assert.equal(
+    renderEdgeRows(compileEdges(ir)),
+    'edges=[("START", r1), (r1, {"X": r2, "Y": y}), (r2, {"P": p, "Q": q}), (p, p_next)]',
+  );
+});
+
+test("a branch target shared by two routes yields exactly one continuation row", () => {
+  const ir: GraphIR = {
+    irVersion: "0.1.0",
+    name: "shared_target",
+    schemas: [],
+    nodes: [
+      { id: "r", type: "router", name: "r", config: { routes: ["X", "Y"] } },
+      fn("t"),
+      fn("t_next"),
+    ],
+    edges: [
+      { from: "START", to: "r" },
+      { from: "r", to: "t", route: "X" },
+      { from: "r", to: "t", route: "Y" },
+      { from: "t", to: "t_next" },
+    ],
+  };
+  assert.equal(
+    renderEdgeRows(compileEdges(ir)),
+    'edges=[("START", r), (r, {"X": t, "Y": t}), (t, t_next)]',
+  );
+});
+
+test("rejects two branch continuations merging on a shared node loud", () => {
+  const ir: GraphIR = {
+    irVersion: "0.1.0",
+    name: "branches_merge",
+    schemas: [],
+    nodes: [
+      { id: "r", type: "router", name: "r", config: { routes: ["X", "Y"] } },
+      fn("a"),
+      fn("b"),
+      fn("m"),
     ],
     edges: [
       { from: "START", to: "r" },
       { from: "r", to: "a", route: "X" },
-      { from: "a", to: "b" },
+      { from: "r", to: "b", route: "Y" },
+      { from: "a", to: "m" },
+      { from: "b", to: "m" },
     ],
   };
-  assert.throws(() => compileEdges(ir), /branch continuation/);
+  assert.throws(() => compileEdges(ir), /joins\/merges are not handled by this slice/);
 });
 
 // -- parallel fan-out + join tests (ADR-0015) --

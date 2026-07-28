@@ -108,4 +108,11 @@ across parent + every nested sub-graph (invariant 1 holds across nesting).
    ADR-0051): `source` must be a control-flow **ancestor** of the consumer; `inputSchemaRef` does
    **not** apply (an agent may mix state variables from several ancestor schemas).
 7. Router: declared `routes` ⇔ out-edge `route` labels (no missing, no extra, none unlabeled).
-   Non-router out-edges carry no `route` label.
+   Non-router out-edges carry no `route` label. A branch target **may** have out-edges of its own
+   (a *branch continuation*, ADR-0054) — it compiles to a row headed by that target, verified
+   against a live ADK run (ADR-0055). Two declared routes may share one branch target.
+
+## Warnings (do not block codegen)
+`compile` throws on errors only, so these annotate a graph that still generates:
+- `JOIN_MISSING_FAILSAFE` — a join upstream that may never emit on the output channel.
+- `INCOMPATIBLE_INTEGRATION` — reserved, Phase 3.
