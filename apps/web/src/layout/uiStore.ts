@@ -5,6 +5,7 @@
  */
 import { create } from "zustand";
 import {
+  clampPopoverSize,
   clampWidth,
   defaultLayout,
   LAYOUT_STORAGE_KEY,
@@ -21,6 +22,8 @@ interface UIState extends PaneLayout {
   toggleCollapsed: (pane: SidePane) => void;
   expandPane: (pane: SidePane) => void;
   setResizing: (pane: SidePane | null) => void;
+  /** Node-popover size, drag-resized by its corner grip (ADR-0057). */
+  setPopoverSize: (w: number, h: number) => void;
 }
 
 function readLayout(): PaneLayout {
@@ -39,24 +42,36 @@ function persist(layout: PaneLayout): void {
   }
 }
 
-export const useUIStore = create<UIState>((set, get) => ({
-  ...readLayout(),
-  resizing: null,
-  setPaneWidth: (pane, width) => {
-    const widths = { ...get().widths, [pane]: clampWidth(pane, width) };
-    set({ widths });
-    persist({ widths, collapsed: get().collapsed });
-  },
-  toggleCollapsed: (pane) => {
-    const collapsed = { ...get().collapsed, [pane]: !get().collapsed[pane] };
-    set({ collapsed });
-    persist({ widths: get().widths, collapsed });
-  },
-  expandPane: (pane) => {
-    if (!get().collapsed[pane]) return;
-    const collapsed = { ...get().collapsed, [pane]: false };
-    set({ collapsed });
-    persist({ widths: get().widths, collapsed });
-  },
-  setResizing: (pane) => set({ resizing: pane }),
-}));
+export const useUIStore = create<UIState>((set, get) => {
+  /** Snapshot the persistable slice, with one field overridden. */
+  const snapshot = (patch: Partial<PaneLayout>): PaneLayout => {
+    const s = get();
+    return {
+      widths: patch.widths ?? s.widths,
+      collapsed: patch.collapsed ?? s.collapsed,
+      popover: patch.popover ?? s.popover,
+    };
+  };
+  const commit = (patch: Partial<PaneLayout>): void => {
+    const layout = snapshot(patch);
+    set(patch);
+    persist(layout);
+  };
+
+  return {
+    ...readLayout(),
+    resizing: null,
+    setPaneWidth: (pane, width) =>
+      commit({ widths: { ...get().widths, [pane]: clampWidth(pane, width) } }),
+    toggleCollapsed: (pane) =>
+      commit({
+        collapsed: { ...get().collapsed, [pane]: !get().collapsed[pane] },
+      }),
+    expandPane: (pane) => {
+      if (!get().collapsed[pane]) return;
+      commit({ collapsed: { ...get().collapsed, [pane]: false } });
+    },
+    setResizing: (pane) => set({ resizing: pane }),
+    setPopoverSize: (w, h) => commit({ popover: clampPopoverSize({ w, h }) }),
+  };
+});
