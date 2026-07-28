@@ -52,7 +52,8 @@ Agents must be single-turn / task mode (ADK constraint).
 The IR is a plain directed graph. The compiler linearizes it into ADK `edges=[...]`:
 collapse linear chains → sequence rows; routers → `(router, {route: target})`; joins → fan-in rows
 + continuation; a repeated row head (START or an interior node) is parallel fan-out
-(ADR-0048). Highest-risk module → golden-file tests.
+(ADR-0048). A non-terminal router branch target continues in its own row headed by that target
+(ADR-0054). Highest-risk module → golden-file tests.
 ([ADR-0009](DECISIONS.md))
 
 ## 5. Code generation pipeline ([ADR-0003](DECISIONS.md))
@@ -85,7 +86,9 @@ Parser maps cells → IR, then runs the **same validator**.
 Errors block generation; warnings flag. Rules: reachability from START; router completeness
 (every route has a target, every branch edge a declared route); join safety (all upstreams reach
 it; failsafe outputs); single-output rule; var/schema consistency; agent single-turn mode;
-DAG (no cycles in v1); flag live-streaming / incompatible integrations.
+DAG (no cycles in v1); flag live-streaming / incompatible integrations. Warnings render in the
+Preview pane as a collapsed, non-blocking strip above the file browser (ADR-0054); errors take the
+pane over and disable Export.
 
 ## 8. Stack
 React Flow + Lexical + Zustand (IR store as source of truth) for `apps/web`; TS templates for

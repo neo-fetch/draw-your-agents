@@ -8,7 +8,11 @@
  *
  * Supported constructs:
  * - **Linear chains**: a single START entry threaded through nodes.
- * - **Routers**: a router terminates the entry chain and emits a route-map row.
+ * - **Routers**: a router closes the chain it sits in and emits a route-map row.
+ *   A branch target that is not terminal gets its own **continuation row headed
+ *   by that target** (ADR-0054) — the same interior-row-head rule ADR-0015's
+ *   `(join, continuation)` row and ADR-0048's fan-out rows already use. A branch
+ *   target that is itself a router chains a further route-map row.
  * - **Parallel fan-out + join**: a fan-out point (repeated START edges, or an
  *   interior node with multiple out-edges) fans out to branches that converge on
  *   a join node. Each branch is its own row headed by the fan-out point — a
@@ -27,7 +31,7 @@
  * `tool` remains out of v1 scope and is filtered by the assembler's type
  * whitelist before reaching codegen.
  */
-import type { Edge, GraphIR, GraphNode } from "@graphical-agents/ir";
+import type { Edge, GraphIR, GraphNode, RouterNode } from "@graphical-agents/ir";
 
 /** The literal START sentinel that opens a graph entry row. */
 export const START = "START";
@@ -62,6 +66,19 @@ export type EdgeRow = readonly RowMember[];
 /** Raised when the graph uses a construct the current slice cannot linearize. */
 export class EdgesCompilerError extends Error {
   override name = "EdgesCompilerError";
+}
+
+/** Everything the chain walk needs, threaded through the mutually recursive helpers. */
+interface WalkCtx {
+  readonly outEdges: ReadonlyMap<string, Edge[]>;
+  readonly inDegree: ReadonlyMap<string, number>;
+  readonly nodeOf: (id: string) => GraphNode;
+  /**
+   * Nodes whose forward rows have already been emitted. Two declared routes may
+   * legally share one branch target (ADR-0027 allows `{"A": t, "B": t}`), and
+   * that target's continuation belongs in exactly one row.
+   */
+  readonly expanded: Set<string>;
 }
 
 /** Linearize the IR graph into ADK edge rows. */
@@ -102,47 +119,91 @@ export function compileEdges(ir: GraphIR): EdgeRow[] {
   }
 
   // Single-entry: walk the linear successor chain from the single START target.
-  // A router terminates the entry chain and contributes a second row (its route
-  // map).
-  const rows: EdgeRow[] = [];
-  const members: RowMember[] = [{ kind: "start" }];
-  let cur = startTargets[0];
+  return compileChain({ kind: "start" }, startTargets[0], {
+    outEdges,
+    inDegree,
+    nodeOf,
+    expanded: new Set(),
+  });
+}
+
+/**
+ * One sequence-chain row: `head` followed by `firstId` and every node linearly
+ * downstream of it, plus whatever rows that chain spawns (a router's route map
+ * and branch continuations, or a fan-out region). The returned chain row is
+ * always first.
+ */
+function compileChain(head: RowMember, firstId: string, ctx: WalkCtx): EdgeRow[] {
+  const members: RowMember[] = [head];
+  const spawned: EdgeRow[] = [];
+  let cur = firstId;
   for (;;) {
-    const node = nodeOf(cur);
+    const node = ctx.nodeOf(cur);
     members.push({ kind: "node", name: rowSymbol(node) });
-    if (node.type === "router") {
-      rows.push(buildRouteMapRow(node, outEdges.get(cur) ?? [], outEdges, nodeOf));
-      break; // the router closes the entry chain; branches live in its route row
-    }
-    const outs = outEdges.get(cur) ?? [];
-    if (outs.length === 0) break; // chain end
-    if (outs.length > 1) {
-      // Mid-graph fan-out (ADR-0048): the prefix row closes at this node; one
-      // branch row per out-edge is headed by it. `rows` is necessarily empty
-      // here — a router terminates the walk before this check — so returning
-      // directly cannot drop a route-map row.
-      return [
-        members,
-        ...compileFanOut(
-          { kind: "node", name: rowSymbol(node) },
-          outs.map((e) => e.to),
-          outEdges,
-          nodeOf,
-        ),
-      ];
+    const outs = ctx.outEdges.get(cur) ?? [];
+    // Only a plain single-successor node continues this row. A router closes it
+    // (its branches live in the route map), and so does a terminal node or a
+    // fan-out point — `expand` owns whatever follows in each of those cases.
+    if (node.type === "router" || outs.length !== 1) {
+      spawned.push(...expand(node, ctx));
+      break;
     }
     const next = outs[0].to;
-    if ((inDegree.get(next) ?? 0) > 1) {
+    if ((ctx.inDegree.get(next) ?? 0) > 1) {
       throw new EdgesCompilerError(
-        `node "${nodeOf(next).name}" has multiple in-edges; ` +
+        `node "${ctx.nodeOf(next).name}" has multiple in-edges; ` +
           "joins/merges are not handled by this slice",
       );
     }
     cur = next;
   }
+  return [members, ...spawned];
+}
 
-  rows.unshift(members);
-  return rows;
+/**
+ * The rows that continue *after* `node`, which some earlier row already placed.
+ * The single place that decides what follows a node:
+ * - router      → its route-map row, plus one expansion per branch target;
+ * - terminal    → nothing;
+ * - >1 out-edge → a fan-out region headed by the node (ADR-0048);
+ * - 1 out-edge  → a continuation row headed by the node.
+ *
+ * Emitted at most once per node — see `WalkCtx.expanded`.
+ */
+function expand(node: GraphNode, ctx: WalkCtx): EdgeRow[] {
+  if (ctx.expanded.has(node.id)) return [];
+  ctx.expanded.add(node.id);
+
+  if (node.type === "router") {
+    const targets = routeTargets(node, ctx.outEdges.get(node.id) ?? []);
+    const rows: EdgeRow[] = [buildRouteMapRow(node, targets, ctx.nodeOf)];
+    // Branch continuations follow the declared route order, so the row order is
+    // deterministic. A branch target that is itself a router recurses here.
+    for (const { targetId } of targets) {
+      rows.push(...expand(ctx.nodeOf(targetId), ctx));
+    }
+    return rows;
+  }
+
+  const outs = ctx.outEdges.get(node.id) ?? [];
+  if (outs.length === 0) return []; // terminal
+  const head: RowMember = { kind: "node", name: rowSymbol(node) };
+  if (outs.length > 1) {
+    return compileFanOut(
+      head,
+      outs.map((e) => e.to),
+      ctx.outEdges,
+      ctx.nodeOf,
+    );
+  }
+  const next = outs[0].to;
+  if ((ctx.inDegree.get(next) ?? 0) > 1) {
+    throw new EdgesCompilerError(
+      `node "${ctx.nodeOf(next).name}" has multiple in-edges; ` +
+        "joins/merges are not handled by this slice",
+    );
+  }
+  return compileChain(head, next, ctx);
 }
 
 /**
@@ -237,40 +298,47 @@ function compileFanOut(
   return rows;
 }
 
+/** A router's branch targets in **declared `routes` order** — the deterministic order. */
+interface RouteTarget {
+  readonly route: string;
+  readonly targetId: string;
+}
+
 /**
- * Build a router's route-map row `(router, {route: target})`. Entries follow the
- * router's **declared `routes` order** (deterministic), each mapped to the target
- * named by its labelled out-edge. Branch targets must be terminal in this slice —
- * a target with its own out-edges is a continuation we don't yet linearize.
+ * Resolve each declared route to the node id named by its labelled out-edge.
+ * The validator guarantees the declared set and the labelled set match
+ * (IR-SCHEMA invariant 7); a mismatch here is a malformed IR, so it throws.
  */
-function buildRouteMapRow(
-  router: GraphNode,
-  outs: readonly Edge[],
-  outEdges: ReadonlyMap<string, Edge[]>,
-  nodeOf: (id: string) => GraphNode,
-): EdgeRow {
-  const declared = router.type === "router" ? router.config.routes : [];
+function routeTargets(router: RouterNode, outs: readonly Edge[]): RouteTarget[] {
   const targetByRoute = new Map<string, string>(); // route label -> target node id
   for (const edge of outs) {
     if (edge.route !== undefined) targetByRoute.set(edge.route, edge.to);
   }
-
-  const entries: RouteEntry[] = declared.map((route) => {
+  return router.config.routes.map((route) => {
     const targetId = targetByRoute.get(route);
     if (targetId === undefined) {
       throw new EdgesCompilerError(
         `router "${router.name}" route "${route}" has no out-edge`,
       );
     }
-    if ((outEdges.get(targetId) ?? []).length > 0) {
-      throw new EdgesCompilerError(
-        `router "${router.name}" branch target "${nodeOf(targetId).name}" has ` +
-          "out-edges; branch continuations are not handled by this slice",
-      );
-    }
-    return { route, target: rowSymbol(nodeOf(targetId)) };
+    return { route, targetId };
   });
+}
 
+/**
+ * Build a router's route-map row `(router, {route: target})`. A branch target
+ * need not be terminal — a target with its own out-edges gets a continuation row
+ * of its own, built by `expand` (ADR-0054).
+ */
+function buildRouteMapRow(
+  router: RouterNode,
+  targets: readonly RouteTarget[],
+  nodeOf: (id: string) => GraphNode,
+): EdgeRow {
+  const entries: RouteEntry[] = targets.map(({ route, targetId }) => ({
+    route,
+    target: rowSymbol(nodeOf(targetId)),
+  }));
   return [{ kind: "node", name: rowSymbol(router) }, { kind: "routeMap", entries }];
 }
 

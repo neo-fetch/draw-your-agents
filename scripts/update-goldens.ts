@@ -23,6 +23,7 @@ import { generateLangGraphProject } from "../packages/codegen/src/langgraph/proj
 const PROJECTS = [
   { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json" },
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json" },
+  { name: "routing-continue", fixture: "packages/ir/fixtures/routing-continue.ir.json" },
   { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json" },
   { name: "parallel-mid", fixture: "packages/ir/fixtures/parallel-mid.ir.json" },
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json" },

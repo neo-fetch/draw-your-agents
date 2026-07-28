@@ -48,6 +48,7 @@ const BASE_FILES = [
 const PROJECTS = [
   { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json", extras: [] },
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json", extras: [] },
+  { name: "routing-continue", fixture: "packages/ir/fixtures/routing-continue.ir.json", extras: [] },
   { name: "parallel", fixture: "packages/ir/fixtures/parallel.ir.json", extras: [] },
   { name: "parallel-mid", fixture: "packages/ir/fixtures/parallel-mid.ir.json", extras: [] },
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json", extras: [] },

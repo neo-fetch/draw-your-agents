@@ -7,6 +7,7 @@ import { useIRStore } from "../store/irStore.ts";
 // the browser, which would explode at runtime. Preview only needs the pure
 // compile path; black formatting is opt-in and lives in later slices.
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
+import { validate, type Finding } from "../../../../packages/ir/src/validate.ts";
 import type { GeneratedProject } from "../../../../packages/codegen/src/project.ts";
 import { resolveFindingPath } from "../store/subgraph.ts";
 import { EASE_OUT, findingItem } from "../anim/presets.ts";
@@ -37,8 +38,11 @@ const DEFAULT_FILE = "agents.py";
  * AnimatePresence so progress is visible ("drain the list" UX, ADR-0044).
  * Rows resolve to a canvas node where possible (ADR-0043) and then the
  * whole row is the focus affordance, not just a suffix link.
+ *
+ * Shared by the blocking error list and the non-blocking warning strip
+ * (ADR-0054) — same rows, different framing.
  */
-function Findings({ findings }: { findings: ValidationError["findings"] }) {
+function FindingList({ findings }: { findings: readonly Finding[] }) {
   const ir = useIRStore((s) => s.ir);
   const focusFinding = useIRStore((s) => s.focusFinding);
 
@@ -52,6 +56,57 @@ function Findings({ findings }: { findings: ValidationError["findings"] }) {
     return { f, key: n === 0 ? base : `${base}#${n}` };
   });
 
+  return (
+    <ul className="findings">
+      <AnimatePresence mode="popLayout" initial={false}>
+        {rows.map(({ f, key }) => {
+          // Path-prefixed nested ids ("n_outer/n_inner", ADR-0017)
+          // navigate into the owning sub-graph and center the actual
+          // node, instead of landing on the enclosing workflow card
+          // (ADR-0050).
+          const target = resolveFindingPath(ir, f.nodeId);
+          const body = (
+            <>
+              <span className="finding-row__dot" aria-hidden="true" />
+              <span className="finding-row__code">{f.code}</span>
+              <span className="finding-row__msg">
+                {f.message}
+                {f.nodeId ? ` (node: ${f.nodeId})` : ""}
+              </span>
+            </>
+          );
+          return (
+            <m.li
+              key={key}
+              layout
+              variants={findingItem}
+              initial="hidden"
+              animate="show"
+              exit="exit"
+              className="finding-row"
+            >
+              {target ? (
+                <button
+                  type="button"
+                  className="finding-row__btn"
+                  title="Show this node on the canvas"
+                  onClick={() => focusFinding(f.nodeId!)}
+                >
+                  {body}
+                </button>
+              ) : (
+                <div className="finding-row__btn is-static">{body}</div>
+              )}
+            </m.li>
+          );
+        })}
+      </AnimatePresence>
+    </ul>
+  );
+}
+
+/** The blocking list: errors stop codegen, so this replaces the file browser. */
+function Findings({ findings }: { findings: ValidationError["findings"] }) {
   const count = findings.length;
   return (
     <div>
@@ -61,52 +116,25 @@ function Findings({ findings }: { findings: ValidationError["findings"] }) {
         </strong>
         <span className="findings-sub">fix these to export your project</span>
       </div>
-      <ul className="findings">
-        <AnimatePresence mode="popLayout" initial={false}>
-          {rows.map(({ f, key }) => {
-            // Path-prefixed nested ids ("n_outer/n_inner", ADR-0017)
-            // navigate into the owning sub-graph and center the actual
-            // node, instead of landing on the enclosing workflow card
-            // (ADR-0050).
-            const target = resolveFindingPath(ir, f.nodeId);
-            const body = (
-              <>
-                <span className="finding-row__dot" aria-hidden="true" />
-                <span className="finding-row__code">{f.code}</span>
-                <span className="finding-row__msg">
-                  {f.message}
-                  {f.nodeId ? ` (node: ${f.nodeId})` : ""}
-                </span>
-              </>
-            );
-            return (
-              <m.li
-                key={key}
-                layout
-                variants={findingItem}
-                initial="hidden"
-                animate="show"
-                exit="exit"
-                className="finding-row"
-              >
-                {target ? (
-                  <button
-                    type="button"
-                    className="finding-row__btn"
-                    title="Show this node on the canvas"
-                    onClick={() => focusFinding(f.nodeId!)}
-                  >
-                    {body}
-                  </button>
-                ) : (
-                  <div className="finding-row__btn is-static">{body}</div>
-                )}
-              </m.li>
-            );
-          })}
-        </AnimatePresence>
-      </ul>
+      <FindingList findings={findings} />
     </div>
+  );
+}
+
+/**
+ * The non-blocking strip (ADR-0054): the graph compiled and Export stays
+ * enabled — these are caveats worth naming, so they sit collapsed above the
+ * file browser rather than taking the pane over.
+ */
+function Warnings({ findings }: { findings: readonly Finding[] }) {
+  const count = findings.length;
+  return (
+    <details className="preview-warnings">
+      <summary>
+        {count} warning{count === 1 ? "" : "s"} — compiles anyway
+      </summary>
+      <FindingList findings={findings} />
+    </details>
   );
 }
 
@@ -114,6 +142,9 @@ export function Preview() {
   const ir = useIRStore((s) => s.ir);
   const target = useTargetStore((s) => s.target);
   const result = useMemo(() => safeCompile(ir, target), [ir, target]);
+  // Warnings never block codegen, so they only make sense on the success path —
+  // the error list owns the pane when there is one.
+  const warnings = useMemo(() => validate(ir).warnings, [ir]);
   const [selectedFile, setSelectedFile] = useState<string>(DEFAULT_FILE);
 
   if (result.kind === "validation") {
@@ -130,6 +161,7 @@ export function Preview() {
 
   return (
     <div>
+      {warnings.length > 0 ? <Warnings findings={warnings} /> : null}
       <select value={file} onChange={(e) => setSelectedFile(e.target.value)}>
         {files.map((f) => (
           <option key={f} value={f}>

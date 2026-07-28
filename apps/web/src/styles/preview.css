@@ -113,3 +113,43 @@
   background: var(--paper-raised);
 }
 .finding-row__msg { flex: 1 1 auto; }
+
+/* ------------------------------------------- non-blocking warnings (ADR-0054)
+
+   Same rows as the error list, recoloured with the warn tokens. The graph
+   compiled and Export stays enabled, so the strip sits collapsed above the file
+   browser instead of taking the pane over. */
+
+.preview .preview-warnings {
+  margin-bottom: 10px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r-sm);
+  background: var(--warn-bg);
+}
+.preview .preview-warnings > summary {
+  padding: 6px 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--warn-ink);
+  cursor: pointer;
+  user-select: none;
+}
+.preview .preview-warnings > summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-wash);
+  border-radius: var(--r-sm);
+}
+.preview .preview-warnings .findings { padding: 0 7px 7px; }
+.preview .preview-warnings .finding-row__btn {
+  border-color: var(--warn-line);
+  background: var(--paper-raised);
+  color: var(--warn-ink);
+}
+.preview .preview-warnings .finding-row__btn:hover:not(.is-static) {
+  border-color: var(--accent);
+}
+.preview .preview-warnings .finding-row__dot { background: var(--warn-ink); }
+.preview .preview-warnings .finding-row__code {
+  border-color: var(--warn-line);
+  background: var(--warn-bg);
+}

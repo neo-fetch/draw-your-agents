@@ -61,6 +61,54 @@ test("join-missing-failsafe fixture produces the warning, no errors", () => {
   assert.equal(w.severity, "warning");
 });
 
+// -- router branch continuations (ADR-0054) --
+//
+// A non-terminal branch target compiles; it warns because the ADK edge-row form
+// for the continuation is not yet verified against a live run.
+
+test("routing fixture (terminal branches) validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/routing.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("routing-continue fixture warns once, on the branch target, with no errors", () => {
+  const r = validate(loadIR("../fixtures/routing-continue.ir.json"));
+  assert.equal(r.ok, true, "a branch continuation is valid IR — warning only");
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.warnings.length, 1, `expected exactly 1 warning, got ${r.warnings.length}`);
+  const w = r.warnings[0];
+  assert.equal(w.code, ValidationCode.ROUTER_BRANCH_CONTINUATION);
+  assert.equal(w.severity, "warning");
+  // Anchored on the branch target, not the router — that is the node to look at.
+  assert.equal(w.nodeId, "n_generate");
+});
+
+test("a branch target shared by two routes warns exactly once", () => {
+  const ir = {
+    irVersion: "0.1.0",
+    name: "shared_target",
+    schemas: [],
+    nodes: [
+      { id: "n_r", type: "router", name: "r", config: { routes: ["X", "Y"] } },
+      { id: "n_t", type: "function", name: "t", config: { inputType: "str", outputType: "str", emits: "output" } },
+      { id: "n_next", type: "function", name: "t_next", config: { inputType: "str", outputType: "str", emits: "output" } },
+    ],
+    edges: [
+      { from: "START", to: "n_r" },
+      { from: "n_r", to: "n_t", route: "X" },
+      { from: "n_r", to: "n_t", route: "Y" },
+      { from: "n_t", to: "n_next" },
+    ],
+  } as unknown as Parameters<typeof validate>[0];
+  const r = validate(ir);
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.equal(r.warnings.length, 1);
+  assert.equal(r.warnings[0].code, ValidationCode.ROUTER_BRANCH_CONTINUATION);
+  assert.equal(r.warnings[0].nodeId, "n_t");
+});
+
 test("human-input fixture validates with zero errors and zero warnings", () => {
   const r = validate(loadIR("../fixtures/human-input.ir.json"));
   assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
