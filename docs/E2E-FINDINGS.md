@@ -237,3 +237,31 @@ reached all five state keys with `feasibility_router_output == "FEASIBLE"`.
 
 No new findings; F1–F5 remain fixed. Reproduce with
 `GOOGLE_API_KEY=… node scripts/e2e.ts --live --fixture=routing-continue`.
+
+## Body wrapper verified by execution (ADR-0056), 2026-07-28
+
+The `bodies` fixture has **no agent nodes**, so its generated project runs end
+to end with no model call and no API quota — the one live cell in this repo that
+costs nothing. That makes it the execution proof for the ADR-0056 body wrapper,
+where the golden files only prove syntax.
+
+**Observed**, running each staged project directly (google-adk 2.0.0 /
+langgraph 1.2.4, Python 3.11):
+
+| target | final output |
+|---|---|
+| adk | `output='hello — replace…'` → `output=TextStats(words=10, chars=52)` → `output='10 words, 5.2 chars/word'` |
+| langgraph | `{'normalize_text_output': 'hello — replace…', 'measure_text_output': TextStats(words=10, chars=52), 'report_stats_output': '10 words, 5.2 chars/word'}` |
+
+Identical results from identical bodies on both targets — the neutral contract
+demonstrated, not just asserted. The chain exercises every piece that matters:
+a body constructing a pydantic model, a guard clause with an early return (which
+is why the wrapper *calls* the body rather than rewriting its returns), and
+f-string arithmetic (`52/10 = 5.2`).
+
+Dry matrix is now **26/26** (13 fixtures × 2 targets). Reproduce with
+`node scripts/e2e.ts --fixture=bodies`, then run `main.py` in
+`.e2e-work/projects/<target>/bodies/`.
+
+**New finding: F6** (a function/tool cannot directly follow a router on ADK),
+recorded above. It surfaced from this run and is not fixed here.

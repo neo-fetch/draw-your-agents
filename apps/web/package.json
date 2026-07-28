@@ -12,8 +12,15 @@
     "test:app": "node --test \"test-app/**/*.test.ts\""
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.7",
     "@lexical/react": "^0.45.0",
+    "@lezer/highlight": "^1.2.3",
     "@xyflow/react": "^12.3.5",
+    "codemirror": "^6.0.2",
     "lexical": "^0.45.0",
     "motion": "^12.40.0",
     "react": "^19.0.0",

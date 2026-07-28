@@ -24,6 +24,12 @@ UI / draw.io  →  IR  →  validator  →  codegen  →  runnable ADK project (
 
 Agents must be single-turn / task mode (ADK constraint).
 
+A `body` on a `function`/`tool`/`router` is **target-neutral** (ADR-0056): `node_input` is in
+scope and the body returns a plain value. Codegen emits it verbatim inside `_<name>_impl` and
+wraps the return value per target (`Event(output=…)` / `Event(route=…)` for ADK,
+`{"<name>_output": …}` for LangGraph), so one body compiles for both. See
+[IR-SCHEMA.md](IR-SCHEMA.md) for the table.
+
 ## 3. Data-flow & variable model (the headline feature)
 - ADK Event channels: `output` (standard payload → next node's `node_input`, **one per node**),
   `message` (user-facing), `state` (session-wide; **non-adjacent variables shipped** — ADR-0051).

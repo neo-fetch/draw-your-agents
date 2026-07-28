@@ -24,7 +24,8 @@ IR → edges compiler → per-node template fragments → assemble modules
 - `packages/ir`      IR JSON Schema + TS types + validator. **The keystone.** Everything depends on it.
 - `packages/codegen` IR → ADK project (default) + LangGraph project (`src/langgraph/`). Templates + edges compiler + golden tests.
 - `packages/drawio`  mxGraph XML → IR.
-- `apps/web`         React Flow canvas + Lexical prompt editor. Depends only on `packages/ir` types.
+- `apps/web`         React Flow canvas + Lexical prompt editor + CodeMirror body editor.
+                     Depends only on `packages/ir` types.
 
 A session works in **one** package. Load `packages/ir` types + that package; nothing else.
 
@@ -58,6 +59,10 @@ A session works in **one** package. Load `packages/ir` types + that package; not
   that isn't terminal continues in its own row headed by that target (ADR-0054); a branch target
   that is itself a router chains a further route-map row.
 - Data flow is **positional**: `Event(output=...)` → next node's `node_input`. **One output per node.**
+  A router emits **no output**, so a `function`/`tool` directly after one gets `node_input=None`
+  and dies in pydantic coercion (finding F6) — branch targets must be agents for now.
+- IR `body` is **target-neutral** (ADR-0056): `node_input` in scope, return a plain value. Codegen
+  emits it in `_<name>_impl` and wraps per target. Never write `Event(...)` in a body.
 - Agent prompt variables: `{Schema.field}` or source-bound `<Schema.field from node_name>`.
   **We always emit the source-bound form.**
 - `JoinNode` waits for all upstreams; every upstream needs a failsafe output or it hangs.

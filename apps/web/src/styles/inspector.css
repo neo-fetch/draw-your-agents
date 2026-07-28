@@ -110,3 +110,23 @@
 .form-head[data-node-type="humanInput"] { --type: var(--t-humanInput); }
 .form-head[data-node-type="workflow"]   { --type: var(--t-workflow); }
 .form-head[data-node-type="loop"]       { --type: var(--t-loop); }
+
+/* ---- body editor (ADR-0056) ----
+   The signature strip and the CodeMirror surface read as one control: the
+   strip is the def header codegen writes, the editor is its indented body. */
+.body-editor { display: flex; flex-direction: column; }
+.body-editor__sig {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--paper-sunken);
+  border: 1px solid var(--line-strong);
+  border-bottom: none;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  padding: 5px 9px;
+  white-space: pre;
+  overflow-x: auto;
+  user-select: text;
+}
+.body-editor__cm .cm-editor { max-height: 320px; }
+.body-editor .field__hint { margin-top: 5px; }
