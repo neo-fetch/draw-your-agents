@@ -205,7 +205,7 @@ function nodesModule(
         frags.push(renderLgStub(node, inputKey(plan, node), plan.stateClass, schemas));
         break;
       case "router":
-        frags.push(renderLgRouter(node, inputKey(plan, node), plan.stateClass));
+        frags.push(renderLgRouter(node, inputKey(plan, node), plan.stateClass, schemas));
         break;
       case "humanInput":
         frags.push(renderLgHumanInput(node, plan.stateClass, schemas));

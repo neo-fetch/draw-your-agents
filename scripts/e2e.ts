@@ -53,7 +53,17 @@ const DRY_TEST_FILE: Record<CodegenTarget, string> = {
 };
 
 /** Fixtures executed live with a real key. All use free-tier-friendly models. */
-const LIVE_SUBSET = ["city-time", "routing", "routing-continue", "parallel", "tool"] as const;
+const LIVE_SUBSET = [
+  // `bodies` has no agent nodes, so its live cell costs zero API calls — it is
+  // pure execution proof for the ADR-0056 body wrapper. It still needs a key
+  // present, because the live phase is gated once for the whole run.
+  "bodies",
+  "city-time",
+  "routing",
+  "routing-continue",
+  "parallel",
+  "tool",
+] as const;
 
 /** Fixtures never run live, with the recorded reason. */
 const LIVE_SKIP: Record<string, string> = {

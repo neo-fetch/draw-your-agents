@@ -59,6 +59,7 @@ const BASE_FILES = [
 // Keep in sync with PROJECTS in project.test.ts / scripts/update-goldens.ts —
 // the same fixtures back both targets' goldens (ADR-0045).
 const PROJECTS = [
+  { name: "bodies", fixture: "packages/ir/fixtures/bodies.ir.json", extras: [] },
   { name: "city-time", fixture: "packages/ir/fixtures/city-time.ir.json", extras: [] },
   { name: "routing", fixture: "packages/ir/fixtures/routing.ir.json", extras: [] },
   { name: "routing-continue", fixture: "packages/ir/fixtures/routing-continue.ir.json", extras: [] },
@@ -106,11 +107,20 @@ test("langgraph rejects agent-attached tools loud", () => {
   assert.throws(() => generateLangGraphProject(ir), CodegenError);
 });
 
-test("langgraph rejects a non-null ADK-flavored body loud", () => {
+test("langgraph compiles a neutral body into an impl def the node function calls", () => {
+  // Superseded ADR-0056: a body used to be rejected here as ADK-flavored. It is
+  // now target-neutral — returns a plain value — so it compiles on both targets.
   const ir = loadIR("packages/ir/fixtures/city-time.ir.json");
   const fn = ir.nodes.find((n) => n.type === "function")!;
-  (fn.config as { body?: string | null }).body = "return Event(output=node_input)";
-  assert.throws(() => generateLangGraphProject(ir), CodegenError);
+  (fn.config as { body?: string | null }).body = 'return CityTime(time_info="noon")';
+
+  const files = generateLangGraphProject(ir);
+  const nodes = files.get("nodes.py")!;
+  assert.match(nodes, /def _lookup_time_impl\(node_input: str\) -> CityTime:/);
+  assert.match(nodes, /return \{"lookup_time_output": _lookup_time_impl\(state\["\w+"\]\)\}/);
+  // The neutral contract means the body never mentions the target's plumbing.
+  assert.doesNotMatch(nodes, /Event\(/);
+  compileCheck(files);
 });
 
 test("langgraph rejects a humanInput inside a nested workflow loud", () => {

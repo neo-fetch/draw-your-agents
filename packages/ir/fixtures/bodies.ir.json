@@ -1,0 +1,59 @@
+{
+  "irVersion": "0.1.0",
+  "name": "text_stats_workflow",
+  "description": "Function and tool nodes carrying real target-neutral bodies (ADR-0056). Deliberately free of agent nodes, so the generated project runs end to end with no model call — the live e2e cell costs zero API quota. Linear by design: a function cannot directly follow a router on ADK (finding F6).",
+  "schemas": [
+    {
+      "name": "TextStats",
+      "fields": [
+        { "name": "words", "type": "int" },
+        { "name": "chars", "type": "int" }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_normalize",
+      "type": "function",
+      "name": "normalize_text",
+      "ui": { "x": 0, "y": 0 },
+      "config": {
+        "description": "Collapse whitespace and lowercase the incoming text.",
+        "inputType": "str",
+        "outputType": "str",
+        "emits": "output",
+        "body": "return \" \".join(node_input.split()).lower()"
+      }
+    },
+    {
+      "id": "n_stats",
+      "type": "tool",
+      "name": "measure_text",
+      "ui": { "x": 260, "y": 0 },
+      "config": {
+        "description": "Count words and characters in the normalized text.",
+        "inputType": "str",
+        "outputType": "TextStats",
+        "body": "words = len(node_input.split())\nchars = len(node_input)\nreturn TextStats(words=words, chars=chars)"
+      }
+    },
+    {
+      "id": "n_report",
+      "type": "function",
+      "name": "report_stats",
+      "ui": { "x": 520, "y": 0 },
+      "config": {
+        "description": "Describe the measured text. The guard clause exercises an early return inside a body.",
+        "inputType": "TextStats",
+        "outputType": "str",
+        "emits": "output",
+        "body": "if node_input.words == 0:\n    return \"empty passage\"\n\ndensity = node_input.chars / node_input.words\nreturn f\"{node_input.words} words, {density:.1f} chars/word\""
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_normalize" },
+    { "from": "n_normalize", "to": "n_stats" },
+    { "from": "n_stats", "to": "n_report" }
+  ]
+}

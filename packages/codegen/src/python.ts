@@ -31,6 +31,31 @@ export function pyStr(value: string): string {
   return `"${escaped}"`;
 }
 
+/**
+ * Strip the deepest common leading whitespace from a block, and trim blank
+ * lines off both ends (ADR-0056).
+ *
+ * An IR `body` is authored in a text box, so it routinely arrives carrying the
+ * indentation it had wherever it was copied from. `indent` prefixes a fixed pad
+ * to *every* line, so without this an already-indented body compiles to Python
+ * that black rejects — a failure that surfaces three stages downstream from the
+ * typo. Blank lines are ignored when measuring, and never count as the
+ * shallowest line.
+ */
+export function dedent(block: string): string {
+  const lines = block.replace(/\s+$/, "").split("\n");
+  while (lines.length > 0 && lines[0].trim() === "") lines.shift();
+  if (lines.length === 0) return "";
+
+  let common = Infinity;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    common = Math.min(common, line.length - line.trimStart().length);
+  }
+  if (!Number.isFinite(common) || common === 0) return lines.join("\n");
+  return lines.map((line) => (line.trim() === "" ? "" : line.slice(common))).join("\n");
+}
+
 /** Indent every line of a block by `level` 4-space steps. */
 export function indent(block: string, level = 1): string {
   const pad = "    ".repeat(level);

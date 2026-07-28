@@ -444,3 +444,72 @@ test("state-var-not-ancestor fixture reports ancestor + field codes, not the inp
   const f = r.errors.find((e) => e.code === ValidationCode.STATE_VAR_SOURCE_NOT_ANCESTOR);
   assert.equal(f?.nodeId, "n_consumer");
 });
+
+// -- function bodies (ADR-0056) --
+
+/** The `bodies` fixture with one node's body swapped, for the per-finding tests. */
+function irWithBody(nodeName: string, body: string): GraphIR {
+  const ir = loadIR("../fixtures/bodies.ir.json");
+  const node = ir.nodes.find((n) => n.name === nodeName)!;
+  (node.config as { body?: string | null }).body = body;
+  return ir;
+}
+
+test("bodies fixture validates with zero errors and zero warnings", () => {
+  const r = validate(loadIR("../fixtures/bodies.ir.json"));
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  assert.equal(r.ok, true);
+});
+
+test("BODY_ADK_FLAVORED catches a body written against the pre-ADR-0056 contract", () => {
+  const r = validate(irWithBody("normalize_text", "return Event(output=node_input)"));
+  assert.equal(r.ok, false);
+  const f = r.errors.find((e) => e.code === ValidationCode.BODY_ADK_FLAVORED);
+  assert.equal(f?.nodeId, "n_normalize");
+});
+
+test("BODY_ADK_FLAVORED ignores Event mentioned in a comment or a string", () => {
+  const r = validate(
+    irWithBody("normalize_text", '# returns an Event(...) downstream\nreturn "Event(output=x)"'),
+  );
+  assert.deepEqual(r.errors, [], `unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+});
+
+test("BODY_NO_RETURN warns without blocking codegen", () => {
+  const r = validate(irWithBody("normalize_text", "value = node_input.strip()"));
+  assert.equal(r.ok, true, "a returnless body is a warning, not an error");
+  assert.equal(r.warnings[0]?.code, ValidationCode.BODY_NO_RETURN);
+});
+
+test("BODY_NO_RETURN accepts a body that only raises", () => {
+  const r = validate(irWithBody("normalize_text", 'raise NotImplementedError("todo")'));
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+});
+
+/** The `routing` fixture with a body on its router — bodies has no router (F6). */
+function routerWithBody(body: string): GraphIR {
+  const ir = loadIR("../fixtures/routing.ir.json");
+  const node = ir.nodes.find((n) => n.type === "router")!;
+  (node.config as { body?: string | null }).body = body;
+  return ir;
+}
+
+test("BODY_ROUTE_UNDECLARED warns when a router body returns an unlisted label", () => {
+  const r = validate(routerWithBody('return "HUGE"'));
+  assert.equal(r.ok, true, "an undeclared route literal is advisory, not blocking");
+  const f = r.warnings.find((w) => w.code === ValidationCode.BODY_ROUTE_UNDECLARED);
+  assert.match(f?.message ?? "", /HUGE/);
+  assert.equal(f?.nodeId, "n_router");
+});
+
+test("BODY_ROUTE_UNDECLARED stays quiet when the route is computed, not a literal", () => {
+  const r = validate(routerWithBody("return decide(node_input)"));
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+});
+
+test("BODY_ROUTE_UNDECLARED stays quiet when some returned literal is declared", () => {
+  // A body that mixes a declared label with a computed one must not be flagged.
+  const r = validate(routerWithBody('if urgent(node_input):\n    return "BUG"\nreturn other()'));
+  assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+});

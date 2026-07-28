@@ -33,7 +33,7 @@ import type {
   ToolNode,
   TypeRef,
 } from "@graphical-agents/ir";
-import { resolveRef, type Fragment } from "../fragments.ts";
+import { implName, renderImpl, resolveRef, type Fragment } from "../fragments.ts";
 import { BLACK_LINE_WIDTH, CodegenError, indent, pyStr, type ImportReq } from "../python.ts";
 import { outputKey } from "./state.ts";
 
@@ -87,14 +87,32 @@ function strAssign(target: string, literal: string, indentLevel: number): string
   return inline;
 }
 
-/** A non-null IR `body` is ADK-flavored (`node_input` / `Event(...)`) — reject loud. */
-function rejectBody(node: FunctionNode | RouterNode | ToolNode): void {
-  if (node.config.body != null) {
-    throw new CodegenError(
-      `node "${node.name}": IR function bodies target the ADK Event API and ` +
-        `cannot be transplanted into a LangGraph project — leave body null`,
-    );
-  }
+/**
+ * The body-carrying half of a node function (ADR-0056).
+ *
+ * An IR body is target-neutral — `node_input` in scope, returns a plain value —
+ * so this target compiles it to the same `_<name>_impl` def the ADK target
+ * emits, and the node function feeds it `state[<inputKey>]`. Before ADR-0056 a
+ * non-null body was rejected outright here, which meant typing into the
+ * Inspector's body box silently made a graph un-exportable to LangGraph.
+ */
+function renderLgBodied(
+  node: FunctionNode | RouterNode | ToolNode,
+  inputPy: string,
+  outputPy: string,
+  inputKey: string,
+  stateClass: string,
+  body: string,
+): string {
+  const impl = renderImpl(node, inputPy, outputPy, body);
+  const lines: string[] = [`def ${node.name}(state: ${stateClass}) -> dict:`];
+  if (node.config.description) lines.push(indent(`"""${node.config.description}"""`));
+  lines.push(
+    indent(
+      `return {${pyStr(outputKey(node))}: ${implName(node)}(state[${pyStr(inputKey)}])}`,
+    ),
+  );
+  return `${impl}\n\n${lines.join("\n")}\n`;
 }
 
 /**
@@ -191,10 +209,25 @@ export function renderLgStub(
   stateClass: string,
   schemas: ReadonlyMap<string, SchemaDef>,
 ): Fragment {
-  rejectBody(node);
   const imports: ImportReq[] = [{ module: "state", names: [stateClass] }];
   const output = resolveRef(node.config.outputType, schemas);
   imports.push(...output.imports);
+
+  if (node.config.body != null) {
+    const input = resolveRef(node.config.inputType, schemas);
+    imports.push(...input.imports);
+    return {
+      imports,
+      code: renderLgBodied(
+        node,
+        input.py,
+        output.py,
+        inputKey,
+        stateClass,
+        node.config.body,
+      ),
+    };
+  }
 
   const lines: string[] = [`def ${node.name}(state: ${stateClass}) -> dict:`];
   if (node.config.description) lines.push(indent(`"""${node.config.description}"""`));
@@ -215,9 +248,21 @@ export function renderLgRouter(
   node: RouterNode,
   inputKey: string,
   stateClass: string,
+  schemas: ReadonlyMap<string, SchemaDef>,
 ): Fragment {
-  rejectBody(node);
   const imports: ImportReq[] = [{ module: "state", names: [stateClass] }];
+
+  if (node.config.body != null) {
+    const input = resolveRef(node.config.inputType ?? "str", schemas);
+    imports.push(...input.imports);
+    // A router body returns the route label; the node function writes it to the
+    // router's own state key, which add_conditional_edges reads back.
+    return {
+      imports,
+      code: renderLgBodied(node, input.py, "str", inputKey, stateClass, node.config.body),
+    };
+  }
+
   const lines: string[] = [`def ${node.name}(state: ${stateClass}) -> dict:`];
   if (node.config.description) lines.push(indent(`"""${node.config.description}"""`));
   lines.push(

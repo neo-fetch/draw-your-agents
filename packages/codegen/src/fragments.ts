@@ -21,12 +21,39 @@ import type {
   ToolNode,
   TypeRef,
 } from "@graphical-agents/ir";
-import { CodegenError, type ImportReq, indent, pyStr } from "./python.ts";
+import { CodegenError, dedent, type ImportReq, indent, pyStr } from "./python.ts";
 
 /** A rendered code fragment plus the imports it depends on. */
 export interface Fragment {
   readonly imports: readonly ImportReq[];
   readonly code: string;
+}
+
+/**
+ * The private def holding a node's verbatim IR `body` (ADR-0056).
+ *
+ * An IR body is **target-neutral**: `node_input` is in scope and the body
+ * returns a plain value — never an `Event`, never a state dict. Each target
+ * adapts that value in a thin wrapper, so the same body compiles for ADK and
+ * LangGraph alike.
+ *
+ * We wrap rather than rewrite the body's `return`s. Rewriting would mean
+ * parsing Python in TypeScript, and would break on the ordinary cases — an
+ * early return in a guard clause, a return inside a nested def or lambda.
+ * Calling a separate def costs one name and works for any body.
+ */
+export function implName(node: { name: string }): string {
+  return `_${node.name}_impl`;
+}
+
+/** `def _<name>_impl(node_input: <in>) -> <out>:` over the dedented body. */
+export function renderImpl(
+  node: { name: string },
+  inputPy: string,
+  outputPy: string,
+  body: string,
+): string {
+  return `def ${implName(node)}(node_input: ${inputPy}) -> ${outputPy}:\n${indent(dedent(body))}\n`;
 }
 
 /**
@@ -130,19 +157,24 @@ export function renderFunction(
   const header: string[] = [`def ${node.name}(node_input: ${input.py}) -> Event:`];
   if (cfg.description) header.push(indent(`"""${cfg.description}"""`));
 
-  let body: string;
   if (cfg.body != null) {
-    body = indent(cfg.body);
-  } else {
-    // null body → a clear stub with the right signature and Event return.
-    body = indent(
-      [
-        `# TODO: implement ${node.name} — body not yet provided in the IR.`,
-        `${channelVar}: ${output.py} = ...`,
-        `return Event(${channelVar}=${channelVar})`,
-      ].join("\n"),
-    );
+    // Neutral body → private impl def + a wrapper that puts its plain return
+    // value on the declared Event channel (ADR-0056).
+    const impl = renderImpl(node, input.py, output.py, cfg.body);
+    const wrapper = `${header.join("\n")}\n${indent(
+      `return Event(${channelVar}=${implName(node)}(node_input))`,
+    )}\n`;
+    return { imports, code: `${impl}\n\n${wrapper}` };
   }
+
+  // null body → a clear stub with the right signature and Event return.
+  const body = indent(
+    [
+      `# TODO: implement ${node.name} — body not yet provided in the IR.`,
+      `${channelVar}: ${output.py} = ...`,
+      `return Event(${channelVar}=${channelVar})`,
+    ].join("\n"),
+  );
 
   return { imports, code: `${header.join("\n")}\n${body}\n` };
 }
@@ -167,19 +199,24 @@ export function renderRouter(
   const header: string[] = [`def ${node.name}(node_input: ${input.py}) -> Event:`];
   if (cfg.description) header.push(indent(`"""${cfg.description}"""`));
 
-  let body: string;
   if (cfg.body != null) {
-    body = indent(cfg.body);
-  } else {
-    // null body → a stub that returns one of the declared routes.
-    body = indent(
-      [
-        `# TODO: implement ${node.name} — return Event(route=...) with one of: ${cfg.routes.join(", ")}.`,
-        `route: str = ...`,
-        `return Event(route=route)`,
-      ].join("\n"),
-    );
+    // A router body returns the route label itself; the wrapper puts it on the
+    // Event's `route` channel (ADR-0056).
+    const impl = renderImpl(node, input.py, "str", cfg.body);
+    const wrapper = `${header.join("\n")}\n${indent(
+      `return Event(route=${implName(node)}(node_input))`,
+    )}\n`;
+    return { imports, code: `${impl}\n\n${wrapper}` };
   }
+
+  // null body → a stub that returns one of the declared routes.
+  const body = indent(
+    [
+      `# TODO: implement ${node.name} — return Event(route=...) with one of: ${cfg.routes.join(", ")}.`,
+      `route: str = ...`,
+      `return Event(route=route)`,
+    ].join("\n"),
+  );
 
   return { imports, code: `${header.join("\n")}\n${body}\n` };
 }
@@ -259,18 +296,21 @@ export function renderTool(
   const header: string[] = [`def ${node.name}(node_input: ${input.py}) -> Event:`];
   if (cfg.description) header.push(indent(`"""${cfg.description}"""`));
 
-  let body: string;
   if (cfg.body != null) {
-    body = indent(cfg.body);
-  } else {
-    body = indent(
-      [
-        `# TODO: implement ${node.name} — body not yet provided in the IR.`,
-        `output: ${output.py} = ...`,
-        `return Event(output=output)`,
-      ].join("\n"),
-    );
+    const impl = renderImpl(node, input.py, output.py, cfg.body);
+    const wrapper = `${header.join("\n")}\n${indent(
+      `return Event(output=${implName(node)}(node_input))`,
+    )}\n`;
+    return { imports, code: `${impl}\n\n${wrapper}` };
   }
+
+  const body = indent(
+    [
+      `# TODO: implement ${node.name} — body not yet provided in the IR.`,
+      `output: ${output.py} = ...`,
+      `return Event(output=output)`,
+    ].join("\n"),
+  );
 
   return { imports, code: `${header.join("\n")}\n${body}\n` };
 }

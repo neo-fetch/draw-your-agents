@@ -123,6 +123,32 @@ faithful article summaries); no 429s with 20 s pacing.
   template's `adk run` / `adk web` instructions to
   `adk run <parent_dir>/<project_name>`; golden file-sets gain one file.
 
+### F6 — ADK: a function/tool as a router branch target receives `node_input=None`
+- **Cell:** manual execution of the `bodies` project while drafting ADR-0056
+  (google-adk 2.0.0, no model calls involved).
+- **Symptom:** `pydantic ValidationError: 1 validation error for TextStats —
+  Input should be a valid dictionary or instance of TextStats
+  [input_value=None]` raised from `_function_node._coerce_param`, as soon as a
+  `function` node sits directly downstream of a router branch.
+- **Cause:** a router emits `Event(route=...)` and **nothing on the output
+  channel**. The event stream shows it plainly:
+  `route='SHORT' … output=None … node_info=NodeInfo(path='…/length_router@1',
+  output_for=None)`. The branch target is then bound against its declared
+  annotation and pydantic rejects `None`. Data flow is positional
+  (`Event(output=…)` → `node_input`), so a router — which produces no output —
+  passes nothing along. Every fixture predating this used **agent** branch
+  targets, which tolerate an empty input, which is why it stayed hidden.
+- **Scope:** ADK only. LangGraph is unaffected: a branch target there reads the
+  router's *input* key from state (`state["measure_text_output"]`), so it
+  receives the upstream value normally. This is a target parity gap, like F2 in
+  the other direction.
+- **Fix direction:** an IR-level decision, deferred out of ADR-0056. Either
+  routers gain a pass-through output (`Event(route=…, output=node_input)`, which
+  changes what "one output per node" means for routers), or the validator warns
+  that a non-agent branch target will receive nothing on ADK. Until then the
+  `bodies` fixture is deliberately linear and the constraint is documented here
+  and in `docs/IR-SCHEMA.md`.
+
 ## Verification pointers
 
 - Reproduce dry matrix: `npm run test:e2e` (network for pip; no key).
