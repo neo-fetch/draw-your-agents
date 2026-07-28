@@ -2804,3 +2804,71 @@ byte-identical. `npm run check:ir` — clean on all 13 fixtures. `npm run test:e
 check on the built artifact: the signature strip renders, Tab indents instead of moving focus, the
 preview does **not** update while the editor holds focus and does update on blur (showing the
 `_impl` def and the wrapper call), in both themes.
+
+## ADR-0057 — Node editing pops open on the canvas; the Inspector pane is retired
+**Context.** Since ADR-0044 the workbench was four columns — Build · Canvas · **Inspector** ·
+Preview — and selecting a node wrote `selectedNodeId` into the IR store so the fixed right-hand
+pane could render its form. Two costs: the Inspector held ~350px of canvas width permanently,
+even with nothing selected, and the edit surface sat as far from the node as the layout allowed.
+The requested shape is direct manipulation — *click the node, edit it there*.
+**Decision.**
+- **A floating card replaces the pane.** `NodePopover` anchors an editor card beside the
+  selected node (or edge); the Inspector pane, its resize handle, and its `SidePane` id are
+  deleted. Canvas grew from ~510px to ~864px at 1600×950. *Rejected:* a modal (hides the graph
+  you are editing against) and a right-edge drawer (positionally identical to the pane it
+  replaces, so it buys nothing).
+- **`Inspector.tsx` did not move or change shape.** It already took no props and read the
+  selection from `useIRStore`, so the card just re-hosts it — all eight per-type forms, `Header`,
+  `EdgeForm`, the Lexical prompt editor and the CodeMirror body editor are untouched. Its inner
+  `AnimatePresence mode="wait"` still owns the form swap, so ADR-0029's
+  one-Lexical-editor-at-a-time invariant survives; the card's own `AnimatePresence` keys on
+  *presence only*, never on node id, so switching node A → B does not remount the card.
+- **Mounted as a child of `<ReactFlow>`**, not a portal. That is what buys `useViewport()` and
+  React Flow's container size, so the card re-anchors on every pan/zoom and follows a node drag
+  (positions come from `node.ui`, which the canvas commits continuously per ADR-0028). It also
+  buys the `nowheel nopan nodrag` escape hatches — verified live: scrolling the form does not
+  zoom the canvas and dragging the card does not pan it.
+- **The anchor math is a pure module** ([popoverAnchor.ts](../apps/web/src/inspector/popoverAnchor.ts)),
+  same posture as `layout/paneLayout.ts`: no DOM, no zustand, no React Flow, so
+  [popoverAnchor.test.ts](../apps/web/test/popoverAnchor.test.ts) runs in the install-free tier.
+  It places the card to the node's right, flips left when the right side would overrun, and
+  clamps into the container — with the drag offset applied *before* the clamp so a card dragged
+  off-screen snaps back instead of vanishing.
+- **Height is content-driven under a cap, not fixed.** The first draft used a fixed 520px height
+  and the card stopped tracking its node vertically: in an ~860px canvas the clamp pinned it, and
+  every node below the first third had zero vertical travel. Now the persisted size is a
+  `max-height` (further capped by `fitHeight` to the container), the card measures itself with a
+  `ResizeObserver`, and the clamp works off the measured height. A short form — join, humanInput,
+  the edge form — is a short card that tracks its target in **both** axes; a tall agent form fills
+  the cap and is horizontally-only, which is geometry rather than a defect.
+- **Width and the height cap persist** through the existing layout store: `PaneLayout` gains a
+  `popover` field with `POPOVER_LIMITS` / `clampPopoverSize`, drag-resized by a corner grip that
+  reuses `PaneResizeHandle`'s pointer-capture idiom (no new dependency). The grip sits on
+  whichever bottom corner the anchor left free, so the card always grows *away* from its node.
+- **The pane removal migrates for free.** `parseLayout` iterates `SIDE_PANES`, so a stored
+  `ga.layout` carrying `widths.inspector` still parses and simply sheds the stale key on the next
+  write — asserted by a test rather than assumed.
+- **Dismissal:** Escape (window listener), the card's × button, or a canvas click via the
+  existing `onPaneClick`. `NodeNameInput` now stops propagation on its Escape-to-revert (ADR-0036)
+  so renaming a node does not also close the card.
+**Found along the way — a pre-existing crash, fixed here.** `EdgeForm` read
+`useIRStore((s) => s.selectedEdge)!`. Because AnimatePresence keeps the form mounted through its
+exit animation, its own store subscription fires again the instant the edge is deselected, and
+the `!` threw — **clicking an edge and then clicking a node blanked the entire app**. Reproduced
+on the pre-change build, so it is not a regression from this slice, but edge selection is far more
+prominent now. Fixed by dropping the assertion and returning `null` for the exit frame.
+**Spec tests.** Install-free: [popoverAnchor.test.ts](../apps/web/test/popoverAnchor.test.ts)
+(right-side placement, flip, four-edge clamp, zoom ≠ 1, drag-offset-then-clamp, `fitHeight`,
+`midpointTarget`) and [paneLayout.test.ts](../apps/web/test/paneLayout.test.ts) extended with the
+two-pane shape, the pre-ADR-0057 payload migration, and popover clamp/round-trip.
+**Verify.** `npm test` — 542 pass, 0 fail (38 IR + 340 codegen + 164 web, up from 152); every
+codegen golden byte-identical, since this slice touches no IR, reducer, or template code.
+`npm run test:web:app` — 16 pass. Live browser pass, both themes, driven by Playwright: the card
+opens on node click and shows the right node; an edit reaches the Preview; a short card tracks its
+target in both axes while panning; the card follows a node drag and flips near the right edge
+while staying fully on-screen; CodeMirror renders inside the card with Tab still indenting; an
+agent → agent switch leaves exactly one Lexical editor; an edge click opens the edge form; Escape
+/ × / canvas-click all dismiss, while Escape during a rename reverts without closing; a resize
+persists across reload with no stale `inspector` key; the in-card **Open sub-graph** button enters
+the sub-graph and the card re-anchors there; and a Preview finding click now centers the node
+**and** pops its editor — something the pane could not do.

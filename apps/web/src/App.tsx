@@ -2,7 +2,6 @@ import { AnimatePresence, LazyMotion, MotionConfig, domMax, m } from "motion/rea
 import { BathoryPage } from "./bathory/BathoryPage.tsx";
 import { Canvas } from "./canvas/Canvas.tsx";
 import { SubgraphBreadcrumb } from "./canvas/SubgraphBreadcrumb.tsx";
-import { Inspector } from "./inspector/Inspector.tsx";
 import { Landing } from "./landing/Landing.tsx";
 import { Palette } from "./palette/Palette.tsx";
 import { Preview } from "./preview/Preview.tsx";
@@ -22,7 +21,8 @@ import { useTargetStore } from "./target/targetStore.ts";
  *
  * Workbench layout (ADR-0044): flex row of side panes (resizable via
  * PaneResizeHandle, collapsible to rails via WorkPane) around the canvas,
- * which always flexes to fill and never collapses.
+ * which always flexes to fill and never collapses. Node editing is not a
+ * pane — it pops open on the canvas beside the selected node (ADR-0057).
  */
 function Workbench() {
   return (
@@ -58,12 +58,6 @@ function Workbench() {
           <SubgraphBreadcrumb />
           <Canvas />
         </m.section>
-        <PaneResizeHandle pane="inspector" edge="start" />
-        <WorkPane pane="inspector" title="Inspector" edge="end">
-          <div className="body inspector">
-            <Inspector />
-          </div>
-        </WorkPane>
         <PaneResizeHandle pane="preview" edge="start" />
         <WorkPane pane="preview" title="Preview" edge="end">
           <div className="body preview">

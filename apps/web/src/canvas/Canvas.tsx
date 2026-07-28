@@ -16,6 +16,7 @@ import { selectActiveGraph } from "../store/subgraph.ts";
 import { IRNode, type IRNodeData } from "./IRNode.tsx";
 import { StartNode } from "./StartNode.tsx";
 import { CanvasEmptyState } from "./CanvasEmptyState.tsx";
+import { NodePopover } from "../inspector/NodePopover.tsx";
 import { NODE_DND_MIME } from "../palette/Palette.tsx";
 import type { AddableNodeType } from "../store/addNode.ts";
 import { THEME_BY_ID } from "../theme/themes.ts";
@@ -308,6 +309,9 @@ export function Canvas() {
         color={grid.coarse}
       />
       <Controls />
+      {/* The node/edge editor rides inside <ReactFlow> so it can read the
+          viewport transform and anchor itself beside its target (ADR-0057). */}
+      <NodePopover />
     </ReactFlow>
     {/* The example-loading empty state swaps the whole IR (`replaceIR`), so
         it only belongs at the root; an emptied sub-graph gets a hint. */}

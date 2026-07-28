@@ -2,21 +2,23 @@
  * Pane layout model (ADR-0044) — framework-free on purpose (no zustand, no
  * DOM) so `test/paneLayout.test.ts` runs under bare `node --test`. The
  * zustand wrapper lives in `uiStore.ts`.
+ *
+ * ADR-0057 removed the Inspector pane — node editing happens in a floating
+ * canvas popover — so this model now covers two side panes plus the
+ * popover's persisted size.
  */
 
-export type SidePane = "left" | "inspector" | "preview";
+export type SidePane = "left" | "preview";
 
-export const SIDE_PANES: readonly SidePane[] = ["left", "inspector", "preview"];
+export const SIDE_PANES: readonly SidePane[] = ["left", "preview"];
 
 export const PANE_LIMITS: Record<SidePane, { min: number; max: number }> = {
   left: { min: 180, max: 320 },
-  inspector: { min: 280, max: 480 },
   preview: { min: 360, max: 640 },
 };
 
 export const DEFAULT_WIDTHS: Record<SidePane, number> = {
   left: 240,
-  inspector: 348,
   preview: 484,
 };
 
@@ -25,15 +27,30 @@ export const RAIL_WIDTH = 36;
 
 export const LAYOUT_STORAGE_KEY = "ga.layout";
 
+/** Node-popover size limits (ADR-0057) — drag-resized by its corner grip. */
+export const POPOVER_LIMITS = {
+  w: { min: 320, max: 640 },
+  h: { min: 240, max: 900 },
+};
+
+export const DEFAULT_POPOVER: PopoverSize = { w: 380, h: 520 };
+
+export interface PopoverSize {
+  w: number;
+  h: number;
+}
+
 export interface PaneLayout {
   widths: Record<SidePane, number>;
   collapsed: Record<SidePane, boolean>;
+  popover: PopoverSize;
 }
 
 export function defaultLayout(): PaneLayout {
   return {
     widths: { ...DEFAULT_WIDTHS },
-    collapsed: { left: false, inspector: false, preview: false },
+    collapsed: { left: false, preview: false },
+    popover: { ...DEFAULT_POPOVER },
   };
 }
 
@@ -43,10 +60,29 @@ export function clampWidth(pane: SidePane, width: number): number {
   return Math.min(max, Math.max(min, Math.round(width)));
 }
 
+function clampAxis(
+  axis: "w" | "h",
+  value: number,
+): number {
+  const { min, max } = POPOVER_LIMITS[axis];
+  if (!Number.isFinite(value)) return DEFAULT_POPOVER[axis];
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+export function clampPopoverSize(size: {
+  w: number;
+  h: number;
+}): PopoverSize {
+  return { w: clampAxis("w", size.w), h: clampAxis("h", size.h) };
+}
+
 /**
  * Parse a persisted layout. Tolerates garbage, missing keys, and stale
  * shapes — anything unusable falls back to the default per-field, so a
- * schema change never strands a user on a broken layout.
+ * schema change never strands a user on a broken layout. This is also the
+ * whole migration story for ADR-0057: a payload still carrying the retired
+ * `inspector` width is read through `SIDE_PANES`, so the stale key is simply
+ * ignored and dropped on the next `serializeLayout`.
  */
 export function parseLayout(raw: unknown): PaneLayout {
   const layout = defaultLayout();
@@ -67,9 +103,16 @@ export function parseLayout(raw: unknown): PaneLayout {
     const c = collapsed?.[pane];
     if (typeof c === "boolean") layout.collapsed[pane] = c;
   }
+  const popover = obj.popover as Record<string, unknown> | undefined;
+  if (typeof popover?.w === "number") layout.popover.w = clampAxis("w", popover.w);
+  if (typeof popover?.h === "number") layout.popover.h = clampAxis("h", popover.h);
   return layout;
 }
 
 export function serializeLayout(layout: PaneLayout): string {
-  return JSON.stringify({ widths: layout.widths, collapsed: layout.collapsed });
+  return JSON.stringify({
+    widths: layout.widths,
+    collapsed: layout.collapsed,
+    popover: layout.popover,
+  });
 }

@@ -1,5 +1,9 @@
 /**
  * Inspector — type-dispatched config form for the selected IR node (ADR-0023).
+ * Since ADR-0057 it is hosted by `NodePopover`, a floating card anchored to
+ * the node on the canvas, rather than by a fixed side pane. The form itself
+ * is unchanged by that move: it takes no props and reads the selection
+ * straight from the IR store.
  *
  * The IR is the source of truth: every edit dispatches `updateNodeConfig` (or
  * `updateModelParam` for nested `modelParams`) and lets the Preview pane's
@@ -208,6 +212,9 @@ function NodeNameInput({
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         else if (e.key === "Escape") {
+          // Escape reverts the name here; the popover also closes on Escape
+          // (ADR-0057), so stop it before both fire on one keypress.
+          e.stopPropagation();
           setValue(initial);
           (e.target as HTMLInputElement).blur();
         }
@@ -810,14 +817,24 @@ function LoopForm({ node }: { node: LoopNode }) {
  * spec (invariant 7) and Preview surfaces them.
  */
 function EdgeForm() {
-  const selectedEdge = useIRStore((s) => s.selectedEdge)!;
+  // No `!` on the selector: AnimatePresence keeps this form mounted through
+  // its exit animation, and its own store subscription fires again the moment
+  // the edge is deselected. Asserting non-null there threw and took the whole
+  // app down (a node click right after an edge click was enough).
+  const selectedEdge = useIRStore((s) => s.selectedEdge);
   const sourceNode = useIRStore((s) =>
-    selectActiveGraph(s).nodes.find((n) => n.id === selectedEdge.from),
+    selectedEdge
+      ? selectActiveGraph(s).nodes.find((n) => n.id === selectedEdge.from)
+      : undefined,
   );
   const targetNode = useIRStore((s) =>
-    selectActiveGraph(s).nodes.find((n) => n.id === selectedEdge.to),
+    selectedEdge
+      ? selectActiveGraph(s).nodes.find((n) => n.id === selectedEdge.to)
+      : undefined,
   );
   const setEdgeRoute = useIRStore((s) => s.setEdgeRoute);
+
+  if (!selectedEdge) return null;
 
   const sourceLabel = sourceNode?.name ?? selectedEdge.from;
   const targetLabel = targetNode?.name ?? selectedEdge.to;
@@ -934,13 +951,13 @@ export function Inspector() {
     ? `edge:${selectedEdge.from}|${selectedEdge.to}|${selectedEdge.route ?? ""}`
     : node?.id ?? "empty";
 
+  // No empty branch: the popover that hosts this form only mounts when
+  // something is selected (ADR-0057).
   const content: ReactNode = selectedEdge ? (
     <EdgeForm />
   ) : node ? (
     formFor(node)
-  ) : (
-    <div className="empty">Select a node or edge to edit it.</div>
-  );
+  ) : null;
 
   return (
     <AnimatePresence mode="wait" initial={false}>

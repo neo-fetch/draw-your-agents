@@ -72,12 +72,13 @@
 }
 
 /* sticky mini-header — node name + type chip survive the scroll (ADR-0044).
-   `top` matches the pane header's fixed height; negative margins span the
-   body padding so the strip runs edge to edge. */
+   Its scroll container is the popover body (ADR-0057), whose grip strip is
+   outside the scroll area, so `top: 0` pins it correctly; negative margins
+   span the body padding so the strip runs edge to edge. */
 .form-head {
   --type: var(--ink-faint);
   position: sticky;
-  top: 35px;
+  top: 0;
   z-index: 1;
   margin: -14px -14px 14px;
   padding: 11px 14px 9px;

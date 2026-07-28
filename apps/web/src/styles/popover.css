@@ -1,0 +1,118 @@
+/* ------------------------------------------------------------- popover
+   NodePopover (ADR-0057): the floating node/edge editor that replaced the
+   Inspector pane. Positioned in screen px by `popoverAnchor.ts` inside the
+   React Flow container. Tokens only — both themes follow with no override
+   block of their own. */
+
+/* Height is content-driven up to the persisted cap (`max-height`, set inline):
+   a two-field join form is a short card, an agent form fills the cap and
+   scrolls. A fixed height would pin tall cards against the viewport clamp and
+   stop them tracking their node. */
+.node-popover {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--paper-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop), var(--glow-accent);
+  overflow: hidden;
+}
+
+/* drag strip — the card's title bar, deliberately slim so the form's own
+   sticky `.form-head` (node name + type chip) reads as the real header */
+.node-popover__grip {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 20px;
+  padding: 0 6px 0 9px;
+  background: var(--paper-sunken);
+  border-bottom: 1px solid var(--line);
+  cursor: grab;
+  touch-action: none;
+}
+.node-popover__grip:active { cursor: grabbing; }
+
+/* three hairlines, the drafting-table cue for "this is a handle" */
+.node-popover__grip-lines {
+  flex: 1 1 auto;
+  height: 5px;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--line-strong) 0 1px,
+    transparent 1px 3px
+  );
+  opacity: 0.7;
+}
+
+.node-popover__close {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.node-popover__close:hover { background: var(--paper); color: var(--ink); }
+.node-popover__close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-wash);
+}
+
+/* the scroll container — `.pane .body { padding: 14px }` is pane-scoped, so
+   the popover restates it */
+.node-popover__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+/* corner grip, on whichever bottom corner the anchor left free: the card
+   grows away from the node, so the edge nearest the node stays pinned */
+.node-popover__resize {
+  position: absolute;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  touch-action: none;
+}
+.node-popover[data-side="right"] .node-popover__resize {
+  right: 0;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    -45deg,
+    transparent 0 3px,
+    var(--line-strong) 3px 4px,
+    transparent 4px 6px,
+    var(--line-strong) 6px 7px,
+    transparent 7px
+  );
+}
+.node-popover[data-side="left"] .node-popover__resize {
+  left: 0;
+  cursor: nesw-resize;
+  background: linear-gradient(
+    45deg,
+    transparent 0 3px,
+    var(--line-strong) 3px 4px,
+    transparent 4px 6px,
+    var(--line-strong) 6px 7px,
+    transparent 7px
+  );
+}
