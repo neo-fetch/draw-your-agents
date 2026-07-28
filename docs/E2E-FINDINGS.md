@@ -169,3 +169,45 @@ Per-finding fixes (all in commit `8b29c35`):
 | F3 | graph-positioned tools emit as plain functions named after the node; `FunctionTool` wrapper removed |
 | F4 | LangGraph agents return `result.text` instead of `result.content` |
 | F5 | every ADK project ships `agent.py` (`from workflow import root_agent`); README run instructions corrected |
+
+## Branch continuations verified live (ADR-0054 → ADR-0055), 2026-07-28
+
+ADR-0054 shipped router branch continuations on a *reasoned but unexecuted*
+assumption: that a row headed by the branch target is a valid `edges` encoding.
+Goldens, `py_compile`, and the dry matrix could not settle it — only a live run
+could. It has now been run and the assumption **holds**.
+
+Environment: Python 3.11.15 · `google-adk==2.0.0` · `google-genai==1.75.0` ·
+`pydantic==2.13.4` · `langgraph==1.2.9` · `langchain==1.3.14` ·
+`langchain-google-genai==4.3.2`. Model `gemini-flash-latest` resolved to
+`gemini-3.6-flash`.
+
+| fixture | adk-dry | adk-live | langgraph-dry | langgraph-live |
+|---|---|---|---|---|
+| routing-continue | ✅ | ✅ | ✅ | ✅ |
+
+**Why this run counts, unlike a bare live cell.** A live cell passes on
+`python main.py` exiting 0, so a build where ADK silently ignored the
+continuation row would still have gone green. The `routing-continue` overlays
+therefore assert the traversal and exit non-zero otherwise — the cell is a
+verdict on the row form, not just proof the project starts:
+
+- ADK: the stub `feasibility_router` defaults to `FEASIBLE` (the branch that
+  carries the continuation, so a surprising live assessment cannot quietly turn
+  the cell into a no-op), stub functions record what executed, and `main.py`
+  requires `run_tests` in that record plus `summarize_result` among the event
+  authors.
+- LangGraph: asserts the route taken was `FEASIBLE` and that both
+  `run_tests_output` and `summarize_result_output` reached the final state.
+
+**Observed.** ADK executed
+`assess_request → feasibility_router → generate_code → run_tests → summarize_result`
+— stub record `['feasibility_router', 'run_tests']`, event authors
+`['assess_request', 'feasibility_workflow', 'generate_code', 'feasibility_workflow', 'summarize_result']`.
+Positional data flow across the route map held: `summarize_result` received
+`run_tests`' sentinel report as `node_input` and summarized it ("12 tests passed
+and 1 test failed (test_retry_backoff)") rather than echoing it. LangGraph
+reached all five state keys with `feasibility_router_output == "FEASIBLE"`.
+
+No new findings; F1–F5 remain fixed. Reproduce with
+`GOOGLE_API_KEY=… node scripts/e2e.ts --live --fixture=routing-continue`.

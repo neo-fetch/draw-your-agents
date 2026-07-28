@@ -53,7 +53,7 @@ const DRY_TEST_FILE: Record<CodegenTarget, string> = {
 };
 
 /** Fixtures executed live with a real key. All use free-tier-friendly models. */
-const LIVE_SUBSET = ["city-time", "routing", "parallel", "tool"] as const;
+const LIVE_SUBSET = ["city-time", "routing", "routing-continue", "parallel", "tool"] as const;
 
 /** Fixtures never run live, with the recorded reason. */
 const LIVE_SKIP: Record<string, string> = {

@@ -2694,3 +2694,46 @@ rejection test for declared-order / nested-router / shared-target / merge-reject
 cells, the new fixture green on both targets. Manual (built Pages artifact, driven headless): the
 "Router branch continuation" gallery example previews `workflow.py` with the strip above the file
 picker, Export stays enabled, and the warning row renders legibly in both themes.
+
+## ADR-0055 — Branch continuations verified live; the ROUTER_BRANCH_CONTINUATION warning is dropped
+**Context.** ADR-0054 shipped router branch continuations but deliberately warned on every one of
+them, because the row form it chose — a continuation row headed by the branch target — was
+reasoned from ADR-0015/0048 precedent and had never been executed. It named
+`npm run test:e2e:live` as the one thing that would settle it. A key became available and the run
+happened (2026-07-28). The assumption holds, so the warning's premise is now false and this entry
+supersedes that part of ADR-0054.
+**Decisions.**
+- **`routing-continue` joined `LIVE_SUBSET`.** It was absent, so a plain `test:e2e:live` recorded
+  it as `⏭ not in live subset` and proved nothing. Adding a fixture to the subset obliges an
+  overlay per target (`scripts/e2e/stubs/README.md`), which is the bulk of this change.
+- **The overlays assert the traversal, because a live cell otherwise passes on exit code alone.**
+  `runLive` records the status of `python main.py`; a build where ADK silently skipped the
+  continuation row would still exit 0 and show ✅. That false green would have "confirmed" the
+  assumption while proving nothing, so the overlay `main.py` for both targets exits non-zero
+  unless the chain demonstrably ran: ADK checks a stub-execution record for `run_tests` plus
+  `summarize_result` among the event authors; LangGraph checks the route taken was `FEASIBLE` and
+  that both continuation outputs reached the final state. The stub router **defaults to
+  `FEASIBLE`** — the branch carrying the continuation — so a surprising live assessment cannot
+  quietly route down the terminal branch and turn the cell into a no-op.
+- **Result: confirmed on ADK 2.0.0.** ADK executed `assess_request → feasibility_router →
+  generate_code → run_tests → summarize_result`, and positional data flow survived the route map —
+  `summarize_result` received `run_tests`' sentinel report as `node_input` and summarized it rather
+  than echoing it. LangGraph reached all five state keys. Details and environment in
+  docs/E2E-FINDINGS.md.
+- **`ROUTER_BRANCH_CONTINUATION` is removed, not reworded.** Its entire content was "this shape is
+  unverified"; once verified, a warning on every legal continuation is noise, and a warning users
+  learn to ignore devalues the channel that `JOIN_MISSING_FAILSAFE` depends on. The code, its
+  emitter, and its specs are gone; `routing-continue` now validates clean. The `warnInto` factory
+  ADR-0054 extracted to share between two warning checks is inlined back into `checkJoinFailsafe`,
+  since there is only one again.
+- **The Preview warnings strip stays.** It was justified by ADR-0054's warning but is not owned by
+  it — `JOIN_MISSING_FAILSAFE` had been produced and rendered nowhere since it was written, and the
+  strip is what finally surfaces it. Removing the strip along with the warning would restore that
+  bug.
+- **Scope held.** No change to `edges.ts`, the row form, the goldens, or either emitter — this
+  entry only retires a caveat and adds live coverage.
+**Verify.** `node scripts/e2e.ts --live --fixture=routing-continue` — 4/4 cells, both live logs
+ending `continuation check OK`. `npm test` — 492 pass (one fewer than ADR-0054: three warning specs
+replaced by one clean-validation spec). `npm run test:e2e` — 24/24 dry, overlays staged without
+breaking the generated pytest (overlaid projects were re-run against `test_workflow.py` /
+`test_graph.py` before spending any quota). `npm run check:ir` — no fixture reports a warning.

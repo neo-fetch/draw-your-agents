@@ -8,10 +8,9 @@
  * present, filter, and locate problems.
  *
  * `severity: "warning"` marks a graph that compiles but carries a caveat worth
- * naming (ARCHITECTURE.md §7). Live rules: `JOIN_MISSING_FAILSAFE` (a join
- * upstream that may never emit) and `ROUTER_BRANCH_CONTINUATION` (a non-terminal
- * router branch, ADR-0054). `INCOMPATIBLE_INTEGRATION` is still reserved for
- * Phase 3. Warnings never block codegen — `compile` throws on errors only.
+ * naming (ARCHITECTURE.md §7). Live rule: `JOIN_MISSING_FAILSAFE` (a join
+ * upstream that may never emit). `INCOMPATIBLE_INTEGRATION` is still reserved
+ * for Phase 3. Warnings never block codegen — `compile` throws on errors only.
  */
 import type { GraphIR } from "./types.js";
 
@@ -100,7 +99,6 @@ export const ValidationCode = {
   CYCLE_DETECTED: "CYCLE_DETECTED",
   // Warnings (ARCHITECTURE.md §7).
   JOIN_MISSING_FAILSAFE: "JOIN_MISSING_FAILSAFE",
-  ROUTER_BRANCH_CONTINUATION: "ROUTER_BRANCH_CONTINUATION",
   // Reserved — stubbed until Phase 3.
   INCOMPATIBLE_INTEGRATION: "INCOMPATIBLE_INTEGRATION",
 } as const;
@@ -694,21 +692,6 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
 
   // -- warning pass (ARCHITECTURE.md §7) --
   checkJoinFailsafe(findings, nodesById, edgeList, composeId);
-  checkBranchContinuations(findings, nodesById, edgeList, composeId);
-}
-
-/** Push a warning-severity finding, composing nested node ids (ADR-0017). */
-function warnInto(
-  findings: Finding[],
-  composeId: (nid: string) => string,
-): (code: string, message: string, nodeId?: string) => void {
-  return (code, message, nodeId) => {
-    findings.push(
-      nodeId === undefined
-        ? { severity: "warning", code, message }
-        : { severity: "warning", code, message, nodeId: composeId(nodeId) },
-    );
-  };
 }
 
 /**
@@ -725,7 +708,13 @@ function checkJoinFailsafe(
   edgeList: readonly Loose[],
   composeId: (nid: string) => string,
 ): void {
-  const warn = warnInto(findings, composeId);
+  const warn = (code: string, message: string, nodeId?: string): void => {
+    findings.push(
+      nodeId === undefined
+        ? { severity: "warning", code, message }
+        : { severity: "warning", code, message, nodeId: composeId(nodeId) },
+    );
+  };
 
   for (const [joinId, joinNode] of nodesById) {
     if (joinNode.type !== "join") continue;
@@ -756,48 +745,6 @@ function checkJoinFailsafe(
           fromId,
         );
       }
-    }
-  }
-}
-
-/**
- * ROUTER_BRANCH_CONTINUATION — a router branch target that is not terminal.
- * Perfectly legal IR and fully compiled since ADR-0054: the continuation becomes
- * its own edge row headed by the branch target. It warns because that ADK row
- * form is a reasoned assumption that no live ADK run has confirmed yet
- * (ADR-0014's standing caveat) — an advisory about a codegen assumption, not an
- * IR invariant. One warning per branch target, anchored on the target itself so
- * the finding resolves to the right canvas node.
- */
-function checkBranchContinuations(
-  findings: Finding[],
-  nodesById: ReadonlyMap<string, Loose>,
-  edgeList: readonly Loose[],
-  composeId: (nid: string) => string,
-): void {
-  const warn = warnInto(findings, composeId);
-
-  const hasOutEdge = new Set<string>();
-  for (const e of edgeList) {
-    if (e?.from !== START && typeof e?.from === "string") hasOutEdge.add(e.from);
-  }
-
-  for (const [routerId, router] of nodesById) {
-    if (router.type !== "router") continue;
-    const flagged = new Set<string>(); // two routes may share one branch target
-    for (const e of edgeList) {
-      if (e?.from !== routerId) continue;
-      const targetId = e?.to;
-      if (typeof targetId !== "string" || !nodesById.has(targetId)) continue;
-      if (!hasOutEdge.has(targetId) || flagged.has(targetId)) continue;
-      flagged.add(targetId);
-      warn(
-        ValidationCode.ROUTER_BRANCH_CONTINUATION,
-        `branch target "${nodesById.get(targetId)!.name}" of router "${router.name}" continues to ` +
-          `further nodes — supported, but the generated edge row headed by ` +
-          `"${nodesById.get(targetId)!.name}" is an ADK shape not yet verified against a live run`,
-        targetId,
-      );
     }
   }
 }
