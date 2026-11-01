@@ -2,7 +2,10 @@
 
 from google.adk import Event
 
-from schemas import Order
+try:
+    from .schemas import Order
+except ImportError:
+    from schemas import Order
 
 
 def summarize_order(node_input: Order) -> Event:

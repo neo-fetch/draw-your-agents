@@ -2,7 +2,10 @@
 
 from google.adk import Event
 
-from schemas import TextStats
+try:
+    from .schemas import TextStats
+except ImportError:
+    from schemas import TextStats
 
 
 def _normalize_text_impl(node_input: str) -> str:

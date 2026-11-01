@@ -2,7 +2,10 @@
 
 from google.adk import Agent
 
-from schemas import Article
+try:
+    from .schemas import Article
+except ImportError:
+    from schemas import Article
 
 summarize = Agent(
     name="summarize",

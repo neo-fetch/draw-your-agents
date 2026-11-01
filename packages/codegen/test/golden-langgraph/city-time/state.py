@@ -2,7 +2,10 @@
 
 from typing_extensions import TypedDict
 
-from schemas import CityTime
+try:
+    from .schemas import CityTime
+except ImportError:
+    from schemas import CityTime
 
 
 class WorkflowState(TypedDict, total=False):

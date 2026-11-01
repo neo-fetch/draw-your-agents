@@ -2,8 +2,14 @@
 
 from google.adk import Workflow
 
-from agents import make_order
-from functions import summarize_order
+try:
+    from .agents import make_order
+except ImportError:
+    from agents import make_order
+try:
+    from .functions import summarize_order
+except ImportError:
+    from functions import summarize_order
 
 root_agent = Workflow(
     name="nested_schema_workflow",

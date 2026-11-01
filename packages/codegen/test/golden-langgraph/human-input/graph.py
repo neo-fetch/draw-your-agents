@@ -3,8 +3,14 @@
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from nodes import ask_user, process_response
-from state import WorkflowState
+try:
+    from .nodes import ask_user, process_response
+except ImportError:
+    from nodes import ask_user, process_response
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("ask_user", ask_user)

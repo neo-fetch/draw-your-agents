@@ -2,7 +2,10 @@
 
 from typing_extensions import TypedDict
 
-from schemas import Order
+try:
+    from .schemas import Order
+except ImportError:
+    from schemas import Order
 
 
 class WorkflowState(TypedDict, total=False):

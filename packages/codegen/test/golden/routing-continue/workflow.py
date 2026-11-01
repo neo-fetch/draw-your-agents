@@ -2,8 +2,14 @@
 
 from google.adk import Workflow
 
-from agents import assess_request, explain_blockers, generate_code, summarize_result
-from functions import feasibility_router, run_tests
+try:
+    from .agents import assess_request, explain_blockers, generate_code, summarize_result
+except ImportError:
+    from agents import assess_request, explain_blockers, generate_code, summarize_result
+try:
+    from .functions import feasibility_router, run_tests
+except ImportError:
+    from functions import feasibility_router, run_tests
 
 root_agent = Workflow(
     name="feasibility_workflow",

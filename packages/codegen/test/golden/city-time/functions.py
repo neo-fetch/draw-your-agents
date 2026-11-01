@@ -2,7 +2,10 @@
 
 from google.adk import Event
 
-from schemas import CityTime
+try:
+    from .schemas import CityTime
+except ImportError:
+    from schemas import CityTime
 
 
 def lookup_time(node_input: str) -> Event:

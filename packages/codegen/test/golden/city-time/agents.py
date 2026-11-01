@@ -2,7 +2,10 @@
 
 from google.adk import Agent
 
-from schemas import CityTime
+try:
+    from .schemas import CityTime
+except ImportError:
+    from schemas import CityTime
 
 city_generator = Agent(
     name="city_generator",

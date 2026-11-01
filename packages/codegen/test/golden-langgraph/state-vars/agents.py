@@ -2,8 +2,14 @@
 
 from langchain.chat_models import init_chat_model
 
-from schemas import Analysis, Expanded, Summary
-from state import WorkflowState
+try:
+    from .schemas import Analysis, Expanded, Summary
+except ImportError:
+    from schemas import Analysis, Expanded, Summary
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 
 def analyze(state: WorkflowState) -> dict:

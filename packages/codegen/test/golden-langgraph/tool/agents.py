@@ -2,7 +2,10 @@
 
 from langchain.chat_models import init_chat_model
 
-from state import WorkflowState
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 
 def summarize(state: WorkflowState) -> dict:

@@ -2,8 +2,14 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from nodes import measure_text, normalize_text, report_stats
-from state import WorkflowState
+try:
+    from .nodes import measure_text, normalize_text, report_stats
+except ImportError:
+    from nodes import measure_text, normalize_text, report_stats
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("normalize_text", normalize_text)

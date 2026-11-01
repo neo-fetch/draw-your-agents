@@ -2,7 +2,10 @@
 
 from google.adk import Workflow
 
-from functions import measure_text, normalize_text, report_stats
+try:
+    from .functions import measure_text, normalize_text, report_stats
+except ImportError:
+    from functions import measure_text, normalize_text, report_stats
 
 root_agent = Workflow(
     name="text_stats_workflow",

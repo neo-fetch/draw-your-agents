@@ -2,7 +2,10 @@
 
 from google.adk import Agent
 
-from schemas import Analysis, Expanded, Summary
+try:
+    from .schemas import Analysis, Expanded, Summary
+except ImportError:
+    from schemas import Analysis, Expanded, Summary
 
 analyze = Agent(
     name="analyze",

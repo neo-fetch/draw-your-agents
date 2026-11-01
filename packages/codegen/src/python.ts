@@ -81,6 +81,18 @@ export const BLACK_LINE_WIDTH = 88;
  * `localModules` is the target's own module set (what counts as the "local"
  * group) — defaults to the ADK project layout; the LangGraph target passes its
  * own (ADR-0045).
+ *
+ * Local-module imports are wrapped in a `try: from .M import …` /
+ * `except ImportError: from M import …` block so the generated file works both
+ * when imported as part of a package (e.g. `adk web`, which loads a project
+ * folder as a Python package and treats modules inside it as submodules) and
+ * when loaded top-level with the folder on `sys.path` (e.g. `adk run <folder>`,
+ * `python main.py`, `pytest test_workflow.py`). ADR-0058 / finding F7.
+ * Entry-point scripts (`main.py`, `test_workflow.py`, LangGraph's `main.py` /
+ * `test_graph.py`) hardcode their one absolute import directly — they're
+ * always run as scripts with their directory on `sys.path`, never imported as
+ * package submodules — so this helper's package-safe shape covers every
+ * cross-file import inside the generated project.
  */
 export function renderImports(
   reqs: readonly ImportReq[],
@@ -96,17 +108,41 @@ export function renderImports(
   const groups: string[][] = [[], [], []]; // stdlib, third-party, local
   for (const [module, names] of byModule) {
     const sortedNames = [...names].sort();
-    const inline = `from ${module} import ${sortedNames.join(", ")}`;
-    const line =
-      inline.length <= BLACK_LINE_WIDTH
-        ? inline
-        : `from ${module} import (\n${sortedNames.map((n) => `    ${n},`).join("\n")}\n)`;
-    const bucket = STDLIB.has(module) ? 0 : localModules.has(module) ? 2 : 1;
-    groups[bucket].push(line);
+    const isLocal = localModules.has(module);
+    const bucket = STDLIB.has(module) ? 0 : isLocal ? 2 : 1;
+    groups[bucket].push(renderOneImport(module, sortedNames, isLocal));
   }
 
   return groups
     .filter((g) => g.length > 0)
     .map((g) => g.sort().join("\n"))
     .join("\n\n");
+}
+
+/**
+ * Render one `from <module> import <names>` line, wrapping long lines in
+ * parentheses to match black (ADR-0020). For a local module, emit the
+ * try-relative / except-absolute block that lets the file work both as a
+ * package submodule and as a top-level script (ADR-0058 / finding F7).
+ */
+function renderOneImport(
+  module: string,
+  sortedNames: readonly string[],
+  isLocal: boolean,
+): string {
+  const render = (prefix: string): string => {
+    const inline = `from ${prefix}${module} import ${sortedNames.join(", ")}`;
+    if (inline.length <= BLACK_LINE_WIDTH) return inline;
+    const multi = sortedNames.map((n) => `    ${n},`).join("\n");
+    return `from ${prefix}${module} import (\n${multi}\n)`;
+  };
+  if (!isLocal) return render("");
+  const rel = render(".");
+  const abs = render("");
+  const indent = (s: string): string =>
+    s
+      .split("\n")
+      .map((line) => `    ${line}`)
+      .join("\n");
+  return `try:\n${indent(rel)}\nexcept ImportError:\n${indent(abs)}`;
 }

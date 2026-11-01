@@ -2,8 +2,14 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from nodes import finalize, inner_step_a, inner_step_b, preprocess
-from state import NestedWorkflowState, WorkflowState
+try:
+    from .nodes import finalize, inner_step_a, inner_step_b, preprocess
+except ImportError:
+    from nodes import finalize, inner_step_a, inner_step_b, preprocess
+try:
+    from .state import NestedWorkflowState, WorkflowState
+except ImportError:
+    from state import NestedWorkflowState, WorkflowState
 
 nested_workflow_builder = StateGraph(NestedWorkflowState)
 nested_workflow_builder.add_node("inner_step_a", inner_step_a)

@@ -472,12 +472,20 @@ function loopsModule(
  * `__init__.py` / `root_agent.yaml`) — never from `workflow.py`, where the
  * graph itself lives. One import line keeps workflow.py the single source of
  * the graph while making the generated folder CLI-runnable as shipped.
+ *
+ * `adk web` loads this file as a Python package submodule
+ * (`<project>.agent`), while `adk run <folder>` loads it top-level with the
+ * folder on `sys.path`. The try-relative / except-absolute shape handles both
+ * (ADR-0058 / finding F7).
  */
 function agentShim(ir: GraphIR): string {
   const head = header("ADK CLI entry shim (`adk run` / `adk web`)", ir);
   return `${head}
 
-from workflow import root_agent
+try:
+    from .workflow import root_agent
+except ImportError:
+    from workflow import root_agent
 
 __all__ = ["root_agent"]
 `;

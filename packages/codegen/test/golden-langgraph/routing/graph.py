@@ -2,14 +2,28 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from agents import (
-    handle_bug,
-    handle_customer_support,
-    handle_logistics,
-    process_message,
-)
-from nodes import router
-from state import WorkflowState
+try:
+    from .agents import (
+        handle_bug,
+        handle_customer_support,
+        handle_logistics,
+        process_message,
+    )
+except ImportError:
+    from agents import (
+        handle_bug,
+        handle_customer_support,
+        handle_logistics,
+        process_message,
+    )
+try:
+    from .nodes import router
+except ImportError:
+    from nodes import router
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("process_message", process_message)

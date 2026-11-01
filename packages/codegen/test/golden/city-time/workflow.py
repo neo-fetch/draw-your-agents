@@ -2,8 +2,14 @@
 
 from google.adk import Workflow
 
-from agents import city_generator, city_report
-from functions import completed_message, lookup_time
+try:
+    from .agents import city_generator, city_report
+except ImportError:
+    from agents import city_generator, city_report
+try:
+    from .functions import completed_message, lookup_time
+except ImportError:
+    from functions import completed_message, lookup_time
 
 root_agent = Workflow(
     name="city_time_workflow",

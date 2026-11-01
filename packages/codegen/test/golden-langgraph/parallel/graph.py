@@ -2,8 +2,14 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from nodes import final_task_d, my_join_node, task_a, task_b, task_c
-from state import WorkflowState
+try:
+    from .nodes import final_task_d, my_join_node, task_a, task_b, task_c
+except ImportError:
+    from nodes import final_task_d, my_join_node, task_a, task_b, task_c
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("task_a", task_a)

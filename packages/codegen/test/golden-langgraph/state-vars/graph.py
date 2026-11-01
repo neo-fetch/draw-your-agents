@@ -2,8 +2,14 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from agents import analyze, expand, summarize
-from state import WorkflowState
+try:
+    from .agents import analyze, expand, summarize
+except ImportError:
+    from agents import analyze, expand, summarize
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("analyze", analyze)

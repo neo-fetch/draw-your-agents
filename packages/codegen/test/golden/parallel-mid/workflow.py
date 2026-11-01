@@ -3,7 +3,10 @@
 from google.adk import Workflow
 from google.adk.workflow import JoinNode
 
-from functions import final_task, prep, task_a, task_b
+try:
+    from .functions import final_task, prep, task_a, task_b
+except ImportError:
+    from functions import final_task, prep, task_a, task_b
 
 my_join = JoinNode(
     name="my_join",

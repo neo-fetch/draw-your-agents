@@ -2,9 +2,18 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from agents import assess_request, explain_blockers, generate_code, summarize_result
-from nodes import feasibility_router, run_tests
-from state import WorkflowState
+try:
+    from .agents import assess_request, explain_blockers, generate_code, summarize_result
+except ImportError:
+    from agents import assess_request, explain_blockers, generate_code, summarize_result
+try:
+    from .nodes import feasibility_router, run_tests
+except ImportError:
+    from nodes import feasibility_router, run_tests
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("assess_request", assess_request)

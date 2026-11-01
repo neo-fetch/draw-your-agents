@@ -2,9 +2,18 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from agents import make_order
-from nodes import summarize_order
-from state import WorkflowState
+try:
+    from .agents import make_order
+except ImportError:
+    from agents import make_order
+try:
+    from .nodes import summarize_order
+except ImportError:
+    from nodes import summarize_order
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("make_order", make_order)

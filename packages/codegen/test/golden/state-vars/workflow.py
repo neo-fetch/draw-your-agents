@@ -2,7 +2,10 @@
 
 from google.adk import Workflow
 
-from agents import analyze, expand, summarize
+try:
+    from .agents import analyze, expand, summarize
+except ImportError:
+    from agents import analyze, expand, summarize
 
 root_agent = Workflow(
     name="state_vars_workflow",

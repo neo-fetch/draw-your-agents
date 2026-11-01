@@ -2,7 +2,10 @@
 
 from google.adk import Workflow
 
-from loops import code_loop_orchestrator
+try:
+    from .loops import code_loop_orchestrator
+except ImportError:
+    from loops import code_loop_orchestrator
 
 root_agent = Workflow(
     name="critic_loop_workflow",

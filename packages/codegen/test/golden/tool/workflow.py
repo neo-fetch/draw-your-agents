@@ -2,8 +2,14 @@
 
 from google.adk import Workflow
 
-from agents import summarize
-from functions import fetch_data
+try:
+    from .agents import summarize
+except ImportError:
+    from agents import summarize
+try:
+    from .functions import fetch_data
+except ImportError:
+    from functions import fetch_data
 
 root_agent = Workflow(
     name="tool_workflow",

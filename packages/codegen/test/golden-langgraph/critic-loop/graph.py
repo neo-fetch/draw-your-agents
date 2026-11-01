@@ -2,8 +2,14 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from loops import code_loop
-from state import WorkflowState
+try:
+    from .loops import code_loop
+except ImportError:
+    from loops import code_loop
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("code_loop", code_loop)

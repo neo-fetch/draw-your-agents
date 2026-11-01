@@ -2,7 +2,10 @@
 
 from google.adk import Agent
 
-from schemas import Order
+try:
+    from .schemas import Order
+except ImportError:
+    from schemas import Order
 
 make_order = Agent(
     name="make_order",

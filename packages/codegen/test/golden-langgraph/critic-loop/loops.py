@@ -2,8 +2,14 @@
 
 from langchain.chat_models import init_chat_model
 
-from schemas import Files, code_loop_CriticOutput
-from state import WorkflowState
+try:
+    from .schemas import Files, code_loop_CriticOutput
+except ImportError:
+    from schemas import Files, code_loop_CriticOutput
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 CODE_LOOP_GENERATOR_INSTRUCTION = (
     "You are an expert developer. Generate code based on the provided specifications."

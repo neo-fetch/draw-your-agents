@@ -2,7 +2,10 @@
 
 from typing_extensions import TypedDict
 
-from schemas import Analysis, Expanded, Summary
+try:
+    from .schemas import Analysis, Expanded, Summary
+except ImportError:
+    from schemas import Analysis, Expanded, Summary
 
 
 class WorkflowState(TypedDict, total=False):

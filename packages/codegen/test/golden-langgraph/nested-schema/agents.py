@@ -2,8 +2,14 @@
 
 from langchain.chat_models import init_chat_model
 
-from schemas import Order
-from state import WorkflowState
+try:
+    from .schemas import Order
+except ImportError:
+    from schemas import Order
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 
 def make_order(state: WorkflowState) -> dict:

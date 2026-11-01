@@ -2,13 +2,24 @@
 
 from google.adk import Workflow
 
-from agents import (
-    handle_bug,
-    handle_customer_support,
-    handle_logistics,
-    process_message,
-)
-from functions import router
+try:
+    from .agents import (
+        handle_bug,
+        handle_customer_support,
+        handle_logistics,
+        process_message,
+    )
+except ImportError:
+    from agents import (
+        handle_bug,
+        handle_customer_support,
+        handle_logistics,
+        process_message,
+    )
+try:
+    from .functions import router
+except ImportError:
+    from functions import router
 
 root_agent = Workflow(
     name="support_router_workflow",

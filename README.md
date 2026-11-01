@@ -300,6 +300,40 @@ overlays from `scripts/e2e/stubs/` filling the generated `TODO`s and 20 s
 pacing between runs for free-tier rate limits. Results land in
 `.e2e-work/report.md`; findings are curated in `docs/E2E-FINDINGS.md`.
 
+### Running a generated project under `adk web` (manual spot-check)
+
+Generated projects work under `adk web` as shipped (ADR-0058 — every
+intra-project import handles both the package-mode submodule load that
+`adk web` uses and the top-level script-mode load that `adk run` /
+`python main.py` / `pytest test_workflow.py` use). The only tooling
+gotcha is **folder naming** when you point `adk web` at a tree produced
+by the e2e harness.
+
+The harness stages projects by *fixture* name (`city-time`,
+`routing-continue`), and hyphens aren't valid Python module names, so
+`adk web` can't import them. The generator itself names the zip root
+after `ir.name` (`city_time_workflow`, always a valid identifier) — the
+hyphenated names only appear in the e2e staging dir. Re-stage into
+`ir.name`-keyed sibling folders with `cp -R` (not `ln -s` — ADK's
+loader resolves symlinks and rejects targets outside its agents-root as
+path-traversal):
+
+```bash
+# One-liner to build .e2e-work/adk-web/<ir.name>/ for every fixture
+for f in packages/ir/fixtures/*.ir.json; do
+  fname=$(basename "$f" .ir.json)
+  irname=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$f','utf8')).name)")
+  cp -R ".e2e-work/projects/adk/$fname" ".e2e-work/adk-web/$irname"
+done
+```
+
+Then launch from the parent dir:
+```bash
+source .e2e-work/venv-adk/bin/activate       # bash/zsh
+# or: source .e2e-work/venv-adk/bin/activate.fish   # fish
+cd .e2e-work/adk-web && adk web .
+```
+
 ### Optional: Python trust gate
 
 ```bash

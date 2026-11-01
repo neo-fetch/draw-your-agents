@@ -7,13 +7,22 @@ from google.adk.agents import LlmAgent
 from google.adk.workflow import node
 from pydantic import BaseModel
 
-from schemas import (
-    Files,
-    code_loop_CriticInput,
-    code_loop_CriticOutput,
-    code_loop_GenInput,
-    code_loop_ReviserInput,
-)
+try:
+    from .schemas import (
+        Files,
+        code_loop_CriticInput,
+        code_loop_CriticOutput,
+        code_loop_GenInput,
+        code_loop_ReviserInput,
+    )
+except ImportError:
+    from schemas import (
+        Files,
+        code_loop_CriticInput,
+        code_loop_CriticOutput,
+        code_loop_GenInput,
+        code_loop_ReviserInput,
+    )
 
 
 def validate_node_output(schema_cls: type[BaseModel], raw_output: Any) -> BaseModel:

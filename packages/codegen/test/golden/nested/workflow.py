@@ -2,7 +2,10 @@
 
 from google.adk import Workflow
 
-from functions import finalize, inner_step_a, inner_step_b, preprocess
+try:
+    from .functions import finalize, inner_step_a, inner_step_b, preprocess
+except ImportError:
+    from functions import finalize, inner_step_a, inner_step_b, preprocess
 
 nested_workflow = Workflow(
     name="nested_workflow",

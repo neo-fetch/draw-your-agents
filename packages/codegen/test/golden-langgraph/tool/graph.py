@@ -2,9 +2,18 @@
 
 from langgraph.graph import END, START, StateGraph
 
-from agents import summarize
-from nodes import fetch_data
-from state import WorkflowState
+try:
+    from .agents import summarize
+except ImportError:
+    from agents import summarize
+try:
+    from .nodes import fetch_data
+except ImportError:
+    from nodes import fetch_data
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 builder = StateGraph(WorkflowState)
 builder.add_node("fetch_data", fetch_data)

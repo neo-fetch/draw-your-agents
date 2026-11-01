@@ -2,7 +2,10 @@
 
 from langgraph.types import interrupt
 
-from state import WorkflowState
+try:
+    from .state import WorkflowState
+except ImportError:
+    from state import WorkflowState
 
 
 def ask_user(state: WorkflowState) -> dict:

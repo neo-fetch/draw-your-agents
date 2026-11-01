@@ -2,7 +2,10 @@
 
 from google.adk import Workflow
 
-from functions import ask_user, process_response
+try:
+    from .functions import ask_user, process_response
+except ImportError:
+    from functions import ask_user, process_response
 
 root_agent = Workflow(
     name="human_input_workflow",
