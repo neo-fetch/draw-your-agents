@@ -21,7 +21,7 @@
         "description": "Fetch an article from a remote source.",
         "inputType": "str",
         "outputType": "Article",
-        "body": null
+        "body": "return Article(\n    title=\"The Quiet Turbine\",\n    body=(\n        \"Engineers this week unveiled a bladeless wind turbine that produces \"\n        \"power in near silence. The prototype survived storm-force winds and \"\n        \"is expected to enter field trials next spring.\"\n    ),\n)"
       }
     },
     {

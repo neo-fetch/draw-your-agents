@@ -6,33 +6,37 @@ except ImportError:
     from state import NestedWorkflowState, WorkflowState
 
 
+def _preprocess_impl(node_input: str) -> str:
+    return f"[prep] {node_input}"
+
+
 def preprocess(state: WorkflowState) -> dict:
     """Parent: prepare input for the nested workflow."""
-    node_input = state["workflow_input"]
-    # TODO: implement preprocess — body not yet provided in the IR.
-    output: str = ...
-    return {"preprocess_output": output}
+    return {"preprocess_output": _preprocess_impl(state["workflow_input"])}
+
+
+def _inner_step_a_impl(node_input: str) -> str:
+    return f"{node_input} | A"
 
 
 def inner_step_a(state: NestedWorkflowState) -> dict:
     """Inner step A."""
-    node_input = state["workflow_input"]
-    # TODO: implement inner_step_a — body not yet provided in the IR.
-    output: str = ...
-    return {"inner_step_a_output": output}
+    return {"inner_step_a_output": _inner_step_a_impl(state["workflow_input"])}
+
+
+def _inner_step_b_impl(node_input: str) -> str:
+    return f"{node_input} | B"
 
 
 def inner_step_b(state: NestedWorkflowState) -> dict:
     """Inner step B."""
-    node_input = state["inner_step_a_output"]
-    # TODO: implement inner_step_b — body not yet provided in the IR.
-    output: str = ...
-    return {"inner_step_b_output": output}
+    return {"inner_step_b_output": _inner_step_b_impl(state["inner_step_a_output"])}
+
+
+def _finalize_impl(node_input: str) -> str:
+    return f"[final] {node_input}"
 
 
 def finalize(state: WorkflowState) -> dict:
     """Parent: finalize after the nested workflow returns."""
-    node_input = state["nested_workflow_output"]
-    # TODO: implement finalize — body not yet provided in the IR.
-    output: str = ...
-    return {"finalize_output": output}
+    return {"finalize_output": _finalize_impl(state["nested_workflow_output"])}

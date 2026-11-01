@@ -6,9 +6,17 @@ except ImportError:
     from state import WorkflowState
 
 
+def _router_impl(node_input: str) -> str:
+    text = str(node_input).lower()
+    if any(w in text for w in ("bug", "crash", "error", "broken")):
+        route = "BUG"
+    elif any(w in text for w in ("ship", "deliver", "package", "tracking", "transit")):
+        route = "LOGISTICS"
+    else:
+        route = "CUSTOMER_SUPPORT"
+    return route
+
+
 def router(state: WorkflowState) -> dict:
     """Route the support message to the matching handler."""
-    node_input = state["process_message_output"]
-    # TODO: implement router — return one of: BUG, CUSTOMER_SUPPORT, LOGISTICS.
-    route: str = ...
-    return {"router_output": route}
+    return {"router_output": _router_impl(state["process_message_output"])}

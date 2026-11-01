@@ -14,7 +14,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"task_a done ({node_input})\""
       }
     },
     {
@@ -27,7 +27,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"task_b done ({node_input})\""
       }
     },
     {
@@ -40,7 +40,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"task_c done ({node_input})\""
       }
     },
     {
@@ -62,7 +62,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"combined after join: {node_input}\""
       }
     }
   ],

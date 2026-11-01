@@ -10,8 +10,10 @@ def ask_user():
     )
 
 
+def _process_response_impl(node_input: str) -> str:
+    return f"[processed] {node_input}"
+
+
 def process_response(node_input: str) -> Event:
     """Forward the human's response."""
-    # TODO: implement process_response — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_process_response_impl(node_input))

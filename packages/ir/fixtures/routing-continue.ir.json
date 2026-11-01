@@ -30,7 +30,7 @@
         "description": "Decide whether the assessed request is feasible to build now.",
         "routes": ["FEASIBLE", "INFEASIBLE"],
         "inputType": "str",
-        "body": null
+        "body": "text = str(node_input).lower()\nif any(w in text for w in (\"impossible\", \"cannot\", \"infeasible\", \"blocked\")):\n    route = \"INFEASIBLE\"\nelse:\n    route = \"FEASIBLE\"\nreturn route"
       }
     },
     {
@@ -60,7 +60,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return \"12 passed, 1 failed (test_retry_backoff)\""
       }
     },
     {

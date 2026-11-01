@@ -47,7 +47,7 @@
         "inputType": "Order",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"Order {node_input.order_id}: {node_input.customer.name} <{node_input.customer.email}>\""
       }
     }
   ],

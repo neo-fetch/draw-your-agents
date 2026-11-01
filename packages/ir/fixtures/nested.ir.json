@@ -14,7 +14,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"[prep] {node_input}\""
       }
     },
     {
@@ -40,7 +40,7 @@
                 "inputType": "str",
                 "outputType": "str",
                 "emits": "output",
-                "body": null
+                "body": "return f\"{node_input} | A\""
               }
             },
             {
@@ -53,7 +53,7 @@
                 "inputType": "str",
                 "outputType": "str",
                 "emits": "output",
-                "body": null
+                "body": "return f\"{node_input} | B\""
               }
             }
           ],
@@ -74,7 +74,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"[final] {node_input}\""
       }
     }
   ],

@@ -39,7 +39,7 @@
         "inputType": "str",
         "outputType": "CityTime",
         "emits": "output",
-        "body": null
+        "body": "return CityTime(time_info=\"12:00 PM\", city=str(node_input).strip())"
       }
     },
     {
@@ -73,7 +73,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "message",
-        "body": null
+        "body": "return f\"[workflow complete] {node_input}\""
       }
     }
   ],

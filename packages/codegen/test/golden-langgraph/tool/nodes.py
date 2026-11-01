@@ -10,9 +10,17 @@ except ImportError:
     from state import WorkflowState
 
 
+def _fetch_data_impl(node_input: str) -> Article:
+    return Article(
+        title="The Quiet Turbine",
+        body=(
+            "Engineers this week unveiled a bladeless wind turbine that produces "
+            "power in near silence. The prototype survived storm-force winds and "
+            "is expected to enter field trials next spring."
+        ),
+    )
+
+
 def fetch_data(state: WorkflowState) -> dict:
     """Fetch an article from a remote source."""
-    node_input = state["workflow_input"]
-    # TODO: implement fetch_data — body not yet provided in the IR.
-    output: Article = ...
-    return {"fetch_data_output": output}
+    return {"fetch_data_output": _fetch_data_impl(state["workflow_input"])}

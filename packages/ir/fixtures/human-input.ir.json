@@ -25,7 +25,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"[processed] {node_input}\""
       }
     }
   ],

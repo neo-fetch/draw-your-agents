@@ -17,9 +17,10 @@ def ask_user(state: WorkflowState) -> dict:
     return {"ask_user_output": answer}
 
 
+def _process_response_impl(node_input: str) -> str:
+    return f"[processed] {node_input}"
+
+
 def process_response(state: WorkflowState) -> dict:
     """Forward the human's response."""
-    node_input = state["ask_user_output"]
-    # TODO: implement process_response — body not yet provided in the IR.
-    output: str = ...
-    return {"process_response_output": output}
+    return {"process_response_output": _process_response_impl(state["ask_user_output"])}

@@ -164,8 +164,14 @@ test("a router body returns the bare label; the wrapper puts it on the route cha
 });
 
 test("a null body still emits the original single-def TODO stub", () => {
-  // Guards the byte-identical-goldens property: only bodied nodes gained a def.
-  const functions = loadGolden("city-time", "functions.py");
-  assert.doesNotMatch(functions, /_impl\(/);
+  // Guards the invariant: a null body ⇒ a single `def <name>(node_input)` TODO
+  // stub (no `_impl` split). Every valid fixture now ships with real bodies, so
+  // we construct a one-off IR with an explicitly null body to pin this shape.
+  const ir = loadIR("packages/ir/fixtures/city-time.ir.json");
+  const fn = ir.nodes.find((n) => n.name === "lookup_time")!;
+  (fn.config as { body?: string | null }).body = null;
+
+  const functions = generateProject(ir).get("functions.py")!;
+  assert.doesNotMatch(functions, /_lookup_time_impl\(/);
   assert.match(functions, /# TODO: implement lookup_time/);
 });

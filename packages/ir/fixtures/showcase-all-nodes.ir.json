@@ -40,7 +40,7 @@
         "description": "Fetch a source article for the requested topic.",
         "inputType": "str",
         "outputType": "Article",
-        "body": null
+        "body": "topic = str(node_input).strip() or \"an unspecified subject\"\nreturn Article(\n    title=f\"On {topic}\",\n    body=f\"A short reference piece about {topic}, drafted locally for the showcase.\",\n    author={\"name\": \"Example Author\", \"email\": \"author@example.com\"},\n)"
       }
     },
     {
@@ -86,7 +86,7 @@
                 "inputType": "str",
                 "outputType": "str",
                 "emits": "output",
-                "body": null
+                "body": "return f\"intro: {node_input}\""
               }
             },
             {
@@ -99,7 +99,7 @@
                 "inputType": "str",
                 "outputType": "str",
                 "emits": "output",
-                "body": null
+                "body": "return f\"body: {node_input}\""
               }
             },
             {
@@ -112,7 +112,7 @@
                 "inputType": "str",
                 "outputType": "str",
                 "emits": "output",
-                "body": null
+                "body": "return f\"conclusion: {node_input}\""
               }
             },
             {
@@ -134,7 +134,7 @@
                 "inputType": "str",
                 "outputType": "str",
                 "emits": "output",
-                "body": null
+                "body": "return f\"draft: {node_input}\""
               }
             }
           ],
@@ -184,7 +184,7 @@
         "description": "Decide whether the assembled draft is ready to publish or needs revision.",
         "routes": ["PUBLISH", "REVISE"],
         "inputType": "str",
-        "body": null
+        "body": "text = str(node_input).lower()\nif any(w in text for w in (\"revise\", \"revision\", \"draft\", \"rewrite\")):\n    route = \"REVISE\"\nelse:\n    route = \"PUBLISH\"\nreturn route"
       }
     },
     {
@@ -197,7 +197,7 @@
         "inputType": "str",
         "outputType": "str",
         "emits": "output",
-        "body": null
+        "body": "return f\"[published] {node_input}\""
       }
     },
     {

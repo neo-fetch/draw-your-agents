@@ -3,8 +3,17 @@
 from google.adk import Event
 
 
+def _router_impl(node_input: str) -> str:
+    text = str(node_input).lower()
+    if any(w in text for w in ("bug", "crash", "error", "broken")):
+        route = "BUG"
+    elif any(w in text for w in ("ship", "deliver", "package", "tracking", "transit")):
+        route = "LOGISTICS"
+    else:
+        route = "CUSTOMER_SUPPORT"
+    return route
+
+
 def router(node_input: str) -> Event:
     """Route the support message to the matching handler."""
-    # TODO: implement router — return Event(route=...) with one of: BUG, CUSTOMER_SUPPORT, LOGISTICS.
-    route: str = ...
-    return Event(route=route)
+    return Event(route=_router_impl(node_input))

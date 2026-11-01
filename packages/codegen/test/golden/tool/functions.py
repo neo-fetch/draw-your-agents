@@ -8,8 +8,17 @@ except ImportError:
     from schemas import Article
 
 
+def _fetch_data_impl(node_input: str) -> Article:
+    return Article(
+        title="The Quiet Turbine",
+        body=(
+            "Engineers this week unveiled a bladeless wind turbine that produces "
+            "power in near silence. The prototype survived storm-force winds and "
+            "is expected to enter field trials next spring."
+        ),
+    )
+
+
 def fetch_data(node_input: str) -> Event:
     """Fetch an article from a remote source."""
-    # TODO: implement fetch_data — body not yet provided in the IR.
-    output: Article = ...
-    return Event(output=output)
+    return Event(output=_fetch_data_impl(node_input))

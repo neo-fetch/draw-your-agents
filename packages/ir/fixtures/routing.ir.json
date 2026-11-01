@@ -30,7 +30,7 @@
         "description": "Route the support message to the matching handler.",
         "routes": ["BUG", "CUSTOMER_SUPPORT", "LOGISTICS"],
         "inputType": "str",
-        "body": null
+        "body": "text = str(node_input).lower()\nif any(w in text for w in (\"bug\", \"crash\", \"error\", \"broken\")):\n    route = \"BUG\"\nelif any(w in text for w in (\"ship\", \"deliver\", \"package\", \"tracking\", \"transit\")):\n    route = \"LOGISTICS\"\nelse:\n    route = \"CUSTOMER_SUPPORT\"\nreturn route"
       }
     },
     {

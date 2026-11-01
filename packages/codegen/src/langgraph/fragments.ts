@@ -107,11 +107,18 @@ function renderLgBodied(
   const impl = renderImpl(node, inputPy, outputPy, body);
   const lines: string[] = [`def ${node.name}(state: ${stateClass}) -> dict:`];
   if (node.config.description) lines.push(indent(`"""${node.config.description}"""`));
-  lines.push(
-    indent(
-      `return {${pyStr(outputKey(node))}: ${implName(node)}(state[${pyStr(inputKey)}])}`,
-    ),
-  );
+  const key = pyStr(outputKey(node));
+  const call = `${implName(node)}(state[${pyStr(inputKey)}])`;
+  const inline = `return {${key}: ${call}}`;
+  // 4-space indent + `return ` prefix must fit black's 88-col budget;
+  // otherwise emit the multi-line form so black is a no-op (ADR-0020).
+  if (4 + inline.length <= 88) {
+    lines.push(indent(inline));
+  } else {
+    lines.push(indent("return {"));
+    lines.push(indent(indent(`${key}: ${call}`)));
+    lines.push(indent("}"));
+  }
   return `${impl}\n\n${lines.join("\n")}\n`;
 }
 

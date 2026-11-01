@@ -3,29 +3,37 @@
 from google.adk import Event
 
 
+def _prep_impl(node_input: str) -> str:
+    return f"[prep] {node_input}"
+
+
 def prep(node_input: str) -> Event:
     """Prepare the shared input before fanning out."""
-    # TODO: implement prep — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_prep_impl(node_input))
+
+
+def _task_a_impl(node_input: str) -> str:
+    return f"task_a done ({node_input})"
 
 
 def task_a(node_input: str) -> Event:
     """Parallel branch A."""
-    # TODO: implement task_a — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_task_a_impl(node_input))
+
+
+def _task_b_impl(node_input: str) -> str:
+    return f"task_b done ({node_input})"
 
 
 def task_b(node_input: str) -> Event:
     """Parallel branch B."""
-    # TODO: implement task_b — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_task_b_impl(node_input))
+
+
+def _final_task_impl(node_input: dict) -> str:
+    return f"combined after join: {node_input}"
 
 
 def final_task(node_input: dict) -> Event:
     """Final task after the join."""
-    # TODO: implement final_task — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_final_task_impl(node_input))

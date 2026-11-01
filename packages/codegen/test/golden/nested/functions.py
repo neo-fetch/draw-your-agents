@@ -3,29 +3,37 @@
 from google.adk import Event
 
 
+def _preprocess_impl(node_input: str) -> str:
+    return f"[prep] {node_input}"
+
+
 def preprocess(node_input: str) -> Event:
     """Parent: prepare input for the nested workflow."""
-    # TODO: implement preprocess — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_preprocess_impl(node_input))
+
+
+def _inner_step_a_impl(node_input: str) -> str:
+    return f"{node_input} | A"
 
 
 def inner_step_a(node_input: str) -> Event:
     """Inner step A."""
-    # TODO: implement inner_step_a — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_inner_step_a_impl(node_input))
+
+
+def _inner_step_b_impl(node_input: str) -> str:
+    return f"{node_input} | B"
 
 
 def inner_step_b(node_input: str) -> Event:
     """Inner step B."""
-    # TODO: implement inner_step_b — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_inner_step_b_impl(node_input))
+
+
+def _finalize_impl(node_input: str) -> str:
+    return f"[final] {node_input}"
 
 
 def finalize(node_input: str) -> Event:
     """Parent: finalize after the nested workflow returns."""
-    # TODO: implement finalize — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_finalize_impl(node_input))

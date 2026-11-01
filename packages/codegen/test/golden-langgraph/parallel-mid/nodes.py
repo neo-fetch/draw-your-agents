@@ -6,28 +6,31 @@ except ImportError:
     from state import WorkflowState
 
 
+def _prep_impl(node_input: str) -> str:
+    return f"[prep] {node_input}"
+
+
 def prep(state: WorkflowState) -> dict:
     """Prepare the shared input before fanning out."""
-    node_input = state["workflow_input"]
-    # TODO: implement prep — body not yet provided in the IR.
-    output: str = ...
-    return {"prep_output": output}
+    return {"prep_output": _prep_impl(state["workflow_input"])}
+
+
+def _task_a_impl(node_input: str) -> str:
+    return f"task_a done ({node_input})"
 
 
 def task_a(state: WorkflowState) -> dict:
     """Parallel branch A."""
-    node_input = state["prep_output"]
-    # TODO: implement task_a — body not yet provided in the IR.
-    output: str = ...
-    return {"task_a_output": output}
+    return {"task_a_output": _task_a_impl(state["prep_output"])}
+
+
+def _task_b_impl(node_input: str) -> str:
+    return f"task_b done ({node_input})"
 
 
 def task_b(state: WorkflowState) -> dict:
     """Parallel branch B."""
-    node_input = state["prep_output"]
-    # TODO: implement task_b — body not yet provided in the IR.
-    output: str = ...
-    return {"task_b_output": output}
+    return {"task_b_output": _task_b_impl(state["prep_output"])}
 
 
 def my_join(state: WorkflowState) -> dict:
@@ -40,9 +43,10 @@ def my_join(state: WorkflowState) -> dict:
     }
 
 
+def _final_task_impl(node_input: str) -> str:
+    return f"combined after join: {node_input}"
+
+
 def final_task(state: WorkflowState) -> dict:
     """Final task after the join."""
-    node_input = state["my_join_output"]
-    # TODO: implement final_task — body not yet provided in the IR.
-    output: str = ...
-    return {"final_task_output": output}
+    return {"final_task_output": _final_task_impl(state["my_join_output"])}

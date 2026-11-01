@@ -8,8 +8,10 @@ except ImportError:
     from schemas import Order
 
 
+def _summarize_order_impl(node_input: Order) -> str:
+    return f"Order {node_input.order_id}: {node_input.customer.name} <{node_input.customer.email}>"
+
+
 def summarize_order(node_input: Order) -> Event:
     """Render the order as a one-line human-readable string."""
-    # TODO: implement summarize_order — body not yet provided in the IR.
-    output: str = ...
-    return Event(output=output)
+    return Event(output=_summarize_order_impl(node_input))

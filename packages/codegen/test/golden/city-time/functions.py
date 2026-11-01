@@ -8,15 +8,19 @@ except ImportError:
     from schemas import CityTime
 
 
+def _lookup_time_impl(node_input: str) -> CityTime:
+    return CityTime(time_info="12:00 PM", city=str(node_input).strip())
+
+
 def lookup_time(node_input: str) -> Event:
     """Return the current time in the given city."""
-    # TODO: implement lookup_time — body not yet provided in the IR.
-    output: CityTime = ...
-    return Event(output=output)
+    return Event(output=_lookup_time_impl(node_input))
+
+
+def _completed_message_impl(node_input: str) -> str:
+    return f"[workflow complete] {node_input}"
 
 
 def completed_message(node_input: str) -> Event:
     """Append a workflow-completed notice to the report."""
-    # TODO: implement completed_message — body not yet provided in the IR.
-    message: str = ...
-    return Event(message=message)
+    return Event(message=_completed_message_impl(node_input))

@@ -10,17 +10,21 @@ except ImportError:
     from state import WorkflowState
 
 
+def _lookup_time_impl(node_input: str) -> CityTime:
+    return CityTime(time_info="12:00 PM", city=str(node_input).strip())
+
+
 def lookup_time(state: WorkflowState) -> dict:
     """Return the current time in the given city."""
-    node_input = state["city_generator_output"]
-    # TODO: implement lookup_time — body not yet provided in the IR.
-    output: CityTime = ...
-    return {"lookup_time_output": output}
+    return {"lookup_time_output": _lookup_time_impl(state["city_generator_output"])}
+
+
+def _completed_message_impl(node_input: str) -> str:
+    return f"[workflow complete] {node_input}"
 
 
 def completed_message(state: WorkflowState) -> dict:
     """Append a workflow-completed notice to the report."""
-    node_input = state["city_report_output"]
-    # TODO: implement completed_message — body not yet provided in the IR.
-    output: str = ...
-    return {"completed_message_output": output}
+    return {
+        "completed_message_output": _completed_message_impl(state["city_report_output"])
+    }
