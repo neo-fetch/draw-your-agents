@@ -10,3 +10,7 @@ dist/
 __pycache__/
 *.pyc
 *.zip
+
+# Local-only manual-testing cheat-sheet for driving every fixture
+# through `adk web`. Not shipped — edit freely per machine.
+ADK_WEB_TESTING.md
