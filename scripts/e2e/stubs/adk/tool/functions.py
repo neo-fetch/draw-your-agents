@@ -3,7 +3,10 @@
 
 from google.adk import Event
 
-from schemas import Article
+try:
+    from .schemas import Article
+except ImportError:
+    from schemas import Article
 
 
 def fetch_data(node_input: str) -> Event:
