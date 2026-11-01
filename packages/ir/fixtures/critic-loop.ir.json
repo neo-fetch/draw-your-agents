@@ -30,15 +30,15 @@
         "inputType": "str",
         "payloadType": "Files",
         "generator": {
-          "model": "gemini-2.5-flash",
+          "model": "gemini-flash-latest",
           "instruction": "You are an expert developer. Generate code based on the provided specifications."
         },
         "critic": {
-          "model": "gemini-2.5-flash",
+          "model": "gemini-flash-latest",
           "instruction": "Review the code against the specifications. If it meets all requirements, return status 'APPROVED'. Otherwise, return detailed feedback."
         },
         "reviser": {
-          "model": "gemini-2.5-pro",
+          "model": "gemini-flash-latest",
           "instruction": "Fix the provided code based on the critic feedback."
         }
       }

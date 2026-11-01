@@ -21,9 +21,9 @@ CODE_LOOP_REVISER_INSTRUCTION = "Fix the provided code based on the critic feedb
 def code_loop(state: WorkflowState) -> dict:
     """Generate code, then loop critic+reviser until the critic approves."""
     specifications = state["workflow_input"]
-    generator = init_chat_model("google_genai:gemini-2.5-flash")
-    critic = init_chat_model("google_genai:gemini-2.5-flash")
-    reviser = init_chat_model("google_genai:gemini-2.5-pro")
+    generator = init_chat_model("google_genai:gemini-flash-latest")
+    critic = init_chat_model("google_genai:gemini-flash-latest")
+    reviser = init_chat_model("google_genai:gemini-flash-latest")
     current = generator.with_structured_output(Files).invoke(
         f"{CODE_LOOP_GENERATOR_INSTRUCTION}\n\nSpecifications:\n{specifications}",
     )

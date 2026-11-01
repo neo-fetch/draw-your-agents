@@ -38,7 +38,7 @@ def validate_node_output(schema_cls: type[BaseModel], raw_output: Any) -> BaseMo
 @node(rerun_on_resume=True)
 async def code_loop_orchestrator(ctx: Context):
     generator = LlmAgent(
-        model="gemini-2.5-flash",
+        model="gemini-flash-latest",
         name="code_loop_generator",
         instruction="You are an expert developer. Generate code based on the provided specifications.",
         input_schema=code_loop_GenInput,
@@ -46,7 +46,7 @@ async def code_loop_orchestrator(ctx: Context):
         output_key="code_loop_generated",
     )
     critic = LlmAgent(
-        model="gemini-2.5-flash",
+        model="gemini-flash-latest",
         name="code_loop_critic",
         instruction="Review the code against the specifications. If it meets all requirements, return status 'APPROVED'. Otherwise, return detailed feedback.",
         input_schema=code_loop_CriticInput,
@@ -54,7 +54,7 @@ async def code_loop_orchestrator(ctx: Context):
         output_key="code_loop_critic_feedback",
     )
     reviser = LlmAgent(
-        model="gemini-2.5-pro",
+        model="gemini-flash-latest",
         name="code_loop_reviser",
         instruction="Fix the provided code based on the critic feedback.",
         input_schema=code_loop_ReviserInput,

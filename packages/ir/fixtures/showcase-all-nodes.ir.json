@@ -162,15 +162,15 @@
         "inputType": "str",
         "payloadType": "Article",
         "generator": {
-          "model": "gemini-2.5-flash",
+          "model": "gemini-flash-latest",
           "instruction": "You are a senior editor. Turn the assembled draft into a polished Article with a title, body, and author."
         },
         "critic": {
-          "model": "gemini-2.5-flash",
+          "model": "gemini-flash-latest",
           "instruction": "Review the Article against editorial standards. If it is publication-ready, return status 'APPROVED'. Otherwise, return specific, actionable feedback."
         },
         "reviser": {
-          "model": "gemini-2.5-pro",
+          "model": "gemini-flash-latest",
           "instruction": "Revise the Article to address the critic's feedback while preserving its intent."
         }
       }
