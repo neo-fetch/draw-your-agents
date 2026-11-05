@@ -2944,3 +2944,79 @@ hand-written. The e2e-staging gotcha that produced hyphen-shaped folder names (u
 ADR but surfaced in the same sweep) is documented alongside F7 in
 [docs/E2E-FINDINGS.md](E2E-FINDINGS.md); re-staging into `ir.name`-keyed sibling folders is a
 one-liner and does not need codegen or harness changes.
+
+## ADR-0059 — Agent-callable tools live in a root tool library; loop roles and agents reference it
+**Context.** A loop's critic / reviser could not call a tool (e.g. "does this code parse?")
+before judging or fixing. Nothing *forbade* it — there was simply nowhere for a tool to go:
+`LoopSubAgent` was `{model, instruction}` (schema `additionalProperties: false`); the existing
+`AgentConfig.tools[]` was silently dropped by ADK `renderAgent` and rejected by the LangGraph
+target; and a `tool` **node** has been a pipeline step since ADR-0053 / F3 (a plain function
+node), so there was no callable to hand an LLM. A tool node used only by an agent would also
+fail `UNREACHABLE_NODE`. E2E-F3 left the question open: "needs an IR-level decision on what a
+`tool` node in the drawn graph *means*."
+**Decisions.**
+- **A separate root library, not a reused node type.** `GraphIR.tools?: ToolDef[]` —
+  `{name, description, params: {name, type}[], returns, body?}` — sits beside `schemas`, outside
+  the graph (no edges, no canvas card). `AgentConfig.tools` and the new `LoopSubAgent.tools` list
+  library names. `tool` nodes keep their ADR-0053 meaning (pipeline step). Rejected: pointing
+  `tools[]` at tool nodes and exempting them from reachability — one node type meaning two
+  things, plus floating unwired cards on the canvas.
+- **Flat named params, any scalar or root schema.** Function-calling models handle flat scalar
+  args better than one nested object, and the param names are what the LLM sees. Bodies follow
+  ADR-0056 (target-neutral, return a plain value) with each param in scope by name; they get the
+  same `BODY_*` checks.
+- **Root-only.** Refs from any nesting depth resolve against the root library; a nested graph
+  declaring `tools` is `TOOL_LIBRARY_NOT_ROOT`. Tool names share the flat namespace (ADR-0017)
+  and additionally avoid symbols the importing modules bind and locals of the generated agent /
+  loop functions (`critic = LlmAgent(..., tools=[critic])` would raise UnboundLocalError) —
+  `TOOL_NAME_CLASH`. New codes: `INVALID_TOOL_NAME`, `DUPLICATE_TOOL_NAME`,
+  `TOOL_MISSING_DESCRIPTION`, `TOOL_BAD_PARAM_NAME`, `TOOL_UNKNOWN_PARAM_TYPE`,
+  `TOOL_UNKNOWN_RETURN_TYPE`, `UNKNOWN_TOOL_REF`, `DUPLICATE_TOOL_REF`. Library findings locate
+  via a new optional `Finding.tool` (no `nodeId`).
+- **No `irVersion` bump.** The fields are optional and additive; every pre-existing IR is valid
+  and compiles byte-identically (the 10 goldens without a library are unchanged). `agent.tools[]`
+  changes meaning (node names → library names), but no fixture or known IR populated it.
+- **Codegen: one `agent_tools.py`, shared by both targets** (named to avoid `google.adk.tools` /
+  a pip `tools` package; added to both local-module sets for the ADR-0058 import shape). The body
+  goes in `_<name>_impl(<params>)`; the public `<name>(<params>)` carries the description as its
+  docstring. A schema-typed **return** is `.model_dump()`ed and annotated `dict`: ADK cannot
+  build a response schema from a pydantic return annotation (it logs a TypeAdapter error).
+  Schema-typed **params** need no shim — ADK and LangChain validate JSON args into the class
+  (verified live: ADK passed a `FileItem`, not a dict).
+- **ADK:** `tools=[...]` on `Agent` and on each loop `LlmAgent`. ADK 2.0 supports `tools` with
+  `output_schema` — on the Gemini API it injects `set_model_response`, on Vertex it uses native
+  support — so the loop's typed `{status, feedback}` critic contract is unchanged. Verified in a
+  live spike before writing codegen: the critic, run via `ctx.run_node` in single-turn mode,
+  called the tool and returned a validated dict.
+- **LangGraph:** an agent / loop role with tools becomes
+  `create_agent(model, tools=[...], response_format=<output schema>)` (omitted for `str`),
+  invoked through a `run_tool_agent(agent, prompt)` helper emitted into `agent_tools.py`
+  (`structured_response`, else the final message's `.text` — F4). Roles without tools keep
+  `with_structured_output`, so a graph without a library is byte-identical. The old "not
+  supported yet" guard is removed.
+- **Web.** A **Tools** pane (under Schemas) edits the library at any sub-graph depth; agents and
+  each loop role get a checkbox picker (library order, so `tools=[...]` is stable regardless of
+  click order). `renameTool` / `deleteTool` cascade into every `tools[]` at every depth. Unlike
+  `deleteSchema`, delete **scrubs** refs: a ref is one entry of an optional list, so removing it
+  is lossless, whereas a dangling entry would only be a finding to clean up by hand. The node
+  rename cascade (ADR-0036 / ADR-0050) no longer touches `tools[]`.
+- **Examples updated.** `critic-loop` (critic + reviser call `check_python_syntax`),
+  `showcase-all-nodes` (`summarize` and `refine_loop`'s critic call `word_count`) and `tool`
+  (the agent calls `count_sentences` next to the `fetch_data` pipeline-step node).
+**Spec tests.** IR: library codes via `fixtures/invalid/bad-tool-library.ir.json` + inline cases
+(loop refs, reserved names, nested refs / nested library). Codegen: regenerated `tool` and
+`critic-loop` goldens on both targets (only `agent_tools.py`, `tools=` / `create_agent` lines,
+imports, edited instructions changed); schema-param / schema-return / null-body emission; the
+LangGraph showcase tool-loop shape. Web: `tools.test.ts` (CRUD, cascades at depth, picker order,
+validator + codegen round-trip).
+**Verification.** `npm test`: 44 IR + 360 codegen + 172 web — all pass; black is a no-op on every
+generated project. `node scripts/e2e.ts --live` for `critic-loop` and `tool`, both targets: 8/8
+cells pass. `critic-loop` moved into the live subset (its "gemini-2.5-pro" skip reason was stale)
+with stubs that seed a FizzBuzz spec and **fail unless `check_python_syntax` actually executed**
+and the loop wrote a payload: ADK critic → `check_python_syntax` → `set_model_response`
+`APPROVED`; LangGraph critic called it too. ADK `tool` showed `count_sentences` function calls;
+LangGraph `tool` produced a clean one-sentence summary (tool use there not instrumented).
+Browser: loaded the Critic loop example, ticked the tool on the generator, renamed the tool —
+picker, IR and Preview `loops.py` all followed.
+**Deferred.** Built-in / MCP tools (`google_search`, `McpToolset`, `AgentTool`); per-graph
+libraries; the deterministic loop `check` hook from ADR-0039 (it could reuse a library tool).

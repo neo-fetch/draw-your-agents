@@ -63,12 +63,14 @@ const LIVE_SUBSET = [
   "routing-continue",
   "parallel",
   "tool",
+  // Loop sub-agents calling a library tool (ADR-0059): the critic and reviser
+  // call `check_python_syntax` inside the loop. ~3 model calls per round.
+  "critic-loop",
 ] as const;
 
 /** Fixtures never run live, with the recorded reason. */
 const LIVE_SKIP: Record<string, string> = {
   "human-input": "requires interactive stdin (RequestInput)",
-  "critic-loop": "uses gemini-2.5-pro — unreliable on the free tier",
   "showcase-all-nodes": "includes humanInput + loop; dry-run only",
 };
 

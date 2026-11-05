@@ -14,15 +14,20 @@ UI / draw.io  →  IR  →  validator  →  codegen  →  runnable ADK project (
 
 | IR `type`   | ADK construct            | Key config                                                        | Emits            |
 |-------------|--------------------------|-------------------------------------------------------------------|------------------|
-| `agent`     | `Agent` / `LlmAgent`     | model, instruction (w/ vars), modelParams, mode, tools, in/out schema | `output`     |
+| `agent`     | `Agent` / `LlmAgent`     | model, instruction (w/ vars), modelParams, mode, tools (library refs, ADR-0059), in/out schema | `output`     |
 | `function`  | `def f(node_input)`      | description, inputType, outputType, emits, body                   | `Event(output=)` |
 | `router`    | fn returning `Event(route=)` | routes[], body; branch targets on edges via `route`           | `Event(route=)`  |
-| `tool`      | ADK `Tool`               | tool ref / params (Phase 3)                                        | `output`         |
+| `tool`      | `def f(node_input)` (pipeline step, F3) | description, inputType, outputType, body                | `Event(output=)` |
 | `join`      | `JoinNode`               | (waits for all upstreams)                                          | collected output |
 | `humanInput`| `RequestInput`           | message, payloadRef, responseSchemaRef                            | user input       |
 | `workflow`  | nested `Workflow`        | sub-IR ref (Phase 3)                                               | bubbles leaf out |
+| `loop`      | `@node` orchestrator     | maxIterations, approvalPhrase, types, generator/critic/reviser (+ tools) | state `<N>_output` |
 
 Agents must be single-turn / task mode (ADK constraint).
+
+**Agent-callable tools** are not nodes: they live in the root IR's `tools` library (ADR-0059) and
+compile to `agent_tools.py`. An agent or loop role lists the ones it may call; ADK passes them as
+`tools=[...]`, LangGraph runs a `create_agent(..., tools=[...], response_format=...)` tool loop.
 
 A `body` on a `function`/`tool`/`router` is **target-neutral** (ADR-0056): `node_input` is in
 scope and the body returns a plain value. Codegen emits it verbatim inside `_<name>_impl` and
