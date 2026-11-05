@@ -10,7 +10,7 @@
  * resolve in Vite and Node — no `.js`-specifier alias needed (see ADR-0022).
  */
 import { create, type StoreApi, type UseBoundStore } from "zustand";
-import type { GraphIR } from "@graphical-agents/ir";
+import type { GraphIR, ToolParam } from "@graphical-agents/ir";
 import cityTime from "../../../../packages/ir/fixtures/city-time.ir.json" with { type: "json" };
 import {
   applyModelParamPatch,
@@ -42,6 +42,16 @@ import {
   updateField as updateFieldReducer,
   type FieldPatch,
 } from "./schemas.ts";
+import {
+  addTool as addToolReducer,
+  addToolParam as addToolParamReducer,
+  deleteTool as deleteToolReducer,
+  deleteToolParam as deleteToolParamReducer,
+  renameTool as renameToolReducer,
+  updateTool as updateToolReducer,
+  updateToolParam as updateToolParamReducer,
+  type ToolPatch,
+} from "./tools.ts";
 
 /**
  * The triple that uniquely identifies an edge for selection purposes
@@ -192,6 +202,19 @@ export interface IRState {
   ) => void;
   /** Remove a field from a schema. */
   deleteField: (schemaName: string, fieldName: string) => void;
+  /**
+   * Tool library (ADR-0059). Every tool action targets the **root** IR —
+   * the library is root-only and refs at any depth resolve against it — so
+   * none of these go through `updateGraphAtPath`. Rename / delete cascade
+   * into agent and loop-role `tools[]` lists at every nesting level.
+   */
+  addTool: () => void;
+  renameTool: (oldName: string, newName: string) => void;
+  deleteTool: (name: string) => void;
+  updateTool: (name: string, patch: ToolPatch) => void;
+  addToolParam: (toolName: string) => void;
+  updateToolParam: (toolName: string, paramName: string, patch: Partial<ToolParam>) => void;
+  deleteToolParam: (toolName: string, paramName: string) => void;
 }
 
 export type IRStore = UseBoundStore<StoreApi<IRState>>;
@@ -373,6 +396,16 @@ export function createIRStore(initial: GraphIR): IRStore {
           deleteFieldReducer(g, schemaName, fieldName),
         ),
       })),
+    addTool: () => set((s) => ({ ir: addToolReducer(s.ir).ir })),
+    renameTool: (oldName, newName) =>
+      set((s) => ({ ir: renameToolReducer(s.ir, oldName, newName) })),
+    deleteTool: (name) => set((s) => ({ ir: deleteToolReducer(s.ir, name) })),
+    updateTool: (name, patch) => set((s) => ({ ir: updateToolReducer(s.ir, name, patch) })),
+    addToolParam: (toolName) => set((s) => ({ ir: addToolParamReducer(s.ir, toolName) })),
+    updateToolParam: (toolName, paramName, patch) =>
+      set((s) => ({ ir: updateToolParamReducer(s.ir, toolName, paramName, patch) })),
+    deleteToolParam: (toolName, paramName) =>
+      set((s) => ({ ir: deleteToolParamReducer(s.ir, toolName, paramName) })),
   }));
 }
 
