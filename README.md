@@ -36,6 +36,11 @@ Runs entirely in your browser — free for individuals and non-profits, by desig
 - **Loop node** — A self-contained *generate → critique → revise* loop that iterates until an LLM critic approves (or a max-iteration cap)
 - **Compiles to a real dynamic workflow** — On ADK, codegen emits an `@node` orchestrator (`ctx.run_node` + a bounded Python loop) modeled on a verified working example; on LangGraph, the equivalent bounded loop runs inside one node function — either way it's one node, so the outer graph stays an acyclic DAG
 - **Typed payloads** — Generator/critic/reviser exchange pydantic-typed I/O (composes with nested schemas); a canonical `{status, feedback}` critic output drives termination
+- **Tool-calling loop roles** — Tick a library tool on the generator, critic, or reviser and it can call it mid-loop (e.g. a critic that runs `check_python_syntax` on every file before judging) ([ADR-0059](docs/DECISIONS.md))
+
+### Tool Library — Agent-Callable Tools
+- **Define once, attach anywhere** — A **Tools** pane holds typed Python functions (name, description, params, return type, body). Any agent or loop role opts in with a checkbox; renames and deletes cascade
+- **Not a graph step** — Unlike a `tool` *node* (a pipeline step wired by edges), a library tool is called by the model when it decides to; codegen emits `agent_tools.py` and wires `tools=[...]` (ADK) or a `create_agent` tool loop (LangGraph), keeping typed outputs on both
 ![Project Screenshot](https://github.com/neo-fetch/draw-your-agents/blob/main/assets/sc%201.png?raw=true)
 
 ### Code Generation Pipeline
@@ -100,14 +105,14 @@ my_workflow/
 
 | IR `type`     | ADK construct        | LangGraph construct                       | Key config                                       |
 |---------------|----------------------|-------------------------------------------|--------------------------------------------------|
-| `agent`       | `Agent` / `LlmAgent` | `init_chat_model().with_structured_output()` node fn | model, instruction (structured template), modelParams, mode, tools, schemas |
+| `agent`       | `Agent` / `LlmAgent` | `init_chat_model().with_structured_output()` node fn (`create_agent` tool loop when it has tools) | model, instruction (structured template), modelParams, mode, tools, schemas |
 | `function`    | `def f(node_input)`  | node fn → state update                     | description, inputType, outputType, emits, body   |
 | `router`      | fn → `Event(route=)` | node fn + `add_conditional_edges`          | routes[], body; branch targets via edge `route`    |
-| `tool`        | `FunctionTool`       | node fn (pipeline step)                    | inputType, outputType, body                       |
+| `tool`        | `def f(node_input)` (pipeline step) | node fn (pipeline step)     | inputType, outputType, body                       |
 | `join`        | `JoinNode`           | node fn with `defer=True`                  | waits for all upstreams                           |
 | `humanInput`  | `RequestInput`       | `interrupt()` + `Command(resume=...)`      | message, payloadRef, responseSchemaRef            |
 | `workflow`    | nested `Workflow`    | compiled subgraph                          | sub-IR in `config.graph`                          |
-| `loop`        | `@node` orchestrator | bounded loop in one node fn                | maxIterations, approvalPhrase, input/payload types, generator + critic + reviser sub-agents |
+| `loop`        | `@node` orchestrator | bounded loop in one node fn                | maxIterations, approvalPhrase, input/payload types, generator + critic + reviser sub-agents (each may call library tools) |
 
 > **Data flow.** ADK threads each node's `Event(output=...)` to the next node's `node_input` (positional); LangGraph writes every node's output to a shared `state` TypedDict (`<node>_output`). Both honor the same IR: positional prompt chips render `<Schema.field from node>` (ADK) / a state read (LangGraph), and non-adjacent `{Schema.field}` chips read from session state in either target.
 

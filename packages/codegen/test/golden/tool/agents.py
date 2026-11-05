@@ -3,6 +3,10 @@
 from google.adk import Agent
 
 try:
+    from .agent_tools import count_sentences
+except ImportError:
+    from agent_tools import count_sentences
+try:
     from .schemas import Article
 except ImportError:
     from schemas import Article
@@ -10,7 +14,8 @@ except ImportError:
 summarize = Agent(
     name="summarize",
     model="gemini-flash-latest",
-    instruction="Summarize the article in one sentence.",
+    instruction="Summarize the article in one sentence. Before answering, call the count_sentences tool on your summary and make sure it returns 1.",
+    tools=[count_sentences],
     input_schema=Article,
     output_schema=str,
 )

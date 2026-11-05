@@ -8,6 +8,10 @@ from google.adk.workflow import node
 from pydantic import BaseModel
 
 try:
+    from .agent_tools import check_python_syntax
+except ImportError:
+    from agent_tools import check_python_syntax
+try:
     from .schemas import (
         Files,
         code_loop_CriticInput,
@@ -48,7 +52,8 @@ async def code_loop_orchestrator(ctx: Context):
     critic = LlmAgent(
         model="gemini-flash-latest",
         name="code_loop_critic",
-        instruction="Review the code against the specifications. If it meets all requirements, return status 'APPROVED'. Otherwise, return detailed feedback.",
+        instruction="Review the code against the specifications. Before judging, call the check_python_syntax tool on the content of every Python file; any file that does not return 'OK' must be rejected, quoting the error in your feedback. If every file parses and meets all requirements, return status 'APPROVED'. Otherwise, return detailed feedback.",
+        tools=[check_python_syntax],
         input_schema=code_loop_CriticInput,
         output_schema=code_loop_CriticOutput,
         output_key="code_loop_critic_feedback",
@@ -56,7 +61,8 @@ async def code_loop_orchestrator(ctx: Context):
     reviser = LlmAgent(
         model="gemini-flash-latest",
         name="code_loop_reviser",
-        instruction="Fix the provided code based on the critic feedback.",
+        instruction="Fix the provided code based on the critic feedback. After fixing, call the check_python_syntax tool on every Python file and keep fixing until each one returns 'OK'.",
+        tools=[check_python_syntax],
         input_schema=code_loop_ReviserInput,
         output_schema=Files,
         output_key="code_loop_revised",

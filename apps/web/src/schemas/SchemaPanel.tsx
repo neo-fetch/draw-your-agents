@@ -18,7 +18,8 @@ import { fieldTypeCandidates, scalarTypes } from "../store/schemas.ts";
 
 const ROW: CSSProperties = { marginBottom: 8 };
 
-function NameInput({
+/** Commit-on-blur identifier input — shared with the tool library panel (ADR-0059). */
+export function NameInput({
   initial,
   ariaLabel,
   onCommit,

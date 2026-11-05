@@ -3,8 +3,8 @@
  *
  * Node analog of ADR-0035's `renameSchema` test suite. Pins the cascade:
  * renaming a producer rewrites every consumer agent's var-segment `source`
- * and every agent `tools[]` entry that referenced the old name, while edges
- * (id-keyed) are left alone. Install-free per ADR-0011 / ADR-0013 / ADR-0022
+ * that referenced the old name, while edges (id-keyed) and agent `tools[]`
+ * (library tool names since ADR-0059, not node names) are left alone. Install-free per ADR-0011 / ADR-0013 / ADR-0022
  * / ADR-0032: only IR types, the validator, codegen, and Node builtins.
  *
  * Since ADR-0050 the cascade also recurses into nested
@@ -77,12 +77,13 @@ test("renameNode cascades a producer rename into every var-chip source + validat
   );
 });
 
-// --- tools[] cascade ------------------------------------------------------
+// --- tools[] are library names, not node names (ADR-0059) ----------------
 
-test("renameNode cascades into agent config.tools[] entries", () => {
-  // Construct a derived IR: city-time + a tool node + an agent that lists the
-  // tool by name in `config.tools[]`. Renaming the tool must rewrite the
-  // agent's tools entry; the unrelated tools entry must survive untouched.
+test("renameNode leaves agent config.tools[] alone", () => {
+  // Before ADR-0059 `tools[]` named tool *nodes* and a node rename cascaded
+  // into it. It now names entries of the root tool library (`ir.tools`);
+  // `renameTool` owns that cascade. Renaming a tool node — even one whose
+  // name happens to appear in a `tools[]` list — must not touch it.
   const base = cloneFixture(loadCityTime());
   const toolNode: ToolNode = {
     id: "n_tool",
@@ -116,11 +117,7 @@ test("renameNode cascades into agent config.tools[] entries", () => {
   assert.strictEqual(tool.name, "load_data");
 
   const agent = next.nodes.find((n) => n.id === "n_city_gen") as AgentNode;
-  assert.deepStrictEqual(
-    agent.config.tools,
-    ["load_data", "other_tool"],
-    "matching entry rewrites; unrelated entries pass through unchanged",
-  );
+  assert.deepStrictEqual(agent.config.tools, ["fetch_data", "other_tool"]);
 });
 
 // --- no-op cases ----------------------------------------------------------

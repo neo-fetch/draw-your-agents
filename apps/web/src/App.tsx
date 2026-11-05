@@ -6,6 +6,7 @@ import { Landing } from "./landing/Landing.tsx";
 import { Palette } from "./palette/Palette.tsx";
 import { Preview } from "./preview/Preview.tsx";
 import { SchemaPanel } from "./schemas/SchemaPanel.tsx";
+import { ToolPanel } from "./tools/ToolPanel.tsx";
 import { Toolbar } from "./toolbar/Toolbar.tsx";
 import { PaneResizeHandle } from "./layout/PaneResizeHandle.tsx";
 import { WorkPane } from "./layout/WorkPane.tsx";
@@ -50,6 +51,10 @@ function Workbench() {
           <header className="pane__subhead">Schemas</header>
           <div className="body schemas">
             <SchemaPanel />
+          </div>
+          <header className="pane__subhead">Tools</header>
+          <div className="body schemas">
+            <ToolPanel />
           </div>
         </WorkPane>
         <PaneResizeHandle pane="left" edge="end" />

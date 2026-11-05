@@ -90,17 +90,17 @@ export function applyNodePosition(
  * reference to the old name across **all** nesting levels (ADR-0050). Node
  * analog of `renameSchema` (ADR-0035): without the cascade a single rename
  * click would silently break codegen — the var-chip source binding
- * `<Schema.field from name>` (IR-SCHEMA invariant 1) and an agent's
- * `config.tools[]` both address other nodes by `name`.
+ * `<Schema.field from name>` (IR-SCHEMA invariant 1) addresses other nodes
+ * by `name`.
  *
- * Cascade scope:
- *   - var-segment `source` in every agent's `instruction.segments`
- *   - every entry of every agent's `config.tools[]`
+ * Cascade scope: var-segment `source` in every agent's `instruction.segments`.
+ * An agent's `config.tools[]` is NOT touched: since ADR-0059 its entries name
+ * tools in the root library (`ir.tools`), not nodes — `renameTool` in
+ * `tools.ts` owns that cascade.
  *
  * The cascade recurses through every `workflow.config.graph`. Var sources
- * only resolve per-level in the validator, but `tools[]` entries resolve
- * globally by name; node names are globally unique (ADR-0017), so a
- * tree-wide cascade is correct for both and needs no scoping logic.
+ * only resolve per-level in the validator, but node names are globally unique
+ * (ADR-0017), so a tree-wide cascade is correct and needs no scoping logic.
  *
  * The rename itself is path-scoped (never "find this id anywhere"): node ids
  * are only conventionally global, so a hand-loaded IR may reuse an id across
@@ -193,31 +193,11 @@ function cascadeAgent(
     return seg;
   });
 
-  const prevTools = a.config.tools;
-  let toolsChanged = false;
-  let nextTools: string[] | undefined = prevTools;
-  if (Array.isArray(prevTools)) {
-    const mapped = prevTools.map((t) => {
-      if (t === oldName) {
-        toolsChanged = true;
-        return newName;
-      }
-      return t;
-    });
-    if (toolsChanged) nextTools = mapped;
-  }
-
-  if (!segmentsChanged && !toolsChanged) return a;
+  if (!segmentsChanged) return a;
 
   return {
     ...a,
-    config: {
-      ...a.config,
-      instruction: segmentsChanged
-        ? { segments: nextSegments }
-        : a.config.instruction,
-      tools: toolsChanged ? nextTools : a.config.tools,
-    },
+    config: { ...a.config, instruction: { segments: nextSegments } },
   };
 }
 

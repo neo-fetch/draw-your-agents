@@ -68,9 +68,13 @@ const PROJECTS = [
   { name: "parallel-mid", fixture: "packages/ir/fixtures/parallel-mid.ir.json", extras: [] },
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json", extras: [] },
   { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json", extras: [] },
-  { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json", extras: [] },
+  { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json", extras: ["agent_tools.py"] },
   { name: "nested-schema", fixture: "packages/ir/fixtures/nested-schema.ir.json", extras: [] },
-  { name: "critic-loop", fixture: "packages/ir/fixtures/critic-loop.ir.json", extras: ["loops.py"] },
+  {
+    name: "critic-loop",
+    fixture: "packages/ir/fixtures/critic-loop.ir.json",
+    extras: ["loops.py", "agent_tools.py"],
+  },
   { name: "state-vars", fixture: "packages/ir/fixtures/state-vars.ir.json", extras: [] },
 ];
 
@@ -175,3 +179,44 @@ test("a null body still emits the original single-def TODO stub", () => {
   assert.doesNotMatch(functions, /_lookup_time_impl\(/);
   assert.match(functions, /# TODO: implement lookup_time/);
 });
+
+// -- tool library (ADR-0059) --
+
+test("no tool library → no agent_tools.py and no tools= kwarg", () => {
+  const files = generateProject(loadIR("packages/ir/fixtures/city-time.ir.json"));
+  assert.equal(files.has("agent_tools.py"), false);
+  assert.doesNotMatch(files.get("agents.py")!, /tools=/);
+});
+
+test("agent_tools.py: schema params pass through, schema returns are model_dump()ed, null body stubs", () => {
+  const ir = loadIR("packages/ir/fixtures/tool.ir.json");
+  ir.tools = [
+    {
+      name: "retitle",
+      description: 'Return the article retitled to the given "title"',
+      params: [
+        { name: "article", type: "Article" },
+        { name: "title", type: "str" },
+        { name: "max_len", type: "int" },
+      ],
+      returns: "Article",
+      body: "return article.model_copy(update={'title': title[:max_len]})",
+    },
+    { name: "todo_tool", description: "Not written yet.", params: [], returns: "bool", body: null },
+  ];
+  const agent = ir.nodes.find((n) => n.type === "agent")!;
+  (agent.config as { tools?: string[] }).tools = ["retitle", "todo_tool"];
+
+  const files = generateProject(ir);
+  const tools = files.get("agent_tools.py")!;
+  assert.match(tools, /def _retitle_impl\(article: Article, title: str, max_len: int\) -> Article:/);
+  assert.match(tools, /def retitle\(article: Article, title: str, max_len: int\) -> dict:/);
+  assert.match(tools, /return _retitle_impl\(article, title, max_len\)\.model_dump\(\)/);
+  // A description ending in `"` must not merge into the closing `"""`.
+  assert.match(tools, /"""Return the article retitled to the given "title\\""""/);
+  assert.match(tools, /def todo_tool\(\) -> bool:[\s\S]*raise NotImplementedError\("todo_tool"\)/);
+  assert.match(tools, /from schemas import Article/);
+  assert.match(files.get("agents.py")!, /tools=\[retitle, todo_tool\],/);
+  compileCheck(files);
+});
+

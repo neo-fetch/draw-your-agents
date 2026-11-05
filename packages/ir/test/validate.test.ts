@@ -513,3 +513,102 @@ test("BODY_ROUTE_UNDECLARED stays quiet when some returned literal is declared",
   const r = validate(routerWithBody('if urgent(node_input):\n    return "BUG"\nreturn other()'));
   assert.deepEqual(r.warnings, [], `unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
 });
+
+// -- tool library (ADR-0059) --
+
+test("example fixtures that use the tool library validate with zero errors and zero warnings", () => {
+  for (const f of ["critic-loop", "showcase-all-nodes", "tool"]) {
+    const ir = loadIR(`../fixtures/${f}.ir.json`);
+    assert.ok((ir.tools ?? []).length > 0, `${f} should declare a tool library`);
+    const r = validate(ir);
+    assert.deepEqual(r.errors, [], `${f}: unexpected errors: ${JSON.stringify(r.errors, null, 2)}`);
+    assert.deepEqual(r.warnings, [], `${f}: unexpected warnings: ${JSON.stringify(r.warnings, null, 2)}`);
+  }
+});
+
+test("bad-tool-library fixture reports every tool-library code", () => {
+  const r = validate(loadIR("../fixtures/invalid/bad-tool-library.ir.json"));
+  assert.equal(r.ok, false);
+  const codes = new Set(r.errors.map((f) => f.code));
+  for (const code of [
+    ValidationCode.TOOL_NAME_CLASH, // tool "writer" vs agent node "writer"
+    ValidationCode.DUPLICATE_TOOL_NAME, // "lookup" declared twice
+    ValidationCode.TOOL_MISSING_DESCRIPTION, // first "lookup" has ""
+    ValidationCode.TOOL_BAD_PARAM_NAME, // duplicate "q", keyword "class"
+    ValidationCode.TOOL_UNKNOWN_PARAM_TYPE, // "Mystery"
+    ValidationCode.TOOL_UNKNOWN_RETURN_TYPE, // "Unknown"
+    ValidationCode.BODY_ADK_FLAVORED, // body returns Event(...)
+    ValidationCode.UNKNOWN_TOOL_REF, // agent "nonexistent", critic "ghost_tool"
+    ValidationCode.DUPLICATE_TOOL_REF, // agent lists "lookup" twice
+  ]) {
+    assert.ok(codes.has(code), `expected ${code}; got: ${[...codes].sort().join(", ")}`);
+  }
+});
+
+test("tool-library findings carry the tool name; ref findings carry the node id", () => {
+  const r = validate(loadIR("../fixtures/invalid/bad-tool-library.ir.json"));
+  const clash = r.errors.find((f) => f.code === ValidationCode.TOOL_NAME_CLASH);
+  assert.equal(clash?.tool, "writer");
+  assert.equal(clash?.nodeId, undefined);
+  const body = r.errors.find((f) => f.code === ValidationCode.BODY_ADK_FLAVORED);
+  assert.equal(body?.tool, "lookup");
+  const refs = r.errors.filter((f) => f.code === ValidationCode.UNKNOWN_TOOL_REF);
+  assert.deepEqual(refs.map((f) => f.nodeId).sort(), ["n_loop", "n_writer"]);
+  assert.ok(refs.some((f) => f.message.includes("critic")), "loop ref finding should name the role");
+});
+
+test("loop sub-agent tools resolve against the library", () => {
+  const ir = loopFixture({
+    critic: { model: "gemini-2.5-flash", instruction: "crit", tools: ["check"] },
+  });
+  assert.equal(validate(ir).ok, false, "unknown tool before the library declares it");
+  (ir as unknown as { tools: unknown[] }).tools = [
+    { name: "check", description: "Check it.", params: [{ name: "code", type: "str" }], returns: "bool", body: "return True" },
+  ];
+  const r = validate(ir);
+  assert.deepEqual(r.errors, [], JSON.stringify(r.errors, null, 2));
+});
+
+test("tool name may not clash with a loop's reserved orchestrator symbol or a generated import", () => {
+  for (const name of ["my_loop_orchestrator", "node", "LlmAgent", "critic", "run_tool_agent"]) {
+    const ir = loopFixture();
+    (ir as unknown as { tools: unknown[] }).tools = [{ name, description: "d", params: [], returns: "str" }];
+    const codes = validate(ir).errors.map((e) => e.code);
+    assert.ok(codes.includes(ValidationCode.TOOL_NAME_CLASH), `expected TOOL_NAME_CLASH for ${name}`);
+  }
+});
+
+test("a nested workflow can reference root tools but may not declare its own library", () => {
+  const nested = {
+    irVersion: "0.1.0",
+    name: "inner",
+    schemas: [],
+    nodes: [
+      {
+        id: "n_inner_agent",
+        type: "agent",
+        name: "inner_agent",
+        config: {
+          model: "gemini-flash-latest",
+          instruction: { segments: [{ type: "text", value: "hi" }] },
+          tools: ["shout"],
+          outputSchemaRef: "str",
+        },
+      },
+    ],
+    edges: [{ from: "START", to: "n_inner_agent" }],
+  };
+  const ir = {
+    irVersion: "0.1.0",
+    name: "outer",
+    schemas: [],
+    tools: [{ name: "shout", description: "Upper-case text.", params: [{ name: "text", type: "str" }], returns: "str", body: "return text.upper()" }],
+    nodes: [{ id: "n_wf", type: "workflow", name: "inner_wf", config: { graph: nested } }],
+    edges: [{ from: "START", to: "n_wf" }],
+  } as unknown as GraphIR;
+  assert.deepEqual(validate(ir).errors, []);
+
+  (nested as Record<string, unknown>).tools = [{ name: "other", description: "x", params: [], returns: "str" }];
+  const codes = validate(ir).errors.map((e) => e.code);
+  assert.ok(codes.includes(ValidationCode.TOOL_LIBRARY_NOT_ROOT));
+});

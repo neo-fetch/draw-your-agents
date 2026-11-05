@@ -154,3 +154,88 @@
   border-color: var(--accent);
   background: var(--accent-wash);
 }
+
+/* ------------------------------------------------- tool library (ADR-0059) */
+/* Reuses the schema card vocabulary; only the extra rows are styled here. */
+
+.tool-param-row {
+  grid-template-columns: 1fr 76px auto;
+}
+.tool-card__label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 6px 0 3px;
+}
+.tool-card__hint {
+  text-transform: none;
+  letter-spacing: normal;
+  font-style: italic;
+}
+.tool-card__desc {
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
+  resize: vertical;
+}
+.tool-card__desc:focus,
+.tool-card__returns select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.tool-card__returns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.tool-card__returns .tool-card__label { margin: 0; }
+.tool-card__returns select {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  padding: 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+
+/* Tool picker in the agent / loop-role popover. */
+.tool-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* Two-class selectors so they outrank `.inspector label` / `.inspector input`
+   (block label, full-width bordered input) inside the node popover. */
+.tool-picker .tool-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink);
+  cursor: pointer;
+}
+.tool-picker .tool-picker__item input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.tool-picker__missing {
+  color: var(--err-ink);
+  text-decoration: line-through;
+}

@@ -65,6 +65,7 @@ export interface AgentConfig {
   instruction: InstructionTemplate;
   modelParams?: ModelParams;
   mode?: "task" | "single_turn";
+  /** Names of `GraphIR.tools` library entries the agent may call (ADR-0059). */
   tools?: string[];
   /** Schema name | "str" | null. Must equal the schema of any var segment used. */
   inputSchemaRef?: TypeRef | null;
@@ -121,6 +122,8 @@ export interface ToolConfig {
 export interface LoopSubAgent {
   model: string;
   instruction: string;
+  /** Names of root `GraphIR.tools` library entries this sub-agent may call (ADR-0059). */
+  tools?: string[];
 }
 
 /**
@@ -143,6 +146,36 @@ export interface LoopConfig {
   generator: LoopSubAgent;
   critic: LoopSubAgent;
   reviser: LoopSubAgent;
+}
+
+// --- Tool library (ADR-0059) ---
+/** One named argument of a library tool — same shape as a schema field's name/type. */
+export interface ToolParam {
+  name: string;
+  /** Scalar or the `name` of a declared (root-level) SchemaDef. */
+  type: TypeRef;
+}
+
+/**
+ * An agent-callable tool (ADR-0059). Lives in the root `GraphIR.tools`
+ * library, **not** in the graph: it has no edges, and is referenced by name
+ * from `AgentConfig.tools` / `LoopSubAgent.tools`. Contrast a `tool` *node*,
+ * which is a pipeline step wired by edges (ADR-0053).
+ */
+export interface ToolDef {
+  /** Python identifier; shares the flat namespace with node and schema names. */
+  name: string;
+  /** Required — rendered as the docstring the LLM reads to decide when to call. */
+  description: string;
+  /** Flat named arguments, in call order. May be empty. */
+  params: ToolParam[];
+  /** Scalar or root SchemaDef name. */
+  returns: TypeRef;
+  /**
+   * Target-neutral Python body (ADR-0056): each param is in scope by name;
+   * return a plain value. null → a `NotImplementedError` stub.
+   */
+  body?: string | null;
 }
 
 // --- Nodes ---
@@ -207,6 +240,8 @@ export interface GraphIR {
   name: string;
   description?: string;
   schemas: SchemaDef[];
+  /** Agent-callable tool library (ADR-0059). Root graph only. */
+  tools?: ToolDef[];
   nodes: GraphNode[];
   edges: Edge[];
 }

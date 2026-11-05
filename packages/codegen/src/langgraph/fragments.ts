@@ -18,6 +18,10 @@
  * - join       → merges its upstream keys into one dict (registered with
  *                `defer=True` by graphModule.ts)
  * - loop       → a plain while-loop over three structured-output models
+ *
+ * An agent or loop sub-agent with library tools (ADR-0059) swaps the bare
+ * model for a `create_agent(model, tools=[...], response_format=...)` tool
+ * loop, run through the `run_tool_agent` helper in `agent_tools.py`.
  */
 import type {
   AgentNode,
@@ -33,8 +37,15 @@ import type {
   ToolNode,
   TypeRef,
 } from "@graphical-agents/ir";
-import { implName, renderImpl, resolveRef, type Fragment } from "../fragments.ts";
-import { BLACK_LINE_WIDTH, CodegenError, indent, pyStr, type ImportReq } from "../python.ts";
+import {
+  AGENT_TOOLS_MODULE,
+  implName,
+  renderImpl,
+  resolveRef,
+  toolsKwarg,
+  type Fragment,
+} from "../fragments.ts";
+import { BLACK_LINE_WIDTH, indent, pyStr, type ImportReq } from "../python.ts";
 import { outputKey } from "./state.ts";
 
 /**
@@ -169,6 +180,57 @@ const INIT_CHAT_MODEL: ImportReq = {
   names: ["init_chat_model"],
 };
 
+const CREATE_AGENT: ImportReq = { module: "langchain.agents", names: ["create_agent"] };
+
+/** The `agent_tools.py` helper every tool-calling LangGraph agent runs through. */
+export const RUN_TOOL_AGENT = "run_tool_agent";
+
+/**
+ * `create_agent(model, tools=[...], response_format=X,)` — always exploded with
+ * black's magic trailing comma, so the shape is stable whatever the line width.
+ * `responseFormat` is omitted for a `str` output (the final message text is the
+ * answer). Returns null — and adds nothing — when there are no tools.
+ */
+function toolAgentCall(
+  modelExpr: string,
+  refs: readonly string[] | undefined,
+  responseFormat: string | null,
+  imports: ImportReq[],
+): string | null {
+  const tools = toolsKwarg(refs);
+  if (!tools) return null;
+  imports.push(CREATE_AGENT, {
+    module: AGENT_TOOLS_MODULE,
+    names: [...tools.import.names, RUN_TOOL_AGENT],
+  });
+  const args = [`${modelExpr},`, tools.line];
+  if (responseFormat) args.push(`response_format=${responseFormat},`);
+  return `create_agent(\n${indent(args.join("\n"))}\n)`;
+}
+
+/**
+ * `agent_tools.py` (LangGraph only): run a `create_agent` tool loop on one
+ * prompt. `structured_response` is set when the agent was built with a
+ * `response_format`; otherwise the answer is the final message's text
+ * (`.text`, not `.content` — E2E finding F4).
+ */
+export function renderRunToolAgentHelper(): Fragment {
+  const code = [
+    `def ${RUN_TOOL_AGENT}(agent, prompt: str):`,
+    `    """Run a tool-calling agent on one prompt (ADR-0059).`,
+    ``,
+    `    Returns its structured response when it was built with \`response_format\`,`,
+    `    otherwise the text of its final message.`,
+    `    """`,
+    `    result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})`,
+    `    if result.get("structured_response") is not None:`,
+    `        return result["structured_response"]`,
+    `    return result["messages"][-1].text`,
+    ``,
+  ].join("\n");
+  return { imports: [], code };
+}
+
 /** agents.py: one node function per agent node — lazy model, prompt, invoke. */
 export function renderLgAgent(
   node: AgentNode,
@@ -178,12 +240,6 @@ export function renderLgAgent(
   schemas: ReadonlyMap<string, SchemaDef>,
 ): Fragment {
   const cfg = node.config;
-  if (cfg.tools && cfg.tools.length > 0) {
-    throw new CodegenError(
-      `agent "${node.name}": agent-attached tools are not supported by the ` +
-        `langgraph target yet`,
-    );
-  }
   const imports: ImportReq[] = [
     INIT_CHAT_MODEL,
     { module: "state", names: [stateClass] },
@@ -194,7 +250,13 @@ export function renderLgAgent(
     indent(`model = ${renderModelCall(cfg.model, cfg.modelParams)}`),
     renderPromptAssign(cfg.instruction.segments, inputKey, inputRef, schemas),
   ];
-  if (cfg.outputSchemaRef === "str") {
+  const structured = cfg.outputSchemaRef === "str" ? null : resolveRef(cfg.outputSchemaRef, schemas);
+  const toolAgent = toolAgentCall("model", cfg.tools, structured?.py ?? null, imports);
+  if (toolAgent) {
+    if (structured) imports.push(...structured.imports);
+    lines.push(indent(`agent = ${toolAgent}`));
+    lines.push(indent(`return {${pyStr(outputKey(node))}: ${RUN_TOOL_AGENT}(agent, prompt)}`));
+  } else if (cfg.outputSchemaRef === "str") {
     lines.push(indent(`result = model.invoke(prompt)`));
     // `.text`, not `.content` (E2E finding F4): under langchain 1.x + Gemini,
     // `.content` is a list of content blocks (with thinking signatures) that
@@ -388,25 +450,39 @@ export function renderLgLoop(
   const specsExpr = schemas.has(inputRef)
     ? "specifications.model_dump_json()"
     : "specifications";
-  const invoke = (target: string, model: string, schema: string, fstr: string): string =>
-    [
-      `${target} = ${model}.with_structured_output(${schema}).invoke(`,
-      `    f"${fstr}",`,
-      `)`,
-    ].join("\n");
+  // Per role: a bare model, or — with library tools — a `create_agent` tool
+  // loop whose `response_format` is the role's output schema (ADR-0059).
+  const roleSchema = { generator: payload.py, critic: criticOutput, reviser: payload.py };
+  const roleTools = (role: "generator" | "critic" | "reviser"): boolean =>
+    (cfg[role].tools ?? []).length > 0;
+  const roleModel = (role: "generator" | "critic" | "reviser"): string => {
+    const model = renderModelCall(cfg[role].model, undefined);
+    return toolAgentCall(model, cfg[role].tools, roleSchema[role], imports) ?? model;
+  };
+  const invoke = (
+    target: string,
+    role: "generator" | "critic" | "reviser",
+    fstr: string,
+  ): string =>
+    roleTools(role)
+      ? [`${target} = ${RUN_TOOL_AGENT}(`, `    ${role},`, `    f"${fstr}",`, `)`].join("\n")
+      : [
+          `${target} = ${role}.with_structured_output(${roleSchema[role]}).invoke(`,
+          `    f"${fstr}",`,
+          `)`,
+        ].join("\n");
 
   const lines: string[] = [`def ${node.name}(state: ${stateClass}) -> dict:`];
   if (cfg.description) lines.push(indent(`"""${cfg.description}"""`));
   lines.push(
     indent(`specifications = state[${pyStr(inputKey)}]`),
-    indent(`generator = ${renderModelCall(cfg.generator.model, undefined)}`),
-    indent(`critic = ${renderModelCall(cfg.critic.model, undefined)}`),
-    indent(`reviser = ${renderModelCall(cfg.reviser.model, undefined)}`),
+    indent(`generator = ${roleModel("generator")}`),
+    indent(`critic = ${roleModel("critic")}`),
+    indent(`reviser = ${roleModel("reviser")}`),
     indent(
       invoke(
         "current",
         "generator",
-        payload.py,
         `{${constant("GENERATOR")}}\\n\\nSpecifications:\\n{${specsExpr}}`,
       ),
     ),
@@ -415,7 +491,6 @@ export function renderLgLoop(
       invoke(
         "crit",
         "critic",
-        criticOutput,
         `{${constant("CRITIC")}}\\n\\nCurrent:\\n{current.model_dump_json()}\\n\\nSpecifications:\\n{${specsExpr}}`,
       ),
       2,
@@ -426,7 +501,6 @@ export function renderLgLoop(
       invoke(
         "current",
         "reviser",
-        payload.py,
         `{${constant("REVISER")}}\\n\\nCritic feedback:\\n{crit.feedback}\\n\\nCurrent:\\n{current.model_dump_json()}`,
       ),
       2,

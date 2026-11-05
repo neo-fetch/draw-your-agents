@@ -22,6 +22,8 @@ export interface Finding {
   code: string;
   message: string;
   nodeId?: string;
+  /** Locates tool-library findings (ADR-0059) to the `ToolDef` by name. */
+  tool?: string;
 }
 
 export interface ValidationResult {
@@ -71,6 +73,17 @@ export const ValidationCode = {
   LOOP_SUBAGENT_MISSING_MODEL: "LOOP_SUBAGENT_MISSING_MODEL",
   LOOP_UNKNOWN_INPUT_TYPE: "LOOP_UNKNOWN_INPUT_TYPE",
   LOOP_UNKNOWN_PAYLOAD_TYPE: "LOOP_UNKNOWN_PAYLOAD_TYPE",
+  // Tool library (ADR-0059)
+  TOOL_LIBRARY_NOT_ROOT: "TOOL_LIBRARY_NOT_ROOT",
+  INVALID_TOOL_NAME: "INVALID_TOOL_NAME",
+  DUPLICATE_TOOL_NAME: "DUPLICATE_TOOL_NAME",
+  TOOL_NAME_CLASH: "TOOL_NAME_CLASH",
+  TOOL_MISSING_DESCRIPTION: "TOOL_MISSING_DESCRIPTION",
+  TOOL_BAD_PARAM_NAME: "TOOL_BAD_PARAM_NAME",
+  TOOL_UNKNOWN_PARAM_TYPE: "TOOL_UNKNOWN_PARAM_TYPE",
+  TOOL_UNKNOWN_RETURN_TYPE: "TOOL_UNKNOWN_RETURN_TYPE",
+  UNKNOWN_TOOL_REF: "UNKNOWN_TOOL_REF",
+  DUPLICATE_TOOL_REF: "DUPLICATE_TOOL_REF",
   // Prompt-variable provenance (IR-SCHEMA invariant 6)
   VAR_SOURCE_NOT_NODE: "VAR_SOURCE_NOT_NODE",
   VAR_SOURCE_NOT_STRUCTURED: "VAR_SOURCE_NOT_STRUCTURED",
@@ -130,6 +143,23 @@ const PY_KEYWORDS = new Set([
   "pass", "raise", "return", "try", "while", "with", "yield",
 ]);
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/**
+ * Symbols a library tool's name must not take (ADR-0059). Two groups:
+ *  - module-level names the generated modules that import tools already bind
+ *    (ADK `agents.py`/`loops.py`, LangGraph `agents.py`/`loops.py`/
+ *    `agent_tools.py`) — the tool import would shadow them;
+ *  - locals of the generated agent / loop functions that sit next to a
+ *    `tools=[...]` list (`critic = LlmAgent(..., tools=[critic])` would raise
+ *    UnboundLocalError).
+ */
+const TOOL_RESERVED_NAMES = new Set([
+  "Agent", "LlmAgent", "Context", "node", "Event", "Workflow", "types", "Any",
+  "BaseModel", "Field", "validate_node_output", "root_agent", "init_chat_model",
+  "create_agent", "run_tool_agent", "START", "END",
+  "ctx", "state", "generator", "critic", "reviser", "specs", "specifications",
+  "raw", "critic_raw", "revised_raw", "current", "crit", "model", "prompt",
+  "agent", "result",
+]);
 
 /** Valid, non-keyword Python identifier (ports `check_ir.is_ident`). */
 function isIdent(s: unknown): s is string {
@@ -158,22 +188,103 @@ interface RecursionCtx {
   readonly globalNames: Set<string>;
   readonly globalSchemas: Set<string>;
   readonly findings: Finding[];
+  /** Names declared in the **root** `tools` library (ADR-0059); refs at any depth resolve here. */
+  readonly toolNames: ReadonlySet<string>;
 }
 
 /** Validate an IR document, returning structured findings (never throws). */
 export function validate(ir: GraphIR): ValidationResult {
   const findings: Finding[] = [];
-  validateGraph(ir, {
-    pathPrefix: "",
-    globalNames: new Set(),
-    globalSchemas: new Set(),
-    findings,
-  });
+  const doc = ir as unknown as Loose;
+  const toolList: Loose[] = Array.isArray(doc?.tools) ? doc.tools : [];
+  const toolNames = new Set<string>();
+  for (const t of toolList) if (typeof t?.name === "string") toolNames.add(t.name);
+  const globalNames = new Set<string>();
+  const globalSchemas = new Set<string>();
+  validateGraph(ir, { pathPrefix: "", globalNames, globalSchemas, findings, toolNames });
+  // After the graph walk so the flat namespaces hold every node / schema name
+  // at every depth (incl. loop-reserved symbols) for the clash check.
+  validateToolLibrary(toolList, doc, globalNames, globalSchemas, findings);
   return result(findings);
 }
 
+/**
+ * Root tool library (ADR-0059). Types resolve against the root graph's schemas
+ * (any scalar, unlike node `inputType`s, which are `"str"`-or-schema) — tools
+ * are emitted into one project-wide module that imports from `schemas`.
+ */
+function validateToolLibrary(
+  toolList: readonly Loose[],
+  doc: Loose,
+  globalNames: ReadonlySet<string>,
+  globalSchemas: ReadonlySet<string>,
+  findings: Finding[],
+): void {
+  const err = (code: string, message: string, tool?: unknown): void => {
+    findings.push(
+      typeof tool === "string"
+        ? { severity: "error", code, message, tool }
+        : { severity: "error", code, message },
+    );
+  };
+  const rootSchemas = new Set<string>();
+  for (const s of Array.isArray(doc?.schemas) ? doc.schemas : []) {
+    if (typeof s?.name === "string") rootSchemas.add(s.name);
+  }
+  const typeOk = (t: unknown): boolean =>
+    typeof t === "string" && (SCALARS.has(t) || rootSchemas.has(t));
+
+  const seen = new Set<string>();
+  for (const t of toolList) {
+    const name = t?.name;
+    const ctx = `tool ${typeof name === "string" ? name : repr(name)}`;
+    if (!isIdent(name)) {
+      err(ValidationCode.INVALID_TOOL_NAME, `tool name is not a valid python identifier: ${repr(name)}`, name);
+    } else if (seen.has(name)) {
+      err(ValidationCode.DUPLICATE_TOOL_NAME, `duplicate tool name ${repr(name)}`, name);
+    } else {
+      seen.add(name);
+      if (globalNames.has(name) || globalSchemas.has(name) || TOOL_RESERVED_NAMES.has(name)) {
+        err(
+          ValidationCode.TOOL_NAME_CLASH,
+          `${ctx}: name clashes with a node, schema, or generated symbol (flat namespace)`,
+          name,
+        );
+      }
+    }
+    if (typeof t?.description !== "string" || t.description.trim() === "") {
+      err(
+        ValidationCode.TOOL_MISSING_DESCRIPTION,
+        `${ctx}: description is required — it is the docstring the LLM reads to decide when to call the tool`,
+        name,
+      );
+    }
+    const params: Loose[] = Array.isArray(t?.params) ? t.params : [];
+    const paramNames = new Set<string>();
+    for (const p of params) {
+      const pn = p?.name;
+      if (!isIdent(pn) || paramNames.has(pn)) {
+        err(ValidationCode.TOOL_BAD_PARAM_NAME, `${ctx}: bad or duplicate param name ${repr(pn)}`, name);
+      } else {
+        paramNames.add(pn);
+      }
+      if (!typeOk(p?.type)) {
+        err(ValidationCode.TOOL_UNKNOWN_PARAM_TYPE, `${ctx}.${pn}: unknown param type ${repr(p?.type)}`, name);
+      }
+    }
+    if (!typeOk(t?.returns)) {
+      err(ValidationCode.TOOL_UNKNOWN_RETURN_TYPE, `${ctx}: unknown return type ${repr(t?.returns)}`, name);
+    }
+    if (typeof t?.body === "string" && t.body.trim() !== "") {
+      for (const f of bodyFindings(t.body, `tool "${name}"`, "the tool will return None")) {
+        findings.push(typeof name === "string" ? { ...f, tool: name } : f);
+      }
+    }
+  }
+}
+
 function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
-  const { pathPrefix, globalNames, globalSchemas, findings } = ctx;
+  const { pathPrefix, globalNames, globalSchemas, findings, toolNames } = ctx;
   const findingsAtEntry = findings.length;
   const composeId = (nid: string): string => `${pathPrefix}${nid}`;
   const err = (code: string, message: string, nodeId?: string): void => {
@@ -196,6 +307,13 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
   // Short-circuit only on findings *added in this call* — a nested call must not
   // be aborted by findings the parent already accumulated.
   if (findings.length > findingsAtEntry) return;
+
+  if (pathPrefix !== "" && Array.isArray(doc.tools) && doc.tools.length > 0) {
+    err(
+      ValidationCode.TOOL_LIBRARY_NOT_ROOT,
+      "a nested workflow graph declares 'tools' — the tool library lives on the root graph only (ADR-0059)",
+    );
+  }
 
   if (!isIdent(doc.name)) {
     err(ValidationCode.INVALID_WORKFLOW_NAME, `workflow name is not a valid python identifier: ${repr(doc.name)}`);
@@ -446,6 +564,20 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
     else checkInputVarSegment(ctx, agentCfg, seg, nodeId);
   };
 
+  // `tools: string[]` on an agent or loop sub-agent → names in the root library.
+  const checkToolRefs = (ctx: string, refs: unknown, nodeId: string): void => {
+    if (!Array.isArray(refs)) return;
+    const seenRefs = new Set<unknown>();
+    for (const ref of refs) {
+      if (typeof ref !== "string" || !toolNames.has(ref)) {
+        err(ValidationCode.UNKNOWN_TOOL_REF, `${ctx}: unknown tool ${repr(ref)} (not in the tool library)`, nodeId);
+      } else if (seenRefs.has(ref)) {
+        err(ValidationCode.DUPLICATE_TOOL_REF, `${ctx}: tool ${repr(ref)} listed twice`, nodeId);
+      }
+      seenRefs.add(ref);
+    }
+  };
+
   for (const n of nodesById.values()) {
     const c = (n.config ?? {}) as Loose;
     switch (n.type) {
@@ -462,6 +594,7 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
         for (const seg of segments) {
           if (seg?.type === "var") checkVarSegment(ctx, c, seg, n.id);
         }
+        checkToolRefs(ctx, c.tools, n.id);
         break;
       }
       case "function": {
@@ -545,6 +678,7 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
               n.id,
             );
           }
+          checkToolRefs(`${ctx} ${role}`, sub?.tools, n.id);
         }
         // Reserve the symbols the codegen will emit for this loop, so a sibling
         // schema/node can't shadow them (flat global namespace — ADR-0017).
@@ -591,6 +725,7 @@ function validateGraph(ir: GraphIR, ctx: RecursionCtx): void {
             globalNames,
             globalSchemas,
             findings,
+            toolNames,
           });
         }
         break;
@@ -734,47 +869,66 @@ function checkBodies(
     const body = cfg.body;
     if (typeof body !== "string" || body.trim() === "") continue;
 
-    // Strip comments and string literals before pattern-matching, so a body that
-    // merely *mentions* Event in prose isn't flagged.
-    const code = stripPyLiterals(body);
-
-    if (/\bEvent\s*\(/.test(code)) {
-      push(
-        "error",
-        ValidationCode.BODY_ADK_FLAVORED,
-        `node "${node.name}" body constructs Event(...) — bodies are target-neutral ` +
-          `(ADR-0056): return the plain value and codegen wraps it for the target`,
-        nodeId,
-      );
-    }
-
-    if (!/(^|\n)\s*(return|raise|yield)\b/.test(code)) {
-      push(
-        "warning",
-        ValidationCode.BODY_NO_RETURN,
-        `node "${node.name}" body never returns — the node will produce None`,
-        nodeId,
-      );
-    } else if (node.type === "router" && Array.isArray(cfg.routes)) {
-      // Only flag when *every* returned literal is undeclared; a body that
-      // computes its route (returns a variable) yields no literals at all.
-      const declared = new Set(cfg.routes.filter((r: unknown) => typeof r === "string"));
-      const literals = [...body.matchAll(/(^|\n)\s*return\s+(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/gm)]
-        .map((m) => m[2] ?? m[3])
-        .filter((s): s is string => s !== undefined);
-      const undeclared = literals.filter((s) => !declared.has(s));
-      if (literals.length > 0 && undeclared.length === literals.length) {
-        push(
-          "warning",
-          ValidationCode.BODY_ROUTE_UNDECLARED,
-          `node "${node.name}" body returns ${undeclared.map(repr).join(", ")}, ` +
-            `which ${undeclared.length === 1 ? "is" : "are"} not among its declared routes ` +
-            `(${[...declared].join(", ")})`,
-          nodeId,
-        );
-      }
+    const label = `node "${node.name}"`;
+    const routes = node.type === "router" && Array.isArray(cfg.routes) ? cfg.routes : undefined;
+    for (const f of bodyFindings(body, label, "the node will produce None", routes)) {
+      push(f.severity, f.code, f.message, nodeId);
     }
   }
+}
+
+/**
+ * The body-contract checks shared by graph nodes and library tools (ADR-0056,
+ * ADR-0059). `label` prefixes each message (`node "x"` / `tool "x"`); `routes`
+ * is set for routers only.
+ */
+function bodyFindings(
+  body: string,
+  label: string,
+  noReturnConsequence: string,
+  routes?: readonly unknown[],
+): Array<Pick<Finding, "severity" | "code" | "message">> {
+  const out: Array<Pick<Finding, "severity" | "code" | "message">> = [];
+  // Strip comments and string literals before pattern-matching, so a body that
+  // merely *mentions* Event in prose isn't flagged.
+  const code = stripPyLiterals(body);
+
+  if (/\bEvent\s*\(/.test(code)) {
+    out.push({
+      severity: "error",
+      code: ValidationCode.BODY_ADK_FLAVORED,
+      message:
+        `${label} body constructs Event(...) — bodies are target-neutral ` +
+        `(ADR-0056): return the plain value and codegen wraps it for the target`,
+    });
+  }
+
+  if (!/(^|\n)\s*(return|raise|yield)\b/.test(code)) {
+    out.push({
+      severity: "warning",
+      code: ValidationCode.BODY_NO_RETURN,
+      message: `${label} body never returns — ${noReturnConsequence}`,
+    });
+  } else if (routes) {
+    // Only flag when *every* returned literal is undeclared; a body that
+    // computes its route (returns a variable) yields no literals at all.
+    const declared = new Set(routes.filter((r: unknown) => typeof r === "string"));
+    const literals = [...body.matchAll(/(^|\n)\s*return\s+(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/gm)]
+      .map((m) => m[2] ?? m[3])
+      .filter((s): s is string => s !== undefined);
+    const undeclared = literals.filter((s) => !declared.has(s));
+    if (literals.length > 0 && undeclared.length === literals.length) {
+      out.push({
+        severity: "warning",
+        code: ValidationCode.BODY_ROUTE_UNDECLARED,
+        message:
+          `${label} body returns ${undeclared.map(repr).join(", ")}, ` +
+          `which ${undeclared.length === 1 ? "is" : "are"} not among its declared routes ` +
+          `(${[...declared].join(", ")})`,
+      });
+    }
+  }
+  return out;
 }
 
 /**

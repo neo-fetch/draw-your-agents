@@ -7,7 +7,8 @@
  * flat namespace (ADR-0017) but inserts into the graph at the path, and the
  * result still validates with only the expected fresh-node findings at a
  * path-prefixed location; (b) `renameNodeAt` renames path-scoped and
- * cascades agent var-sources / `tools[]` across every nesting level;
+ * cascades agent var-sources across every nesting level (never `tools[]`,
+ * which names library tools since ADR-0059);
  * (c) the graph-local reducers (`irEdges.ts`, `schemas.ts`) retarget cleanly
  * through `updateGraphAtPath` with root arrays keeping referential identity.
  *
@@ -143,9 +144,9 @@ test("renameNodeAt renames inside the sub-graph and cascades at every level", ()
 
   const sub = subgraphOf(next, "n_nested");
   assert.equal(sub.nodes.find((n) => n.id === "n_inner_a")!.name, "step_alpha");
-  // Root-level tools[] cascade (tools resolve globally by name).
+  // tools[] names library tools, not nodes (ADR-0059): untouched.
   const rootAgent = next.nodes.find((n) => n.id === "n_root_agent") as AgentNode;
-  assert.deepEqual(rootAgent.config.tools, ["step_alpha"]);
+  assert.deepEqual(rootAgent.config.tools, ["inner_step_a"]);
   // Same-level var-chip source cascade.
   const innerAgent = sub.nodes.find((n) => n.id === "n_inner_agent") as AgentNode;
   const seg = innerAgent.config.instruction.segments[0];
@@ -160,18 +161,20 @@ test("renameNodeAt renames inside the sub-graph and cascades at every level", ()
 test("renameNodeAt at the root cascades into nested agents", () => {
   const ir = nestedWithAgents();
   const sub = subgraphOf(ir, "n_nested");
-  (sub.nodes.find((n) => n.id === "n_inner_agent") as AgentNode).config.tools =
-    ["preprocess"];
+  (sub.nodes.find((n) => n.id === "n_inner_agent") as AgentNode).config.instruction = {
+    segments: [{ type: "var", schema: "str", field: "", source: "preprocess" }],
+  };
 
   const next = renameNodeAt(ir, [], "n_preprocess", "prepare");
   assert.equal(next.nodes.find((n) => n.id === "n_preprocess")!.name, "prepare");
   const innerAgent = subgraphOf(next, "n_nested").nodes.find(
     (n) => n.id === "n_inner_agent",
   ) as AgentNode;
-  assert.deepEqual(
-    innerAgent.config.tools,
-    ["prepare"],
-    "previously-deferred recursive cascade now lands",
+  const seg = innerAgent.config.instruction.segments[0];
+  assert.equal(
+    seg.type === "var" && seg.source,
+    "prepare",
+    "recursive cascade reaches nested agents",
   );
 });
 

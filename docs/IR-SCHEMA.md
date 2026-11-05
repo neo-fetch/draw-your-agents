@@ -12,6 +12,7 @@ Worked example: [`packages/ir/fixtures/city-time.ir.json`](../packages/ir/fixtur
   "name": "city_time_workflow",    // python identifier; becomes root_agent name
   "description": "...",            // optional
   "schemas": [ /* SchemaDef */ ],  // pydantic models referenced by ref
+  "tools":   [ /* ToolDef */ ],    // optional; agent-callable tool library (root graph only)
   "nodes":   [ /* Node */ ],
   "edges":   [ /* Edge */ ]        // plain directed graph; from may be "START"
 }
@@ -29,6 +30,31 @@ A **type reference** anywhere (`field.type`, `inputType`, `outputType`, `inputSc
 declared schema (ADR-0037 — field types may now nest one schema inside another, e.g.
 `{"name":"customer","type":"Customer"}`). `inputSchemaRef` may also be `null`.
 
+## Tool library (agent-callable tools, ADR-0059)
+```jsonc
+"tools": [
+  { "name": "check_python_syntax",                 // python identifier; flat namespace with nodes + schemas
+    "description": "Check whether a Python source string parses. ...",   // required — the LLM reads it
+    "params": [ { "name": "code", "type": "str" } ],                      // flat named args, any scalar or root schema
+    "returns": "str",                                                     // any scalar or root schema
+    "body": "import ast\n..." }                                          // params in scope by name; return a plain value
+]
+```
+A library tool is a function an **agent decides to call** while it works — not a graph step.
+It has no edges and no canvas card. Agents opt in with `config.tools: ["check_python_syntax"]`,
+and each loop role likewise with `generator|critic|reviser.tools`. Contrast a `tool` **node**
+(below), which is a pipeline step wired by edges.
+
+- The library lives on the **root** graph only; refs from any nesting depth resolve against it.
+- Codegen emits `agent_tools.py` (both targets): the body in `_<name>_impl(<params>)`, plus a
+  public `<name>(<params>)` whose docstring is `description`. A schema-typed return is
+  `.model_dump()`ed in the public def; schema-typed params are validated by the runtime.
+- **ADK:** `tools=[...]` on `Agent` / the loop's `LlmAgent`s. ADK 2.0 combines tools with
+  `output_schema` (it injects `set_model_response` on the Gemini API), so typed outputs stay.
+- **LangGraph:** `create_agent(model, tools=[...], response_format=<output schema>)`, run through
+  `run_tool_agent` (emitted into `agent_tools.py`).
+- `body: null` emits a `NotImplementedError` stub.
+
 ## Nodes
 Common: `id` (unique, stable), `type`, `name` (unique python identifier — used as the codegen
 symbol and as the `<... from name>` source), `config`, optional `ui: {x, y}`.
@@ -44,7 +70,7 @@ symbol and as the `<... from name>` source), `config`, optional `ui: {x, y}`.
     ]},
     "modelParams": { "temperature": 0.2, "topP": 0.95, "topK": 40, "maxOutputTokens": 1024 },
     "mode": "task",                  // task | single_turn
-    "tools": [],
+    "tools": ["check_python_syntax"], // names in the root tool library (ADR-0059)
     "inputSchemaRef": "CityTime",    // must equal the schema of any var segment used
     "outputSchemaRef": "str"
   }}
@@ -94,8 +120,10 @@ the function one hop further down. LangGraph is unaffected.
   "config": { "description": "...", "inputType": "str", "outputType": "Article",
               "body": null } }   // body null → generate a TODO stub
 ```
-Compiles to a `FunctionTool` wrapping an underlying `<name>_impl` function
-(ADR-0019). Emits on the `output` channel; the edge symbol is the wrapper.
+A **pipeline step**, not something an agent calls: it compiles to a plain function node exactly
+like `function` (`def <name>(node_input) -> Event`, E2E finding F3 / ADR-0053 — the old
+`FunctionTool` wrapper of ADR-0019 broke at runtime). Emits on the `output` channel. For a
+function an *agent* may call, use the [tool library](#tool-library-agent-callable-tools-adr-0059).
 
 ### workflow (nested)
 ```jsonc
@@ -131,7 +159,15 @@ across parent + every nested sub-graph (invariant 1 holds across nesting).
 
 8. A `body` follows the target-neutral contract above: it must not construct `Event(...)`
    (`BODY_ADK_FLAVORED`, ADR-0056) — that is the pre-ADR-0056 form and would compile to
-   `Event(output=Event(...))`.
+   `Event(output=Event(...))`. Library tool bodies get the same checks.
+
+9. Tool library (ADR-0059): only the root graph declares `tools` (`TOOL_LIBRARY_NOT_ROOT`);
+   tool names are unique identifiers that clash with no node, schema, or generated symbol
+   (`INVALID_TOOL_NAME`, `DUPLICATE_TOOL_NAME`, `TOOL_NAME_CLASH`); each has a non-empty
+   `description` and resolvable, uniquely-named params / return type (`TOOL_MISSING_DESCRIPTION`,
+   `TOOL_BAD_PARAM_NAME`, `TOOL_UNKNOWN_PARAM_TYPE`, `TOOL_UNKNOWN_RETURN_TYPE`). Every entry of an
+   agent's or loop role's `tools` names a library tool, at most once (`UNKNOWN_TOOL_REF`,
+   `DUPLICATE_TOOL_REF`). Library findings carry `tool` instead of `nodeId`.
 
 ## Warnings (do not block codegen)
 `compile` throws on errors only, so these annotate a graph that still generates:

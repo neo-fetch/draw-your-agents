@@ -21,6 +21,7 @@ import type {
   LoopNode,
   LoopSubAgent,
   RouterNode,
+  ToolDef,
   ToolNode,
   WorkflowNode,
 } from "@graphical-agents/ir";
@@ -29,6 +30,7 @@ import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
 import { selectActiveGraph } from "../store/subgraph.ts";
 import type { ModelParamKey } from "../store/irReducer.ts";
+import { toggleToolRef } from "../store/tools.ts";
 import { formSwap } from "../anim/presets.ts";
 import { VariableEditor, type VariableEditorAPI } from "./VariableEditor.tsx";
 import { VariablePalette } from "./VariablePalette.tsx";
@@ -142,6 +144,70 @@ function StringListEditor({ value, onChange, placeholder }: StringListEditorProp
       <button type="button" onClick={() => onChange([...value, ""])}>
         + add
       </button>
+    </div>
+  );
+}
+
+/** Stable empty list so the store selector never returns a fresh `[]`. */
+const NO_TOOLS: readonly ToolDef[] = [];
+
+/**
+ * Tool picker (ADR-0059): one checkbox per root-library tool. Toggling keeps
+ * library order (`toggleToolRef`) so the generated `tools=[...]` is stable.
+ * A ref that names no library tool (hand-edited IR, or a tool deleted
+ * outside the UI) is listed struck-through with a remove button — the
+ * validator flags it as UNKNOWN_TOOL_REF in Preview meanwhile.
+ */
+function ToolPicker({
+  idPrefix,
+  value,
+  onChange,
+}: {
+  idPrefix: string;
+  value: readonly string[] | undefined;
+  onChange: (next: string[] | undefined) => void;
+}) {
+  const library = useIRStore((s) => s.ir.tools) ?? NO_TOOLS;
+  const selected = new Set(value ?? []);
+  const missing = (value ?? []).filter((r) => !library.some((t) => t.name === r));
+  if (library.length === 0 && missing.length === 0) {
+    return (
+      <div className="field__hint">
+        No tools yet — add one in the Tools pane, then tick it here.
+      </div>
+    );
+  }
+  return (
+    <div className="tool-picker">
+      {library.map((t) => (
+        <label key={t.name} className="tool-picker__item" title={t.description}>
+          <input
+            id={`${idPrefix}-tool-${t.name}`}
+            type="checkbox"
+            checked={selected.has(t.name)}
+            onChange={() => onChange(toggleToolRef(value, t.name, library))}
+          />
+          {t.name}
+        </label>
+      ))}
+      {missing.map((r) => (
+        <div key={r} className="tool-picker__item">
+          <span className="tool-picker__missing" title="not in the tool library">
+            {r}
+          </span>
+          <button
+            type="button"
+            className="schema-x"
+            aria-label={`remove missing tool ${r}`}
+            onClick={() => {
+              const next = (value ?? []).filter((x) => x !== r);
+              onChange(next.length > 0 ? next : undefined);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -337,12 +403,11 @@ function AgentForm({ node }: { node: AgentNode }) {
 
         <div className="field">
           <label>tools</label>
-          <StringListEditor
-            value={node.config.tools ?? []}
-            placeholder="tool name"
-            onChange={(next) =>
-              updateNodeConfig(node.id, { tools: next.length === 0 ? undefined : next })
-            }
+          <div className="field__hint">functions the model may call while it works</div>
+          <ToolPicker
+            idPrefix={`agent-${node.id}`}
+            value={node.config.tools}
+            onChange={(next) => updateNodeConfig(node.id, { tools: next })}
           />
         </div>
       </FormSection>
@@ -741,6 +806,19 @@ function LoopForm({ node }: { node: LoopNode }) {
                 [key]: { ...sub, instruction: e.target.value },
               })
             }
+          />
+        </div>
+        <div className="field">
+          <label className="field__hint">tools</label>
+          <ToolPicker
+            idPrefix={`loop-${key}`}
+            value={sub.tools}
+            onChange={(next) => {
+              // Re-supply the whole sub-agent (shallow config merge); drop
+              // the key entirely when emptied so it serializes to absent.
+              const { tools: _drop, ...rest } = sub;
+              updateNodeConfig(node.id, { [key]: next ? { ...rest, tools: next } : rest });
+            }}
           />
         </div>
       </FormSection>

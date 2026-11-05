@@ -67,6 +67,9 @@ A session works in **one** package. Load `packages/ir` types + that package; not
   **We always emit the source-bound form.**
 - `JoinNode` waits for all upstreams; every upstream needs a failsafe output or it hangs.
 - HumanInput = `RequestInput(message, payload?, response_schema?)`; does not reformat responses.
+- Agent-callable tools live in the root IR `tools` library (ADR-0059), **not** as graph nodes;
+  agents and loop roles list them by name. ADK: `tools=[...]` (works with `output_schema`).
+  A `tool` *node* is a pipeline step (plain function), never something an agent calls.
 
 See `docs/ARCHITECTURE.md` for the full blueprint, `docs/IR-SCHEMA.md` for the IR contract,
 and `docs/DECISIONS.md` for the decision log.

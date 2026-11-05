@@ -1,7 +1,7 @@
 {
   "irVersion": "0.1.0",
   "name": "tool_workflow",
-  "description": "Linear chain with a Tool node: START → fetch_data (tool) → summarize (agent). The tool emits a structured Article that the agent consumes as input.",
+  "description": "Linear chain with a Tool node: START → fetch_data (tool) → summarize (agent). The tool node is a pipeline step that emits a structured Article the agent consumes as input; the agent separately calls `count_sentences`, an agent-callable tool from the library (ADR-0059), to check its own answer.",
   "schemas": [
     {
       "name": "Article",
@@ -9,6 +9,15 @@
         { "name": "title", "type": "str" },
         { "name": "body", "type": "str" }
       ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "count_sentences",
+      "description": "Count the sentences in a piece of text (split on '.', '!' and '?').",
+      "params": [{ "name": "text", "type": "str" }],
+      "returns": "int",
+      "body": "import re\n\nreturn len([part for part in re.split(r\"[.!?]+\", text) if part.strip()])"
     }
   ],
   "nodes": [
@@ -33,10 +42,11 @@
         "model": "gemini-flash-latest",
         "instruction": {
           "segments": [
-            { "type": "text", "value": "Summarize the article in one sentence." }
+            { "type": "text", "value": "Summarize the article in one sentence. Before answering, call the count_sentences tool on your summary and make sure it returns 1." }
           ]
         },
         "mode": "task",
+        "tools": ["count_sentences"],
         "inputSchemaRef": "Article",
         "outputSchemaRef": "str"
       }

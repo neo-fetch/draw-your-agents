@@ -1,7 +1,7 @@
 {
   "irVersion": "0.1.0",
   "name": "showcase_all_nodes",
-  "description": "End-to-end article pipeline that exercises every IR node type in one functional graph: START → ask_topic (humanInput) → fetch_article (tool, emits a structured Article) → summarize (agent, consumes Article via a prompt var) → expand_sections (nested workflow: parallel function fan-out → join → function) → refine_loop (loop: generate→critic→revise until approved, ADR-0039) → classify (router) → {publish (function), request_revision (agent)}. Also exercises nested pydantic models (ADR-0037): Article embeds an Author and is declared before Author, so schemas.py must emit Author first via topological order. The router branches are terminal and the join lives inside the nested workflow, since a router picks one branch while a join waits for all upstreams.",
+  "description": "End-to-end article pipeline that exercises every IR node type in one functional graph: START → ask_topic (humanInput) → fetch_article (tool, emits a structured Article) → summarize (agent, consumes Article via a prompt var) → expand_sections (nested workflow: parallel function fan-out → join → function) → refine_loop (loop: generate→critic→revise until approved, ADR-0039) → classify (router) → {publish (function), request_revision (agent)}. summarize and refine_loop's critic call the `word_count` library tool (ADR-0059). Also exercises nested pydantic models (ADR-0037): Article embeds an Author and is declared before Author, so schemas.py must emit Author first via topological order. The router branches are terminal and the join lives inside the nested workflow, since a router picks one branch while a join waits for all upstreams.",
   "schemas": [
     {
       "name": "Article",
@@ -17,6 +17,15 @@
         { "name": "name", "type": "str" },
         { "name": "email", "type": "str" }
       ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "word_count",
+      "description": "Count the words in a piece of text.",
+      "params": [{ "name": "text", "type": "str" }],
+      "returns": "int",
+      "body": "return len(text.split())"
     }
   ],
   "nodes": [
@@ -53,12 +62,13 @@
         "instruction": {
           "segments": [
             { "type": "text", "value": "Summarize the following article in one sentence:\n" },
-            { "type": "var", "schema": "Article", "field": "body", "source": "fetch_article" }
+            { "type": "var", "schema": "Article", "field": "body", "source": "fetch_article" },
+            { "type": "text", "value": "\n\nKeep the summary under 40 words; check it with the word_count tool before answering." }
           ]
         },
         "modelParams": { "temperature": 0.2, "topP": 0.95, "topK": 40, "maxOutputTokens": 1024 },
         "mode": "task",
-        "tools": [],
+        "tools": ["word_count"],
         "inputSchemaRef": "Article",
         "outputSchemaRef": "str"
       }
@@ -167,7 +177,8 @@
         },
         "critic": {
           "model": "gemini-flash-latest",
-          "instruction": "Review the Article against editorial standards. If it is publication-ready, return status 'APPROVED'. Otherwise, return specific, actionable feedback."
+          "instruction": "Review the Article against editorial standards. Call the word_count tool on the body; a body under 80 words is not publication-ready. If it is publication-ready, return status 'APPROVED'. Otherwise, return specific, actionable feedback.",
+          "tools": ["word_count"]
         },
         "reviser": {
           "model": "gemini-flash-latest",
