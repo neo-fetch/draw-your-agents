@@ -67,9 +67,13 @@ const PROJECTS = [
   { name: "parallel-mid", fixture: "packages/ir/fixtures/parallel-mid.ir.json", extras: [] },
   { name: "human-input", fixture: "packages/ir/fixtures/human-input.ir.json", extras: [] },
   { name: "nested", fixture: "packages/ir/fixtures/nested.ir.json", extras: [] },
-  { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json", extras: [] },
+  { name: "tool", fixture: "packages/ir/fixtures/tool.ir.json", extras: ["agent_tools.py"] },
   { name: "nested-schema", fixture: "packages/ir/fixtures/nested-schema.ir.json", extras: [] },
-  { name: "critic-loop", fixture: "packages/ir/fixtures/critic-loop.ir.json", extras: ["loops.py"] },
+  {
+    name: "critic-loop",
+    fixture: "packages/ir/fixtures/critic-loop.ir.json",
+    extras: ["loops.py", "agent_tools.py"],
+  },
   { name: "state-vars", fixture: "packages/ir/fixtures/state-vars.ir.json", extras: [] },
 ];
 
@@ -100,11 +104,21 @@ test("langgraph showcase-all-nodes: every node type generates and passes py_comp
   compileCheck(files);
 });
 
-test("langgraph rejects agent-attached tools loud", () => {
-  const ir = loadIR("packages/ir/fixtures/tool.ir.json");
-  const agent = ir.nodes.find((n) => n.type === "agent")!;
-  (agent.config as { tools?: string[] }).tools = ["fetch_data"];
-  assert.throws(() => generateLangGraphProject(ir), CodegenError);
+test("langgraph runs tool-calling agents through create_agent + run_tool_agent (ADR-0059)", () => {
+  const files = generateLangGraphProject(
+    loadIR("packages/ir/fixtures/showcase-all-nodes.ir.json"),
+  );
+  const agents = files.get("agents.py")!;
+  assert.match(agents, /agent = create_agent\(\n\s+model,\n\s+tools=\[word_count\],\n\s+\)/);
+  assert.match(agents, /run_tool_agent\(agent, prompt\)/);
+  const loops = files.get("loops.py")!;
+  // Only the critic has tools: it becomes a tool loop, the other roles stay bare models.
+  assert.match(loops, /critic = create_agent\(/);
+  assert.match(loops, /response_format=refine_loop_CriticOutput,/);
+  assert.match(loops, /generator = init_chat_model\(/);
+  assert.match(loops, /current = reviser\.with_structured_output\(Article\)/);
+  assert.match(files.get("agent_tools.py")!, /^def run_tool_agent\(agent, prompt: str\):$/m);
+  compileCheck(files);
 });
 
 test("langgraph compiles a neutral body into an impl def the node function calls", () => {

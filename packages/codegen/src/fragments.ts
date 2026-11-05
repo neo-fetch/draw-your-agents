@@ -18,10 +18,19 @@ import type {
   RouterNode,
   ScalarType,
   SchemaDef,
+  ToolDef,
   ToolNode,
+  ToolParam,
   TypeRef,
 } from "@graphical-agents/ir";
-import { CodegenError, dedent, type ImportReq, indent, pyStr } from "./python.ts";
+import {
+  BLACK_LINE_WIDTH,
+  CodegenError,
+  dedent,
+  type ImportReq,
+  indent,
+  pyStr,
+} from "./python.ts";
 
 /** A rendered code fragment plus the imports it depends on. */
 export interface Fragment {
@@ -378,6 +387,12 @@ export function renderAgent(
     }
   }
 
+  const tools = toolsKwarg(cfg.tools);
+  if (tools) {
+    imports.push(tools.import);
+    kwargs.push(tools.line);
+  }
+
   if (cfg.inputSchemaRef != null) {
     const input = resolveRef(cfg.inputSchemaRef, schemas);
     imports.push(...input.imports);
@@ -516,11 +531,14 @@ export function renderLoopOrchestrator(
     outputKeyName: string,
   ): string => {
     const sub = cfg[role];
+    const tools = toolsKwarg(sub.tools);
+    if (tools) imports.push(tools.import);
     return [
       `${varName} = LlmAgent(`,
       `    model=${pyStr(sub.model)},`,
       `    name=${pyStr(`${node.name}_${role}`)},`,
       `    instruction=${pyStr(sub.instruction)},`,
+      ...(tools ? [`    ${tools.line}`] : []),
       `    input_schema=${inputSchemaName},`,
       `    output_schema=${outputSchemaName},`,
       `    output_key=${pyStr(outputKeyName)},`,
@@ -584,4 +602,111 @@ export function renderLoopOrchestrator(
   ].join("\n");
 
   return { imports, code: body };
+}
+
+// --- Tool library (ADR-0059) ---------------------------------------------
+
+/** The project module holding every library tool — shared by both targets. */
+export const AGENT_TOOLS_MODULE = "agent_tools";
+
+/**
+ * `tools=[a, b],` for an agent / loop sub-agent's library refs, plus the
+ * `agent_tools` import. `null` when the list is absent or empty, so a graph
+ * without tools compiles byte-identically to before ADR-0059. Shared with the
+ * LangGraph target, which passes the same callables to `create_agent`.
+ */
+export function toolsKwarg(
+  refs: readonly string[] | undefined,
+): { line: string; list: string; import: ImportReq } | null {
+  if (!refs || refs.length === 0) return null;
+  const list = `[${refs.join(", ")}]`;
+  return {
+    line: `tools=${list},`,
+    list,
+    import: { module: AGENT_TOOLS_MODULE, names: [...refs] },
+  };
+}
+
+/**
+ * A tool param / return type: any IR scalar or a root schema. Unlike
+ * `resolveRef` (node I/O: `"str"` or a schema), tools take every scalar.
+ */
+function toolTypeRef(
+  ref: TypeRef,
+  schemas: ReadonlyMap<string, SchemaDef>,
+): { py: string; imports: ImportReq[]; isSchema: boolean } {
+  if (schemas.has(ref)) return { py: ref, imports: [{ module: "schemas", names: [ref] }], isSchema: true };
+  return { ...scalarType(ref as ScalarType), isSchema: false };
+}
+
+/** A docstring literal that survives any description text (quotes, backslashes). */
+function pyDocstring(text: string): string {
+  let body = text.replace(/\\/g, "\\\\").replace(/"""/g, '\\"\\"\\"');
+  if (body.endsWith('"')) body = `${body.slice(0, -1)}\\"`;
+  return `"""${body}"""`;
+}
+
+/**
+ * `def <name>(<params>) -> <ret>:` — inline when it fits black's line budget,
+ * otherwise one param per line with black's magic trailing comma.
+ */
+function defHead(name: string, params: readonly string[], ret: string): string {
+  const inline = `def ${name}(${params.join(", ")}) -> ${ret}:`;
+  if (inline.length <= BLACK_LINE_WIDTH || params.length === 0) return inline;
+  const lines = params.map((p) => `    ${p},`).join("\n");
+  return `def ${name}(\n${lines}\n) -> ${ret}:`;
+}
+
+/** `<fn>(a, b)` — inline when it fits at `col`, otherwise exploded like black. */
+function callExpr(fn: string, args: readonly string[], col: number): string {
+  const inline = `${fn}(${args.join(", ")})`;
+  if (col + inline.length <= BLACK_LINE_WIDTH || args.length === 0) return inline;
+  const lines = args.map((a) => `    ${a},`).join("\n");
+  return `${fn}(\n${lines}\n)`;
+}
+
+/**
+ * `agent_tools.py`: one agent-callable function per library tool (ADR-0059).
+ *
+ * The public def is what an LLM sees: its name, its annotated params (ADK and
+ * LangChain build the function-call declaration from them), and its docstring
+ * (the tool description). The IR body lives in `_<name>_impl` with every param
+ * in scope by name (ADR-0056 shape). A schema-typed return is `.model_dump()`ed
+ * in the public def — ADK cannot build a response schema for a pydantic return
+ * annotation (it logs a TypeAdapter error), and both runtimes serialize a dict
+ * cleanly. Schema-typed *params* need no shim: ADK and LangChain validate the
+ * model's JSON args into the annotated pydantic class.
+ */
+export function renderToolDef(
+  tool: ToolDef,
+  schemas: ReadonlyMap<string, SchemaDef>,
+): Fragment {
+  const imports: ImportReq[] = [];
+  const params = tool.params.map((p: ToolParam) => {
+    const t = toolTypeRef(p.type, schemas);
+    imports.push(...t.imports);
+    return `${p.name}: ${t.py}`;
+  });
+  const ret = toolTypeRef(tool.returns, schemas);
+  imports.push(...ret.imports);
+  const publicRet = ret.isSchema ? "dict" : ret.py;
+  const doc = indent(pyDocstring(tool.description));
+
+  if (tool.body == null) {
+    const stub = [
+      defHead(tool.name, params, publicRet),
+      doc,
+      indent(`# TODO: implement ${tool.name} — body not yet provided in the IR.`),
+      indent(`raise NotImplementedError(${pyStr(tool.name)})`),
+      "",
+    ].join("\n");
+    return { imports, code: stub };
+  }
+
+  const implFn = implName(tool);
+  const impl = `${defHead(implFn, params, ret.py)}\n${indent(dedent(tool.body))}\n`;
+  const call = callExpr(implFn, tool.params.map((p: ToolParam) => p.name), 11);
+  const returned = ret.isSchema ? `${call}.model_dump()` : call;
+  const wrapper = [defHead(tool.name, params, publicRet), doc, indent(`return ${returned}`), ""].join("\n");
+  return { imports, code: `${impl}\n\n${wrapper}` };
 }

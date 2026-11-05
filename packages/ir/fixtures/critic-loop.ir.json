@@ -1,7 +1,7 @@
 {
   "irVersion": "0.1.0",
   "name": "critic_loop_workflow",
-  "description": "Self-contained generate→critic→revise loop (ADR-0039). The single `code_loop` node compiles to a `@node` async orchestrator that runs three internal LlmAgents until the critic returns the approval phrase. payloadType is a nested schema (Files → FileItem) to also exercise ADR-0037 topological schema emission.",
+  "description": "Self-contained generate→critic→revise loop (ADR-0039). The single `code_loop` node compiles to a `@node` async orchestrator that runs three internal LlmAgents until the critic returns the approval phrase. payloadType is a nested schema (Files → FileItem) to also exercise ADR-0037 topological schema emission. The critic and reviser call the `check_python_syntax` library tool (ADR-0059) to verify the code parses before judging/after fixing.",
   "schemas": [
     {
       "name": "Files",
@@ -15,6 +15,15 @@
         { "name": "filename", "type": "str" },
         { "name": "content", "type": "str" }
       ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "check_python_syntax",
+      "description": "Check whether a Python source string parses. Returns 'OK', or the SyntaxError message with its line number.",
+      "params": [{ "name": "code", "type": "str" }],
+      "returns": "str",
+      "body": "import ast\n\ntry:\n    ast.parse(code)\nexcept SyntaxError as exc:\n    return f\"SyntaxError: {exc.msg} (line {exc.lineno})\"\nreturn \"OK\""
     }
   ],
   "nodes": [
@@ -35,11 +44,13 @@
         },
         "critic": {
           "model": "gemini-flash-latest",
-          "instruction": "Review the code against the specifications. If it meets all requirements, return status 'APPROVED'. Otherwise, return detailed feedback."
+          "instruction": "Review the code against the specifications. Before judging, call the check_python_syntax tool on the content of every Python file; any file that does not return 'OK' must be rejected, quoting the error in your feedback. If every file parses and meets all requirements, return status 'APPROVED'. Otherwise, return detailed feedback.",
+          "tools": ["check_python_syntax"]
         },
         "reviser": {
           "model": "gemini-flash-latest",
-          "instruction": "Fix the provided code based on the critic feedback."
+          "instruction": "Fix the provided code based on the critic feedback. After fixing, call the check_python_syntax tool on every Python file and keep fixing until each one returns 'OK'.",
+          "tools": ["check_python_syntax"]
         }
       }
     }

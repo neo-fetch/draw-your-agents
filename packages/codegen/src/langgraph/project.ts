@@ -21,10 +21,11 @@ import type {
   GraphNode,
   LoopNode,
   SchemaDef,
+  ToolDef,
   WorkflowNode,
 } from "@graphical-agents/ir";
 import { compileEdges } from "../edges.ts";
-import { indexSchemas, renderSchema, type Fragment } from "../fragments.ts";
+import { indexSchemas, renderSchema, renderToolDef, type Fragment } from "../fragments.ts";
 import type { GeneratedProject } from "../project.ts";
 import { header, joinModule, topologicalSchemas, walkAllNodes } from "../project.ts";
 import { CodegenError, pyStr, renderImports, type ImportReq } from "../python.ts";
@@ -37,6 +38,7 @@ import {
   renderLgLoopConstants,
   renderLgRouter,
   renderLgStub,
+  renderRunToolAgentHelper,
 } from "./fragments.ts";
 import { renderGraphWiring, renderSubgraphWrapper } from "./graphModule.ts";
 import {
@@ -48,7 +50,15 @@ import {
 } from "./state.ts";
 
 /** The LangGraph project's own module set, for isort-style import grouping. */
-const LG_LOCAL = new Set(["state", "schemas", "nodes", "agents", "loops", "graph"]);
+const LG_LOCAL = new Set([
+  "state",
+  "schemas",
+  "nodes",
+  "agents",
+  "agent_tools",
+  "loops",
+  "graph",
+]);
 
 // langgraph/langchain float within the verified 1.x majors (ADR-0046);
 // langchain-google-genai backs the `google_genai:` model-id prefix.
@@ -130,6 +140,8 @@ export function generateLangGraphProject(ir: GraphIR): GeneratedProject {
   files.set("schemas.py", schemasModule(ir, allSchemaDefs, schemas));
   files.set("nodes.py", nodesModule(ir, allNodes, planOf, schemas));
   files.set("agents.py", agentsModule(ir, allNodes, planOf, schemas));
+  const hasTools = (ir.tools ?? []).length > 0;
+  if (hasTools) files.set("agent_tools.py", agentToolsModule(ir, schemas));
   if (loops.length > 0) {
     files.set("loops.py", loopsModule(ir, loops, planOf, schemas));
   }
@@ -138,7 +150,7 @@ export function generateLangGraphProject(ir: GraphIR): GeneratedProject {
   files.set("test_graph.py", testModule(ir, plans));
   files.set("requirements.txt", REQUIREMENTS);
   files.set(".env.example", ENV_EXAMPLE);
-  files.set("README.md", readme(ir, loops.length > 0, hasHumanInput));
+  files.set("README.md", readme(ir, loops.length > 0, hasHumanInput, hasTools));
   return files;
 }
 
@@ -258,6 +270,26 @@ function agentsModule(
       schemas,
     );
   });
+  return joinModule(
+    head,
+    frags.flatMap((f) => f.imports),
+    frags.map((f) => f.code),
+    "def",
+    LG_LOCAL,
+  );
+}
+
+/**
+ * agent_tools.py — the root tool library (ADR-0059), the same tool defs the
+ * ADK target emits, plus the `run_tool_agent` helper the tool-calling agents
+ * and loop roles run through.
+ */
+function agentToolsModule(ir: GraphIR, schemas: ReadonlyMap<string, SchemaDef>): string {
+  const head = header("Agent-callable tools (implement any TODO stubs)", ir);
+  const frags: Fragment[] = [
+    ...(ir.tools ?? []).map((t: ToolDef) => renderToolDef(t, schemas)),
+    renderRunToolAgentHelper(),
+  ];
   return joinModule(
     head,
     frags.flatMap((f) => f.imports),
@@ -447,8 +479,16 @@ def test_graph_builds() -> None:
 `;
 }
 
-function readme(ir: GraphIR, hasLoops: boolean, hasHumanInput: boolean): string {
+function readme(
+  ir: GraphIR,
+  hasLoops: boolean,
+  hasHumanInput: boolean,
+  hasTools: boolean,
+): string {
   const description = ir.description ? `${ir.description}\n\n` : "";
+  const toolsRow = hasTools
+    ? "| `agent_tools.py` | Agent-callable tools from the IR tool library, run via `create_agent` tool loops. |\n"
+    : "";
   const loopsRow = hasLoops
     ? "| `loops.py` | One node function per loop node (generate→critic→revise until approved). |\n"
     : "";
@@ -476,7 +516,7 @@ to its own \`<node>_output\` key, and the entry input arrives as
 | \`schemas.py\` | Pydantic models for every IR schema. |
 | \`nodes.py\` | Function / router / humanInput / tool / join node functions. **Implement the \`TODO\` stubs.** |
 | \`agents.py\` | One node function per agent node (\`init_chat_model\` + typed output). |
-${loopsRow}| \`graph.py\` | \`StateGraph\` wiring — \`graph\` is the compiled entry point. |
+${toolsRow}${loopsRow}| \`graph.py\` | \`StateGraph\` wiring — \`graph\` is the compiled entry point. |
 | \`main.py\` | Runs the graph once with \`SAMPLE_INPUT\`. |
 | \`test_graph.py\` | Pytest dry-run — builds and compiles the graph, calls no model API. |
 

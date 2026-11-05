@@ -10,6 +10,7 @@
     "name": { "$ref": "#/definitions/identifier" },
     "description": { "type": "string" },
     "schemas": { "type": "array", "items": { "$ref": "#/definitions/schemaDef" } },
+    "tools": { "type": "array", "items": { "$ref": "#/definitions/toolDef" } },
     "nodes": { "type": "array", "items": { "$ref": "#/definitions/node" } },
     "edges": { "type": "array", "items": { "$ref": "#/definitions/edge" } }
   },
@@ -40,6 +41,38 @@
         },
         "optional": { "type": "boolean" },
         "default": {}
+      }
+    },
+
+    "toolParam": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "type": {
+          "anyOf": [
+            { "$ref": "#/definitions/scalarType" },
+            { "$ref": "#/definitions/identifier" }
+          ]
+        }
+      }
+    },
+    "toolDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description", "params", "returns"],
+      "properties": {
+        "name": { "$ref": "#/definitions/identifier" },
+        "description": { "type": "string", "minLength": 1 },
+        "params": { "type": "array", "items": { "$ref": "#/definitions/toolParam" } },
+        "returns": {
+          "anyOf": [
+            { "$ref": "#/definitions/scalarType" },
+            { "$ref": "#/definitions/identifier" }
+          ]
+        },
+        "body": { "type": ["string", "null"] }
       }
     },
 
@@ -179,7 +212,8 @@
       "required": ["model", "instruction"],
       "properties": {
         "model": { "type": "string" },
-        "instruction": { "type": "string" }
+        "instruction": { "type": "string" },
+        "tools": { "type": "array", "items": { "type": "string" } }
       }
     },
     "loopConfig": {

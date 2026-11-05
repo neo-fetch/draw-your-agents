@@ -1,0 +1,62 @@
+{
+  "irVersion": "0.1.0",
+  "name": "bad_tool_library",
+  "description": "Deliberately invalid tool library (ADR-0059): a tool named like a node, a duplicate tool, a missing description, a bad/duplicate param name, unknown param/return types, an Event-returning body, and agent/loop refs to tools that do not exist or are listed twice.",
+  "schemas": [
+    { "name": "Report", "fields": [{ "name": "text", "type": "str" }] }
+  ],
+  "tools": [
+    {
+      "name": "writer",
+      "description": "Clashes with the agent node named writer.",
+      "params": [],
+      "returns": "str",
+      "body": "return \"x\""
+    },
+    {
+      "name": "lookup",
+      "description": "",
+      "params": [{ "name": "q", "type": "str" }, { "name": "q", "type": "Mystery" }, { "name": "class", "type": "int" }],
+      "returns": "Unknown",
+      "body": "return Event(output=q)"
+    },
+    {
+      "name": "lookup",
+      "description": "Second tool with the same name.",
+      "params": [],
+      "returns": "Report",
+      "body": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_writer",
+      "type": "agent",
+      "name": "writer",
+      "config": {
+        "model": "gemini-flash-latest",
+        "instruction": { "segments": [{ "type": "text", "value": "Write." }] },
+        "tools": ["lookup", "lookup", "nonexistent"],
+        "outputSchemaRef": "str"
+      }
+    },
+    {
+      "id": "n_loop",
+      "type": "loop",
+      "name": "polish",
+      "config": {
+        "maxIterations": 2,
+        "approvalPhrase": "APPROVED",
+        "inputType": "str",
+        "payloadType": "str",
+        "generator": { "model": "gemini-flash-latest", "instruction": "gen" },
+        "critic": { "model": "gemini-flash-latest", "instruction": "crit", "tools": ["ghost_tool"] },
+        "reviser": { "model": "gemini-flash-latest", "instruction": "rev", "tools": ["lookup"] }
+      }
+    }
+  ],
+  "edges": [
+    { "from": "START", "to": "n_writer" },
+    { "from": "n_writer", "to": "n_loop" }
+  ]
+}

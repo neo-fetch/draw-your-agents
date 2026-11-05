@@ -67,7 +67,7 @@ export function indent(block: string, level = 1): string {
 
 const STDLIB = new Set(["__future__", "datetime", "typing"]);
 /** Local modules of the ADK target's project layout (the default). */
-const LOCAL = new Set(["schemas", "agents", "functions", "loops", "workflow"]);
+const LOCAL = new Set(["schemas", "agents", "agent_tools", "functions", "loops", "workflow"]);
 
 /** Black's default line-length budget. Used by `renderImports` to decide when to wrap. */
 export const BLACK_LINE_WIDTH = 88;
