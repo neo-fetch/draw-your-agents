@@ -7,9 +7,10 @@
  * fails `validate` still loads, so the user can fix it via the inspector and
  * Preview (which already render findings).
  *
- * No DOM, no zustand, no Blob — just text in / text + findings out. The
- * browser-only file-input and anchor-click code lives in `Toolbar.tsx` (the
- * untested UI shim). Mirrors the `irReducer.ts` / `irStore.ts` split from
+ * No DOM, no zustand — just text (or a `Blob`, which Node has natively) in,
+ * IR + findings out. The browser-only file-input, drop-listener and
+ * anchor-click code lives in `Toolbar.tsx` / `IRDropZone.tsx` (the untested
+ * UI shims). Mirrors the `irReducer.ts` / `irStore.ts` split from
  * ADR-0022 so `node --test` can exercise this from a cold checkout (no
  * `npm install`, no React tree).
  */
@@ -85,6 +86,57 @@ export function loadIRFromText(text: string): LoadResult {
   // inspector while the banner + Preview render the findings list.
   const result = validate(parsed as GraphIR);
   return { ok: true, ir: parsed as GraphIR, findings: result.findings };
+}
+
+/**
+ * Read a file (from the Load IR picker or a drag-and-drop) and load it
+ * through `loadIRFromText`. A read failure becomes `{ok:false}` — never a
+ * throw — so both entry points share one banner path (ADR-0060).
+ */
+export async function loadIRFromFile(file: Blob): Promise<LoadResult> {
+  let text: string;
+  try {
+    text = await file.text();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Could not read file: ${msg}` };
+  }
+  return loadIRFromText(text);
+}
+
+/**
+ * True when a drag carries files from the OS. Palette node drags carry the
+ * node MIME type and text drags carry `text/plain`, so neither trips the IR
+ * drop zone (ADR-0060).
+ */
+export function isFileDrag(types: readonly string[]): boolean {
+  return types.includes("Files");
+}
+
+/** What `pickIRFile` needs from a `File`: its name and MIME type. */
+export interface NamedFile {
+  name: string;
+  type: string;
+}
+
+/**
+ * Choose the IR file from a drop: the first `.json` (which covers
+ * `.agentgraph.json`) or `application/json` file. Anything else is rejected
+ * by name, so dropping a `.zip` or an image says why nothing happened.
+ */
+export function pickIRFile<F extends NamedFile>(
+  files: readonly F[],
+): { ok: true; file: F } | { ok: false; error: string } {
+  if (files.length === 0) return { ok: false, error: "No file was dropped" };
+  const file = files.find(
+    (f) => f.name.toLowerCase().endsWith(".json") || f.type === "application/json",
+  );
+  if (file) return { ok: true, file };
+  const names = files.map((f) => f.name).join(", ");
+  return {
+    ok: false,
+    error: `Not an IR file: ${names}. Drop a .json or .agentgraph.json file.`,
+  };
 }
 
 /** `<ir.name>.agentgraph.json`, with a `graph` fallback when name is missing. */

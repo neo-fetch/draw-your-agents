@@ -26,7 +26,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { GraphIR } from "@graphical-agents/ir";
 import {
+  isFileDrag,
+  loadIRFromFile,
   loadIRFromText,
+  pickIRFile,
   serializeIR,
   suggestedSaveFilename,
   suggestedZipFilename,
@@ -132,4 +135,62 @@ test("suggestedSaveFilename and suggestedZipFilename use ir.name with a fallback
   // Missing / empty name → never emit a file starting with `.`
   assert.strictEqual(suggestedSaveFilename({} as GraphIR), "graph.agentgraph.json");
   assert.strictEqual(suggestedZipFilename({ name: "" } as GraphIR), "graph.zip");
+});
+
+// --- drag-and-drop load (ADR-0060) ---
+
+test("loadIRFromFile loads a Blob through the same path as loadIRFromText", async () => {
+  const ir = loadJSON<GraphIR>(cityTimePath);
+  const result = await loadIRFromFile(new Blob([serializeIR(ir)], { type: "application/json" }));
+  assert.strictEqual(result.ok, true);
+  if (!result.ok) return;
+  assert.deepStrictEqual(result.ir, ir);
+  assert.deepStrictEqual(result.findings, []);
+});
+
+test("loadIRFromFile returns ok:false for malformed JSON and for an unreadable file", async () => {
+  const bad = await loadIRFromFile(new Blob(["{ not json"]));
+  assert.strictEqual(bad.ok, false);
+  const unreadable = await loadIRFromFile({
+    text: () => Promise.reject(new Error("permission denied")),
+  } as unknown as Blob);
+  assert.strictEqual(unreadable.ok, false);
+  if (unreadable.ok) return;
+  assert.match(unreadable.error, /Could not read file: permission denied/);
+});
+
+test("isFileDrag is true only for OS file drags", () => {
+  assert.strictEqual(isFileDrag(["Files"]), true);
+  assert.strictEqual(isFileDrag(["application/x-moz-file", "Files"]), true);
+  // palette node drag, text selection drag, empty
+  assert.strictEqual(isFileDrag(["application/ga-node-type"]), false);
+  assert.strictEqual(isFileDrag(["text/plain"]), false);
+  assert.strictEqual(isFileDrag([]), false);
+});
+
+test("pickIRFile picks the first .json / application/json file", () => {
+  const files = [
+    { name: "notes.txt", type: "text/plain" },
+    { name: "brd_pipeline.agentgraph.json", type: "" },
+    { name: "other.json", type: "application/json" },
+  ];
+  const r = pickIRFile(files);
+  assert.strictEqual(r.ok, true);
+  if (r.ok) assert.strictEqual(r.file.name, "brd_pipeline.agentgraph.json");
+  // extension check is case-insensitive; MIME alone also qualifies
+  assert.strictEqual(pickIRFile([{ name: "GRAPH.JSON", type: "" }]).ok, true);
+  assert.strictEqual(pickIRFile([{ name: "export", type: "application/json" }]).ok, true);
+});
+
+test("pickIRFile rejects drops with no JSON file, naming what was dropped", () => {
+  const none = pickIRFile([]);
+  assert.strictEqual(none.ok, false);
+  const r = pickIRFile([
+    { name: "project.zip", type: "application/zip" },
+    { name: "diagram.png", type: "image/png" },
+  ]);
+  assert.strictEqual(r.ok, false);
+  if (r.ok) return;
+  assert.match(r.error, /project\.zip, diagram\.png/);
+  assert.match(r.error, /\.agentgraph\.json/);
 });

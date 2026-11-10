@@ -51,6 +51,9 @@ export function CanvasEmptyState() {
               </button>
             ))}
           </div>
+          <span className="canvas-empty__drop-hint">
+            or drop a saved .agentgraph.json anywhere to open it
+          </span>
         </div>
       </m.div>
     </div>

@@ -14,18 +14,21 @@
  * (ADR-0020). The browser path skips `black`; fragments are already
  * black-shaped (ADR-0012).
  *
+ * Banner state and the apply-a-load policy live in `loadBanner.ts` so the
+ * IR drop zone shares them (ADR-0060).
+ *
  * Load policy is "load-then-surface, don't gate" (ADR-0024): a malformed
  * file is rejected outright, but a well-formed-but-invalid IR is loaded
  * with a non-blocking banner that points the user at the Preview pane
  * where the validator findings already render.
  */
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { useIRStore } from "../store/irStore.ts";
 import { reveal } from "../anim/presets.ts";
 import {
   blankIR,
-  loadIRFromText,
+  loadIRFromFile,
   serializeIR,
   suggestedSaveFilename,
   suggestedZipFilename,
@@ -35,14 +38,10 @@ import { useUIStore } from "../layout/uiStore.ts";
 import { TARGET_BY_ID } from "../target/targets.ts";
 import { useTargetStore } from "../target/targetStore.ts";
 import { ThemeSwitcher } from "./ThemeSwitcher.tsx";
+import { applyLoadResult, useLoadBanner } from "./loadBanner.ts";
 import { validate } from "../../../../packages/ir/src/validate.ts";
 import { compile, ValidationError } from "../../../../packages/codegen/src/compile.ts";
 import { bundleZip } from "../../../../packages/codegen/src/bundle.ts";
-
-type Banner =
-  | { kind: "none" }
-  | { kind: "load-findings"; count: number }
-  | { kind: "error"; message: string };
 
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -65,7 +64,8 @@ export function Toolbar() {
   const returnToLanding = useTargetStore((s) => s.returnToLanding);
   const otherTarget = target === "adk" ? "langgraph" : "adk";
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [banner, setBanner] = useState<Banner>({ kind: "none" });
+  const banner = useLoadBanner((s) => s.banner);
+  const setBanner = useLoadBanner((s) => s.setBanner);
 
   // One-shot validate to drive the Download-zip disabled state. The Preview
   // pane runs the same call and renders the findings — we just need the
@@ -93,24 +93,7 @@ export function Toolbar() {
     // Reset the input so re-loading the same file fires `change` again.
     e.target.value = "";
     if (!file) return;
-    let text: string;
-    try {
-      text = await file.text();
-    } catch (err) {
-      setBanner({ kind: "error", message: err instanceof Error ? err.message : String(err) });
-      return;
-    }
-    const result = loadIRFromText(text);
-    if (!result.ok) {
-      setBanner({ kind: "error", message: result.error });
-      return;
-    }
-    replaceIR(result.ir);
-    setBanner(
-      result.findings.length > 0
-        ? { kind: "load-findings", count: result.findings.length }
-        : { kind: "none" },
-    );
+    applyLoadResult(await loadIRFromFile(file));
   };
 
   const onExampleChosen = (e: React.ChangeEvent<HTMLSelectElement>): void => {
@@ -119,17 +102,7 @@ export function Toolbar() {
     // `change` again (the select analog of the file-input reset above).
     const id = e.target.value;
     if (!id) return;
-    const result = loadExample(id);
-    if (!result.ok) {
-      setBanner({ kind: "error", message: result.error });
-      return;
-    }
-    replaceIR(result.ir);
-    setBanner(
-      result.findings.length > 0
-        ? { kind: "load-findings", count: result.findings.length }
-        : { kind: "none" },
-    );
+    applyLoadResult(loadExample(id));
   };
 
   const onDownloadZip = (): void => {
@@ -208,7 +181,13 @@ export function Toolbar() {
             ))}
           </select>
           <button type="button" onClick={onSave}>Save IR</button>
-          <button type="button" onClick={onLoadClick}>Load IR</button>
+          <button
+            type="button"
+            onClick={onLoadClick}
+            title="Load a saved .agentgraph.json — or drag one onto the window"
+          >
+            Load IR
+          </button>
           <input
             ref={fileInputRef}
             type="file"

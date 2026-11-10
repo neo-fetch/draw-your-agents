@@ -8,6 +8,7 @@ import { Preview } from "./preview/Preview.tsx";
 import { SchemaPanel } from "./schemas/SchemaPanel.tsx";
 import { ToolPanel } from "./tools/ToolPanel.tsx";
 import { Toolbar } from "./toolbar/Toolbar.tsx";
+import { IRDropZone } from "./toolbar/IRDropZone.tsx";
 import { PaneResizeHandle } from "./layout/PaneResizeHandle.tsx";
 import { WorkPane } from "./layout/WorkPane.tsx";
 import { pageFade, paneItem, paneStagger } from "./anim/presets.ts";
@@ -24,6 +25,7 @@ import { useTargetStore } from "./target/targetStore.ts";
  * PaneResizeHandle, collapsible to rails via WorkPane) around the canvas,
  * which always flexes to fill and never collapses. Node editing is not a
  * pane — it pops open on the canvas beside the selected node (ADR-0057).
+ * A saved IR file can be dropped anywhere on it to load (ADR-0060).
  */
 function Workbench() {
   return (
@@ -35,6 +37,7 @@ function Workbench() {
       exit="exit"
     >
       <Toolbar />
+      <IRDropZone />
       <m.div
         className="app"
         variants={paneStagger}

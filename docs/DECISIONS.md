@@ -3020,3 +3020,33 @@ Browser: loaded the Critic loop example, ticked the tool on the generator, renam
 picker, IR and Preview `loops.py` all followed.
 **Deferred.** Built-in / MCP tools (`google_search`, `McpToolset`, `AgentTool`); per-graph
 libraries; the deterministic loop `check` hook from ADR-0039 (it could reuse a library tool).
+
+## ADR-0060 — Drag a saved IR file onto the builder to load it
+**Context.** Loading a saved `.agentgraph.json` meant **Load IR** → OS file picker. Dragging the
+file in from the desktop did worse than nothing: the browser navigated to the raw JSON (losing
+the graph), or, over an open CodeMirror / Lexical editor, pasted the file's text into the body or
+prompt.
+**Decisions.**
+- **The whole builder is the drop zone, not a box.** `IRDropZone` (mounted in `Workbench` only —
+  the landing page keeps default behavior) listens on `window` in the **capture** phase for
+  `dragenter` / `dragover` / `dragleave` / `drop`, and shows a full-window, `pointer-events: none`
+  overlay ("Drop to load IR · replaces the current graph"). A dragenter/leave depth counter tells
+  "left the window" from "moved onto a child". Capture + `stopPropagation` on drop means a file
+  dropped over an editor loads the IR instead of being inserted as text.
+- **Only OS file drags** (`isFileDrag`: `dataTransfer.types` includes `"Files"`). Palette node
+  drags (`application/ga-node-type`, ADR-0034) and text drags pass through untouched.
+- **One load path.** `pickIRFile` (first `.json` / `application/json`; otherwise an error naming
+  what was dropped) → `loadIRFromFile` (Blob → `loadIRFromText`, read failures → `{ok:false}`) →
+  `applyLoadResult`. The Load IR picker and the example menu use the same `applyLoadResult`, so
+  the parse guard and load-then-surface policy (ADR-0024) are unchanged. The banner moved from
+  Toolbar-local state to a small zustand store (`toolbar/loadBanner.ts`) so both entry points
+  share it.
+- **No "replace current graph?" confirm**, matching Load IR and the example menu; the overlay
+  says it replaces the graph before the drop.
+**Tests.** `apps/web/test/irIO.test.ts`: `loadIRFromFile` (round-trip, malformed, unreadable),
+`isFileDrag`, `pickIRFile` (pick order, case-insensitive extension, MIME-only, rejection message).
+**Verification.** Browser (dev server, synthetic `DragEvent`s with real `File`s): overlay on
+enter, hidden on leave; dropping the BRD pipeline IR loads it **valid**; a `.zip` and malformed
+JSON show the error banner and keep the graph; a well-shaped invalid IR loads with the findings
+banner; a palette Agent drag still adds a node; a file dropped on an open body editor loads the
+IR and leaves the editor text alone; Load IR still works; no console errors.

@@ -275,3 +275,41 @@
   font-size: 17px; line-height: 1; cursor: pointer; color: inherit; padding: 0 4px;
 }
 .load-banner .dismiss:hover { color: var(--ink); }
+
+/* ------------------------------------------------- IR drop zone (ADR-0060) */
+
+.ir-drop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none; /* purely visual; the window listeners take the drop */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--paper) 72%, transparent);
+  backdrop-filter: blur(2px);
+}
+.ir-drop__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: min(520px, 100%);
+  padding: 40px 24px;
+  border: 2px dashed var(--accent);
+  border-radius: 14px;
+  background: var(--paper-raised);
+  box-shadow: var(--glow-accent);
+  text-align: center;
+}
+.ir-drop__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent-deep);
+}
+.ir-drop__detail {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
