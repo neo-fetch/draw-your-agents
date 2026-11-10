@@ -96,6 +96,13 @@
   color: var(--ink-faint);
   margin-bottom: 8px;
 }
+.canvas-empty__drop-hint {
+  display: block;
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-faint);
+}
 .canvas-empty__examples-row {
   display: flex;
   flex-wrap: wrap;
