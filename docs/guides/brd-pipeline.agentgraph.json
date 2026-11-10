@@ -1,0 +1,309 @@
+{
+  "irVersion": "0.1.0",
+  "name": "brd_pipeline",
+  "description": "Index docs/ into docs/manifest.json (documents via python-docx or UTF-8 text, tables via duckdb, images via Gemini), then a generate -> critic -> revise loop writes output/brd.docx with images embedded and a disclaimer that says whether the reviewer approved it. Built by hand on the canvas: docs/guides/brd-pipeline.md.",
+  "schemas": [
+    {
+      "name": "FileGroups",
+      "fields": [
+        {
+          "name": "documents",
+          "type": "str"
+        },
+        {
+          "name": "tables",
+          "type": "str"
+        },
+        {
+          "name": "images",
+          "type": "str"
+        }
+      ]
+    },
+    {
+      "name": "BrdDraft",
+      "fields": [
+        {
+          "name": "title",
+          "type": "str"
+        },
+        {
+          "name": "content_json",
+          "type": "str"
+        },
+        {
+          "name": "draft_path",
+          "type": "str"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "read_manifest",
+      "description": "Return docs/manifest.json: every document (with excerpt), table (with columns, row count, sample rows and its SQL view name) and image (with summary) under docs/. Call this first.",
+      "params": [],
+      "returns": "str",
+      "body": "from pathlib import Path\n\nmanifest = Path(__file__).resolve().parent / \"docs\" / \"manifest.json\"\nif not manifest.exists():\n    return \"ERROR: docs/manifest.json not found. Run the indexing steps first.\"\nreturn manifest.read_text(encoding=\"utf-8\")"
+    },
+    {
+      "name": "read_document",
+      "description": "Return the full text of one document under docs/ (.docx or any UTF-8 text file such as .md or code), truncated to 30000 characters. path is the manifest path, e.g. docs/specs/overview.docx.",
+      "params": [
+        {
+          "name": "path",
+          "type": "str"
+        }
+      ],
+      "returns": "str",
+      "body": "from pathlib import Path\n\nroot = Path(__file__).resolve().parent\ntarget = (root / path).resolve()\nif not target.exists():\n    target = (root / \"docs\" / path).resolve()\nif not target.is_relative_to(root / \"docs\") or not target.is_file():\n    return f\"ERROR: {path} is not a file under docs/. Use a path from the manifest.\"\n\nif target.suffix.lower() == \".docx\":\n    from docx import Document\n\n    doc = Document(str(target))\n    lines = []\n    for p in doc.paragraphs:\n        if not p.text.strip():\n            continue\n        style = p.style.name.lower() if p.style is not None else \"\"\n        lines.append(f\"## {p.text}\" if style.startswith((\"heading\", \"title\")) else p.text)\n    for i, table in enumerate(doc.tables, 1):\n        lines.append(f\"\\n[Table {i}]\")\n        for row in table.rows:\n            lines.append(\" | \".join(cell.text.strip() for cell in row.cells))\n    text = \"\\n\".join(lines)\nelse:\n    try:\n        text = target.read_text(encoding=\"utf-8\")\n    except UnicodeDecodeError:\n        return f\"ERROR: {path} is not a UTF-8 text or .docx file.\"\n\nLIMIT = 30000\nif len(text) > LIMIT:\n    return text[:LIMIT] + f\"\\n\\n[truncated: showing {LIMIT} of {len(text)} characters]\"\nreturn text"
+    },
+    {
+      "name": "describe_table",
+      "description": "Profile one table file under docs/ (.csv, .tsv, .parquet) with duckdb: row count, each column's type, min, max, approximate distinct count and null %, and the first 5 rows. Call before writing SQL against a table.",
+      "params": [
+        {
+          "name": "path",
+          "type": "str"
+        }
+      ],
+      "returns": "str",
+      "body": "from pathlib import Path\n\nimport duckdb\n\nroot = Path(__file__).resolve().parent\ntarget = (root / path).resolve()\nif not target.exists():\n    target = (root / \"docs\" / path).resolve()\nif not target.is_relative_to(root / \"docs\") or not target.is_file():\n    return f\"ERROR: {path} is not a file under docs/. Use a table path from the manifest.\"\n\nquoted = str(target).replace(\"'\", \"''\")\next = target.suffix.lower()\nif ext == \".parquet\":\n    source = f\"read_parquet('{quoted}')\"\nelif ext == \".tsv\":\n    source = f\"read_csv_auto('{quoted}', delim='\\\\t')\"\nelse:\n    source = f\"read_csv_auto('{quoted}')\"\n\ncon = duckdb.connect()\ntry:\n    rows = con.execute(f\"SELECT count(*) FROM {source}\").fetchall()[0][0]\n    cursor = con.execute(f\"SUMMARIZE SELECT * FROM {source}\")\n    stat_cols = [d[0] for d in cursor.description]\n    stat_rows = cursor.fetchall()\n    cursor = con.execute(f\"SELECT * FROM {source} LIMIT 5\")\n    sample_cols = [d[0] for d in cursor.description]\n    sample_rows = cursor.fetchall()\nexcept duckdb.Error as exc:\n    return f\"ERROR from duckdb: {exc}\"\n\nidx = {name: i for i, name in enumerate(stat_cols)}\nout = [f\"Table {path}: {rows} rows, {len(stat_rows)} columns\", \"\",\n       \"column | type | min | max | distinct (approx) | null %\"]\nfor r in stat_rows:\n    out.append(\" | \".join(str(r[idx[k]]) for k in (\n        \"column_name\", \"column_type\", \"min\", \"max\", \"approx_unique\", \"null_percentage\")))\nout += [\"\", \"First 5 rows:\", \" | \".join(sample_cols)]\nout += [\" | \".join(str(v) for v in row) for row in sample_rows]\nreturn \"\\n\".join(out)"
+    },
+    {
+      "name": "query_tables",
+      "description": "Run one read-only duckdb SQL query (SELECT or WITH) over every table under docs/. Each table is available under the 'view' name listed in the manifest (docs/finance/sales_q3.csv -> finance_sales_q3); joins across tables are allowed. Returns up to 50 rows as a markdown table, or the duckdb error so you can fix the SQL.",
+      "params": [
+        {
+          "name": "sql",
+          "type": "str"
+        }
+      ],
+      "returns": "str",
+      "body": "import json\nimport re\nfrom pathlib import Path\n\nimport duckdb\n\nroot = Path(__file__).resolve().parent\nmanifest = root / \"docs\" / \"manifest.json\"\nif not manifest.exists():\n    return \"ERROR: docs/manifest.json not found. Run the indexing steps first.\"\ntables = [t for t in json.loads(manifest.read_text(encoding=\"utf-8\")).get(\"tables\", [])\n          if t.get(\"view\") and not t.get(\"error\")]\n\nstatement = sql.strip().rstrip(\";\").strip()\nif \";\" in statement:\n    return \"ERROR: send one statement at a time.\"\nif not re.match(r\"(?is)^(select|with)\\b\", statement):\n    return \"ERROR: read-only. Only SELECT or WITH queries are allowed.\"\n\n# Load every table into an in-memory database, then cut off file access, so the\n# query can only see these tables and cannot read or write anything on disk.\ncon = duckdb.connect()\nfor t in tables:\n    quoted = str(root / t[\"path\"]).replace(\"'\", \"''\")\n    ext = Path(t[\"path\"]).suffix.lower()\n    if ext == \".parquet\":\n        source = f\"read_parquet('{quoted}')\"\n    elif ext == \".tsv\":\n        source = f\"read_csv_auto('{quoted}', delim='\\\\t')\"\n    else:\n        source = f\"read_csv_auto('{quoted}')\"\n    con.execute(f'CREATE TABLE \"{t[\"view\"]}\" AS SELECT * FROM {source}')\ncon.execute(\"SET enable_external_access = false\")\ncon.execute(\"SET lock_configuration = true\")\n\nviews = \", \".join(t[\"view\"] for t in tables) or \"(none)\"\ntry:\n    cursor = con.execute(f\"SELECT * FROM ({statement}) AS q LIMIT 51\")\n    columns = [d[0] for d in cursor.description]\n    rows = cursor.fetchall()\nexcept duckdb.Error as exc:\n    return f\"ERROR from duckdb: {exc}\\nAvailable tables: {views}\"\n\nlines = [\" | \".join(columns), \" | \".join(\"---\" for _ in columns)]\nlines += [\" | \".join(str(v) for v in row) for row in rows[:50]]\nif len(rows) > 50:\n    lines.append(\"[more than 50 rows: add LIMIT, filters or aggregates]\")\nreturn \"\\n\".join(lines)"
+    },
+    {
+      "name": "describe_image",
+      "description": "Ask a question about one image under docs/ (path from the manifest) and get Gemini's answer. Use it to check what an image shows before embedding or approving it.",
+      "params": [
+        {
+          "name": "path",
+          "type": "str"
+        },
+        {
+          "name": "question",
+          "type": "str"
+        }
+      ],
+      "returns": "str",
+      "body": "import mimetypes\nfrom pathlib import Path\n\nfrom google import genai\nfrom google.genai import types\n\nroot = Path(__file__).resolve().parent\ntarget = (root / path).resolve()\nif not target.exists():\n    target = (root / \"docs\" / path).resolve()\nif not target.is_relative_to(root / \"docs\") or not target.is_file():\n    return f\"ERROR: {path} is not a file under docs/. Use an image path from the manifest.\"\n\nmime = mimetypes.guess_type(target.name)[0] or \"image/png\"\nclient = genai.Client()  # keep a reference: a closed client cannot send requests\nresponse = client.models.generate_content(\n    model=\"gemini-flash-latest\",\n    contents=[types.Part.from_bytes(data=target.read_bytes(), mime_type=mime), question],\n)\nreturn (response.text or \"\").strip() or \"(no answer)\""
+    },
+    {
+      "name": "render_brd",
+      "description": "Internal helper used by save_brd_draft and record_review; do not give it to an agent. Renders BRD content JSON to a .docx at out_path with python-docx (headings, paragraphs, bullets, tables, embedded images) and appends footer as a Disclaimer section.",
+      "params": [
+        {
+          "name": "content_json",
+          "type": "str"
+        },
+        {
+          "name": "out_path",
+          "type": "str"
+        },
+        {
+          "name": "footer",
+          "type": "str"
+        }
+      ],
+      "returns": "str",
+      "body": "import json\nfrom pathlib import Path\n\nfrom docx import Document\nfrom docx.shared import Inches\n\nroot = Path(__file__).resolve().parent\ncontent = json.loads(content_json)\nEMBEDDABLE = {\".png\", \".jpg\", \".jpeg\", \".gif\", \".bmp\", \".tif\", \".tiff\"}\n\ndoc = Document()\ndoc.add_heading(content.get(\"title\") or \"Business Requirements Document\", level=0)\nskipped = []\nfor section in content.get(\"sections\", []):\n    level = min(max(int(section.get(\"level\", 1)), 1), 3)\n    doc.add_heading(str(section.get(\"heading\", \"\")), level=level)\n    for text in section.get(\"paragraphs\", []):\n        doc.add_paragraph(str(text))\n    for text in section.get(\"bullets\", []):\n        doc.add_paragraph(str(text), style=\"List Bullet\")\n    for table in section.get(\"tables\", []):\n        columns = [str(c) for c in table.get(\"columns\", [])]\n        rows = table.get(\"rows\", [])\n        if not columns:\n            continue\n        grid = doc.add_table(rows=1, cols=len(columns), style=\"Table Grid\")\n        for cell, name in zip(grid.rows[0].cells, columns):\n            cell.text = name\n        for row in rows:\n            for cell, value in zip(grid.add_row().cells, row):\n                cell.text = str(value)\n    for image in section.get(\"images\", []):\n        img = (root / str(image.get(\"path\", \"\"))).resolve()\n        if not img.exists():\n            img = (root / \"docs\" / str(image.get(\"path\", \"\"))).resolve()\n        if img.is_file() and img.is_relative_to(root / \"docs\") and img.suffix.lower() in EMBEDDABLE:\n            doc.add_picture(str(img), width=Inches(6))\n            if image.get(\"caption\"):\n                doc.add_paragraph(str(image[\"caption\"]), style=\"Caption\")\n        else:\n            skipped.append(str(image.get(\"path\")))\n            doc.add_paragraph(f\"[Image not embedded: {image.get('path')}]\")\n\ndoc.add_heading(\"Disclaimer\", level=1)\nfor text in footer.split(\"\\n\\n\"):\n    if text.strip():\n        doc.add_paragraph(text.strip())\n\nout = (root / out_path).resolve()\nout.parent.mkdir(parents=True, exist_ok=True)\ndoc.save(str(out))\nnote = f\" Images not embedded: {', '.join(skipped)}.\" if skipped else \"\"\nreturn f\"Saved {out_path}.{note}\""
+    },
+    {
+      "name": "save_brd_draft",
+      "description": "Save the BRD draft. content_json must be JSON shaped like {\"title\": \"...\", \"sections\": [{\"heading\": \"...\", \"level\": 1, \"paragraphs\": [\"...\"], \"bullets\": [\"...\"], \"tables\": [{\"columns\": [\"...\"], \"rows\": [[\"...\"]]}], \"images\": [{\"path\": \"docs/...\", \"caption\": \"...\"}]}]} with image paths taken from the manifest. Writes output/.drafts/brd_draft.docx (images embedded) and returns its path, or an ERROR to fix and retry.",
+      "params": [
+        {
+          "name": "content_json",
+          "type": "str"
+        }
+      ],
+      "returns": "str",
+      "body": "import json\nfrom pathlib import Path\n\nroot = Path(__file__).resolve().parent\ntry:\n    content = json.loads(content_json)\nexcept json.JSONDecodeError as exc:\n    return f\"ERROR: content_json is not valid JSON ({exc}). Fix it and call again.\"\nif not isinstance(content, dict) or not content.get(\"title\") or not content.get(\"sections\"):\n    return \"ERROR: content_json needs a non-empty 'title' and a non-empty 'sections' list.\"\n\nmissing = []\nfor section in content[\"sections\"]:\n    for image in section.get(\"images\", []):\n        p = str(image.get(\"path\", \"\"))\n        if not ((root / p).is_file() or (root / \"docs\" / p).is_file()):\n            missing.append(p)\nif missing:\n    return f\"ERROR: these image paths do not exist: {', '.join(missing)}. Use image paths from the manifest.\"\n\ndrafts = root / \"output\" / \".drafts\"\ndrafts.mkdir(parents=True, exist_ok=True)\n(drafts / \"brd_draft.json\").write_text(json.dumps(content, indent=2), encoding=\"utf-8\")\nresult = _render_brd_impl(\n    json.dumps(content), \"output/.drafts/brd_draft.docx\", \"DRAFT: not yet reviewed.\"\n)\nreturn f\"{result} Set draft_path to output/.drafts/brd_draft.docx.\""
+    },
+    {
+      "name": "record_review",
+      "description": "Record your verdict on the latest saved draft. status is APPROVED or REVISE; feedback explains why, listing every issue when REVISE. Writes output/brd.docx with the matching disclaimer. Call exactly once per review, then return the same status and feedback.",
+      "params": [
+        {
+          "name": "status",
+          "type": "str"
+        },
+        {
+          "name": "feedback",
+          "type": "str"
+        }
+      ],
+      "returns": "str",
+      "body": "import json\nfrom datetime import datetime, timezone\nfrom pathlib import Path\n\nroot = Path(__file__).resolve().parent\ndrafts = root / \"output\" / \".drafts\"\ndraft = drafts / \"brd_draft.json\"\nif not draft.exists():\n    return (\"ERROR: no draft has been saved yet. Return status REVISE with the \"\n            \"feedback 'Call save_brd_draft before returning the draft.'\")\n\napproved = status.strip().upper() == \"APPROVED\"\nlog = drafts / \"reviews.jsonl\"\nround_no = (len(log.read_text(encoding=\"utf-8\").splitlines()) if log.exists() else 0) + 1\nwith log.open(\"a\", encoding=\"utf-8\") as f:\n    f.write(json.dumps({\n        \"round\": round_no,\n        \"at\": datetime.now(timezone.utc).isoformat(timespec=\"seconds\"),\n        \"status\": \"APPROVED\" if approved else \"REVISE\",\n        \"feedback\": feedback,\n    }) + \"\\n\")\n\ndisclaimer = (\n    \"This Business Requirements Document was generated by an AI system from the \"\n    \"source files in docs/ and checked by an automated reviewer. It may contain \"\n    \"errors or omissions. Validate all requirements, figures and assumptions with \"\n    \"the relevant stakeholders before relying on it.\"\n)\nif not approved:\n    disclaimer += (\n        \"\\n\\nThis document was NOT approved by the reviewer. \"\n        f\"Latest reviewer issue: {feedback}\"\n    )\n_render_brd_impl(draft.read_text(encoding=\"utf-8\"), \"output/brd.docx\", disclaimer)\nverdict = \"APPROVED\" if approved else \"REVISE\"\nreturn (f\"Review round {round_no} recorded and output/brd.docx updated. \"\n        f\"Now return status {verdict} with the same feedback.\")"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n_scan_docs",
+      "type": "function",
+      "name": "scan_docs",
+      "ui": {
+        "x": 0,
+        "y": 0
+      },
+      "config": {
+        "description": "Delete docs/manifest.json and sort every file under docs/ into documents, tables and images.",
+        "inputType": "str",
+        "outputType": "FileGroups",
+        "emits": "output",
+        "body": "import json\nimport shutil\nfrom pathlib import Path\n\nroot = Path(__file__).resolve().parent\ndocs = root / \"docs\"\ndocs.mkdir(exist_ok=True)\n\n# Start fresh: delete any manifest.json left by a previous run, at any depth,\n# and the previous run's BRD drafts and review log.\nfor stale in docs.rglob(\"manifest.json\"):\n    stale.unlink()\nshutil.rmtree(root / \"output\" / \".drafts\", ignore_errors=True)\n\n\ndef is_utf8(file_path):\n    try:\n        with open(file_path, \"r\", encoding=\"utf-8\", errors=\"strict\") as f:\n            # Read line by line to handle large files efficiently\n            for _ in f:\n                pass\n        return True\n    except UnicodeDecodeError:\n        return False\n\n\nIMAGE_EXT = {\".png\", \".jpg\", \".jpeg\", \".gif\", \".bmp\", \".webp\", \".tif\", \".tiff\"}\nTABLE_EXT = {\".csv\", \".tsv\", \".parquet\"}\n\ndocuments, tables, images = [], [], []\nfor path in sorted(p for p in docs.rglob(\"*\") if p.is_file()):\n    if any(part.startswith(\".\") for part in path.relative_to(docs).parts):\n        continue  # skip hidden files and folders\n    rel = path.relative_to(root).as_posix()\n    ext = path.suffix.lower()\n    if ext in IMAGE_EXT:\n        images.append({\"path\": rel})\n    elif ext in TABLE_EXT:\n        tables.append({\"path\": rel})\n    elif ext == \".docx\":\n        documents.append({\"path\": rel, \"kind\": \"docx\"})\n    elif is_utf8(path):\n        documents.append({\"path\": rel, \"kind\": \"text\"})\n    # anything else (pdf, xlsx, zip, ...) is skipped\n\nreturn FileGroups(\n    documents=json.dumps(documents),\n    tables=json.dumps(tables),\n    images=json.dumps(images),\n)"
+      }
+    },
+    {
+      "id": "n_index_documents",
+      "type": "function",
+      "name": "index_documents",
+      "ui": {
+        "x": 280,
+        "y": 0
+      },
+      "config": {
+        "description": "Add metadata and an excerpt for each document (python-docx for .docx).",
+        "inputType": "FileGroups",
+        "outputType": "FileGroups",
+        "emits": "output",
+        "body": "import json\nfrom pathlib import Path\n\nroot = Path(__file__).resolve().parent\nindexed = []\nfor entry in json.loads(node_input.documents or \"[]\"):\n    path = root / entry[\"path\"]\n    info = dict(entry, size_bytes=path.stat().st_size)\n    try:\n        if entry.get(\"kind\") == \"docx\":\n            from docx import Document\n\n            doc = Document(str(path))\n            paras = [p for p in doc.paragraphs if p.text.strip()]\n            text = \"\\n\".join(p.text for p in paras)\n            props = doc.core_properties\n            info.update(\n                title=props.title or path.stem,\n                author=props.author or \"\",\n                headings=[\n                    p.text.strip()\n                    for p in paras\n                    if p.style is not None\n                    and p.style.name.lower().startswith((\"heading\", \"title\"))\n                ][:40],\n                paragraphs=len(paras),\n                tables=len(doc.tables),\n                images=len(doc.inline_shapes),\n                words=len(text.split()),\n                excerpt=text[:1500],\n            )\n        else:\n            text = path.read_text(encoding=\"utf-8\")\n            lines = text.splitlines()\n            info.update(\n                title=path.stem,\n                extension=path.suffix.lower() or \"(none)\",\n                lines=len(lines),\n                words=len(text.split()),\n                headings=[l.lstrip(\"#\").strip() for l in lines if l.startswith(\"#\")][:40]\n                if path.suffix.lower() in {\".md\", \".markdown\"}\n                else [],\n                excerpt=text[:1500],\n            )\n    except Exception as exc:  # keep going: one bad file must not stop the run\n        info[\"error\"] = f\"{type(exc).__name__}: {exc}\"\n    indexed.append(info)\n\nreturn FileGroups(\n    documents=json.dumps(indexed),\n    tables=node_input.tables,\n    images=node_input.images,\n)"
+      }
+    },
+    {
+      "id": "n_index_tables",
+      "type": "function",
+      "name": "index_tables",
+      "ui": {
+        "x": 560,
+        "y": 0
+      },
+      "config": {
+        "description": "Add each table's columns, row count, sample rows and SQL view name (duckdb).",
+        "inputType": "FileGroups",
+        "outputType": "FileGroups",
+        "emits": "output",
+        "body": "import json\nimport re\nfrom pathlib import Path\n\nimport duckdb\n\nroot = Path(__file__).resolve().parent\ncon = duckdb.connect()\nindexed, used_views = [], set()\nfor entry in json.loads(node_input.tables or \"[]\"):\n    path = root / entry[\"path\"]\n    # SQL view name the query_tables tool exposes this file under:\n    # docs/finance/sales_q3.csv -> finance_sales_q3\n    stem = Path(entry[\"path\"]).relative_to(\"docs\").with_suffix(\"\").as_posix()\n    view = re.sub(r\"[^0-9a-zA-Z]+\", \"_\", stem).strip(\"_\").lower() or \"table\"\n    if view[0].isdigit():\n        view = \"t_\" + view\n    base, n = view, 2\n    while view in used_views:\n        view, n = f\"{base}_{n}\", n + 1\n    used_views.add(view)\n\n    quoted = str(path).replace(\"'\", \"''\")\n    ext = path.suffix.lower()\n    if ext == \".parquet\":\n        source = f\"read_parquet('{quoted}')\"\n    elif ext == \".tsv\":\n        source = f\"read_csv_auto('{quoted}', delim='\\\\t')\"\n    else:\n        source = f\"read_csv_auto('{quoted}')\"\n\n    info = dict(entry, view=view)\n    try:\n        info[\"columns\"] = [\n            {\"name\": row[0], \"type\": row[1]}\n            for row in con.execute(f\"DESCRIBE SELECT * FROM {source}\").fetchall()\n        ]\n        info[\"row_count\"] = con.execute(f\"SELECT count(*) FROM {source}\").fetchall()[0][0]\n        cursor = con.execute(f\"SELECT * FROM {source} LIMIT 3\")\n        names = [d[0] for d in cursor.description]\n        info[\"sample_rows\"] = [\n            dict(zip(names, [str(v) for v in row])) for row in cursor.fetchall()\n        ]\n    except Exception as exc:\n        info[\"error\"] = f\"{type(exc).__name__}: {exc}\"\n    indexed.append(info)\n\nreturn FileGroups(\n    documents=node_input.documents,\n    tables=json.dumps(indexed),\n    images=node_input.images,\n)"
+      }
+    },
+    {
+      "id": "n_index_images",
+      "type": "function",
+      "name": "index_images",
+      "ui": {
+        "x": 840,
+        "y": 0
+      },
+      "config": {
+        "description": "Add a filename and Gemini summary for each image.",
+        "inputType": "FileGroups",
+        "outputType": "FileGroups",
+        "emits": "output",
+        "body": "import json\nimport mimetypes\nfrom pathlib import Path\n\nroot = Path(__file__).resolve().parent\nentries = json.loads(node_input.images or \"[]\")\nindexed = []\nif entries:\n    from google import genai\n    from google.genai import types\n\n    client = genai.Client()  # reads GOOGLE_API_KEY from the project's .env\n    for entry in entries:\n        path = root / entry[\"path\"]\n        info = dict(entry, filename=path.name)\n        try:\n            mime = mimetypes.guess_type(path.name)[0] or \"image/png\"\n            response = client.models.generate_content(\n                model=\"gemini-flash-latest\",\n                contents=[\n                    types.Part.from_bytes(data=path.read_bytes(), mime_type=mime),\n                    \"Summarise this image in 2-3 sentences for a business analyst: \"\n                    \"what it shows, any visible text or numbers, and what it is for.\",\n                ],\n            )\n            info[\"summary\"] = (response.text or \"\").strip()\n        except Exception as exc:\n            info[\"error\"] = f\"{type(exc).__name__}: {exc}\"\n        indexed.append(info)\n\nreturn FileGroups(\n    documents=node_input.documents,\n    tables=node_input.tables,\n    images=json.dumps(indexed),\n)"
+      }
+    },
+    {
+      "id": "n_write_manifest",
+      "type": "function",
+      "name": "write_manifest",
+      "ui": {
+        "x": 1120,
+        "y": 0
+      },
+      "config": {
+        "description": "Write docs/manifest.json.",
+        "inputType": "FileGroups",
+        "outputType": "str",
+        "emits": "output",
+        "body": "import json\nfrom datetime import datetime, timezone\nfrom pathlib import Path\n\nroot = Path(__file__).resolve().parent\nmanifest = {\n    \"generated_at\": datetime.now(timezone.utc).isoformat(timespec=\"seconds\"),\n    \"root\": \"docs\",\n    \"documents\": json.loads(node_input.documents or \"[]\"),\n    \"tables\": json.loads(node_input.tables or \"[]\"),\n    \"images\": json.loads(node_input.images or \"[]\"),\n}\n(root / \"docs\" / \"manifest.json\").write_text(\n    json.dumps(manifest, indent=2, ensure_ascii=False), encoding=\"utf-8\"\n)\nreturn (\n    f\"docs/manifest.json written: {len(manifest['documents'])} documents, \"\n    f\"{len(manifest['tables'])} tables, {len(manifest['images'])} images\"\n)"
+      }
+    },
+    {
+      "id": "n_brd_loop",
+      "type": "loop",
+      "name": "brd_loop",
+      "ui": {
+        "x": 1400,
+        "y": 0
+      },
+      "config": {
+        "maxIterations": 5,
+        "approvalPhrase": "APPROVED",
+        "inputType": "str",
+        "payloadType": "BrdDraft",
+        "generator": {
+          "model": "gemini-flash-latest",
+          "instruction": "You write a Business Requirements Document (BRD) from the files in docs/. Ignore the empty specifications field.\n1. Call read_manifest to see every document, table and image.\n2. Investigate the relevant sources: read_document for documents; for each table, describe_table first, then query_tables (read-only SQL over the manifest's view names, joins allowed) to get every figure you will cite; describe_image if a summary is not enough.\n3. Write the BRD as content JSON shaped like {\"title\": \"...\", \"sections\": [{\"heading\": \"...\", \"level\": 1, \"paragraphs\": [\"...\"], \"bullets\": [\"...\"], \"tables\": [{\"columns\": [\"...\"], \"rows\": [[\"...\"]]}], \"images\": [{\"path\": \"docs/...\", \"caption\": \"...\"}]}]}. Use these sections: Executive Summary, Business Objectives, Scope (in / out), Stakeholders, Current State, Business Requirements (numbered BR-1, BR-2, ... in a table with columns ID, Requirement, Priority, Source), Data and Reporting Requirements (cite the tables and figures you queried), Assumptions and Constraints, Risks, Glossary. Embed relevant images from docs/ by their manifest path with a caption. Every fact must come from a source; name the source file.\n4. Call save_brd_draft with the content JSON. If it returns ERROR, fix the JSON and call again.\n5. Return title, content_json (the exact JSON you saved) and draft_path.",
+          "tools": [
+            "read_manifest",
+            "read_document",
+            "describe_table",
+            "query_tables",
+            "describe_image",
+            "save_brd_draft"
+          ]
+        },
+        "critic": {
+          "model": "gemini-flash-latest",
+          "instruction": "You are a strict BRD reviewer. The current draft is in current.content_json. Do your own investigation; do not trust the draft.\n1. Call read_manifest, then check the draft's claims against the sources with read_document.\n2. For every number taken from a table, run your own query_tables SQL (use describe_table first if needed) and compare.\n3. Check that each embedded image is relevant and its caption is accurate (describe_image).\n4. Check that every required section is present and every requirement names a source.\nThen call record_review exactly once: status APPROVED if everything is accurate and complete, otherwise status REVISE with feedback listing each issue and how to fix it. Finally return the same status and feedback you passed to record_review.",
+          "tools": [
+            "read_manifest",
+            "read_document",
+            "describe_table",
+            "query_tables",
+            "describe_image",
+            "record_review"
+          ]
+        },
+        "reviser": {
+          "model": "gemini-flash-latest",
+          "instruction": "You fix a BRD draft. current.content_json is the draft; revision_feedback lists the reviewer's issues.\n1. Fix every issue. Re-check the sources with read_manifest, read_document, describe_table, query_tables and describe_image wherever a fix needs facts or figures.\n2. Keep the same content JSON shape and keep everything that was not criticised.\n3. Call save_brd_draft with the corrected JSON (fix and retry on ERROR).\n4. Return title, content_json (the exact JSON you saved) and draft_path.",
+          "tools": [
+            "read_manifest",
+            "read_document",
+            "describe_table",
+            "query_tables",
+            "describe_image",
+            "save_brd_draft"
+          ]
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "START",
+      "to": "n_scan_docs"
+    },
+    {
+      "from": "n_scan_docs",
+      "to": "n_index_documents"
+    },
+    {
+      "from": "n_index_documents",
+      "to": "n_index_tables"
+    },
+    {
+      "from": "n_index_tables",
+      "to": "n_index_images"
+    },
+    {
+      "from": "n_index_images",
+      "to": "n_write_manifest"
+    },
+    {
+      "from": "n_write_manifest",
+      "to": "n_brd_loop"
+    }
+  ]
+}
