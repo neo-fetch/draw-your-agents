@@ -3241,6 +3241,22 @@ the empty-state card's copy.
 
 `npm test` (44 + 360 + 190) and `test:web:app` (16) pass.
 
+**Follow-up (by request): "I can't see the canvas even a little."**
+- **Tints near clear.** Vellum / Bathory values:
+
+  | Token | Vellum | Bathory |
+  |---|---|---|
+  | `--glass-pane-alpha` | 3% | 5% |
+  | `--glass-field-alpha` | 6% | 8% |
+  | `--glass-alpha` | 2% | 3% |
+  | `--glass-alpha-strong` | 5% | 6% |
+
+- **Blur:** both blurs are 3px.
+- **Code slab:** the Preview code slab drops to 55%, its floor. The code is light-on-dark, and below
+  roughly 55% over light paper it stops being readable.
+- **Checked from `file://`:** nodes under the Build pane, under the code slab and under the top bar
+  show as smudges.
+
 ## ADR-0063 — Canvas nodes are liquid glass: low tint, high distortion
 **Context.** With the glass workbench in place (ADR-0062), we asked for the liquid effect on the
 canvas nodes as well, with "low opacity but high distortion".

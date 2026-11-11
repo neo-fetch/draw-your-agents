@@ -244,7 +244,7 @@
     --paper-raised: color-mix(in srgb, var(--glass-src-raised) var(--glass-field-alpha), transparent);
     --paper-sunken: color-mix(in srgb, var(--glass-src-sunken) calc(var(--glass-field-alpha) + 14%), transparent);
     /* code stays readable: dark glass, still the densest surface */
-    --code-bg: color-mix(in srgb, var(--glass-src-code) 62%, transparent);
+    --code-bg: color-mix(in srgb, var(--glass-src-code) 55%, transparent);
   }
 
   /* inside a glass pane: its sticky header frosts what scrolls under it, and
