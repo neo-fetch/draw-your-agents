@@ -1,7 +1,7 @@
 /* ----------------------------------------------------------------- panes
    Workbench layout (ADR-0044): flex row — side panes are fixed-width
-   (resizable, collapsible to rails), the canvas flexes to fill. Pane
-   entrance is orchestrated by framer-motion (paneStagger/paneItem in
+   (resizable, collapsible to rails), the canvas flexes to fill. The
+   workbench mists in through FadeContent (ADR-0064, MIST_REVEAL in
    src/anim/presets.ts). */
 
 .pane {
