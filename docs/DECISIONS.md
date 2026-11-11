@@ -3240,3 +3240,52 @@ the empty-state card's copy.
 - The final tint values (this ADR's numbers) were rebuilt but not re-screenshotted.
 
 `npm test` (44 + 360 + 190) and `test:web:app` (16) pass.
+
+## ADR-0063 — Canvas nodes are liquid glass: low tint, high distortion
+**Context.** With the glass workbench in place (ADR-0062), we asked for the liquid effect on the
+canvas nodes as well, with "low opacity but high distortion".
+
+**Decisions.**
+- **A glass layer behind the text, not around the node.**
+  - `NodeGlass` renders as the first child of the `.ir-node` card: an inset-0, pointer-transparent
+    `.lg-host` holding `<LiquidGlass>` centred on the card.
+  - Its only child is an empty `.lg-fill` sized with `100cqw` / `100cqh` (the host is
+    `container-type: size`), so the glass is exactly the card's box.
+  - The name and type lines sit above it (`position: relative; z-index: 1`).
+  - Handles, React Flow's node measurement, drag, selection and connection are untouched. Putting
+    the content *inside* the package's elastic transform would move the handles off their measured
+    positions.
+- **The card itself is clear.**
+  - In the liquid branch `.ir-node--liquid` has a transparent background and **no backdrop-filter**,
+    which would make the card the backdrop root of its own glass.
+  - The tint lives on `.lg-fill` (`--glass-node-alpha`: 10% Vellum / 14% Bathory).
+  - Border, type stripe, shadow and the selected ring stay. The package's `.glass` shadow is off for
+    nodes.
+- **High distortion.** The `node` surface uses `NODE_DISPLACEMENT` 120 with the `"prominent"` map.
+  Aberration is 0 (no rainbow fringe without frost), `overLight` is off and `blurAmount` is 0.
+  Nodes carry only a name and a type, so they can bend hard where the cards could not (ADR-0061).
+- **Wobble from the card.** `mouseContainer` is the `.ir-node` element, because the host ignores the
+  pointer. Elasticity is 0.1, and 0 under reduced motion.
+- **Corners.** `cornerRadius` uses `NODE_RADIUS`, which mirrors `--r-md` (7 / 1). A test parses the
+  CSS to keep it in sync.
+- **Shared renderer decision.** `useGlassEnv()` (renderer, theme, reduced motion, font epoch) is shared
+  by `GlassOverlayCard` and `IRNode`.
+  - Non-Chromium browsers get a CSS fallback: a low-tint, frosted `.ir-node`.
+  - Under reduced transparency the card is solid again.
+- **Cost.** Each node carries its own SVG filter and listens for mousemove only on itself. That is
+  fine at example scale (8 nodes); revisit if graphs grow to hundreds of nodes.
+
+**Tests.** `glassConfig.test.ts`:
+- `NODE_RADIUS` matches `--r-md` in both themes;
+- the node preset is high distortion (≥ 100), prominent, with no colour split and no overLight, and
+  its wobble yields to reduced motion;
+- `.ir-node--liquid` keeps `backdrop-filter: none`, and `--glass-node-alpha` exists in both themes.
+
+**Verification.** From `file://` in Chrome 157, on the Showcase example:
+- all 8 nodes render liquid; `.lg-fill` is 104×36 in a 107×37 card; the card background is clear;
+  the displacement scale is −120;
+- with `classify` dragged half over `refine_loop`, the covered part of `refine_loop` is visibly
+  displaced through `classify`, in both themes;
+- Bathory corners are 1px; no console errors.
+
+`npm test` (44 + 360 + 193) and `test:web:app` (16) pass.

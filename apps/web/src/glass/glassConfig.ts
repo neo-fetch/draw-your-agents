@@ -24,8 +24,14 @@ export const GLASS_RADIUS: Readonly<Record<ThemeId, number>> = {
   bathory: 2,
 };
 
+/** Canvas nodes use the smaller `--r-md` corner (ADR-0063); test-synced too. */
+export const NODE_RADIUS: Readonly<Record<ThemeId, number>> = {
+  vellum: 7,
+  bathory: 1,
+};
+
 /** Surfaces that host a real <LiquidGlass>. */
-export type GlassSurface = "emptyState" | "dropCard";
+export type GlassSurface = "emptyState" | "dropCard" | "node";
 
 export type GlassRenderer = "liquid" | "css";
 
@@ -64,6 +70,13 @@ export interface LiquidPropsOut {
  */
 export const EDGE_DISPLACEMENT = 30;
 
+/**
+ * Canvas nodes: high distortion (ADR-0063). Nodes carry no long copy over
+ * the bend — just a name and a type — so they can refract hard: the grid and
+ * edges behind a node warp through it like a thick lens.
+ */
+export const NODE_DISPLACEMENT = 120;
+
 type Preset = Pick<
   LiquidPropsOut,
   "displacementScale" | "blurAmount" | "saturation" | "aberrationIntensity" | "elasticity" | "mode"
@@ -76,6 +89,9 @@ const PRESETS: Readonly<Record<GlassSurface, Preset>> = {
   emptyState: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.15, mode: "standard" },
   // Static: no mousemove fires during an HTML5 drag, so elasticity is moot.
   dropCard: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0, mode: "standard" },
+  // Thick lens: the strong "prominent" map, still no colour split. A light
+  // wobble when hovered (the node card drives it).
+  node: { displacementScale: NODE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.1, mode: "prominent" },
 };
 
 export function liquidProps(
@@ -90,7 +106,7 @@ export function liquidProps(
     // Clear glass in every theme: `overLight` would force ≥12px of frost
     // (and halve the displacement); off, the package's blur is 4px + 0.
     overLight: false,
-    cornerRadius: GLASS_RADIUS[theme],
+    cornerRadius: surface === "node" ? NODE_RADIUS[theme] : GLASS_RADIUS[theme],
     // Padding lives on our own content box so it follows the theme's CSS.
     padding: "0",
   };

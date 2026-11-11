@@ -14,6 +14,8 @@ import { THEMES } from "../src/theme/themes.ts";
 import {
   chooseRenderer,
   GLASS_RADIUS,
+  NODE_DISPLACEMENT,
+  NODE_RADIUS,
   EDGE_DISPLACEMENT,
   isChromiumBrands,
   liquidProps,
@@ -103,4 +105,42 @@ test("glass.css keeps its fallbacks: @supports gate and reduced-transparency off
   // every theme defines the glass tokens it overrides from :root
   assert.match(css("tokens.css"), /--glass-alpha:/);
   assert.match(css("themes/bathory.css"), /--glass-alpha:/);
+});
+
+// --- liquid nodes (ADR-0063) ---
+
+function rMd(source: string): number {
+  const m = /--r-md:\s*(\d+)px/.exec(source);
+  assert.ok(m, "no --r-md declaration found");
+  return Number(m[1]);
+}
+
+test("NODE_RADIUS mirrors each theme's --r-md (the node card's corner)", () => {
+  assert.strictEqual(NODE_RADIUS.vellum, rMd(css("tokens.css")));
+  assert.strictEqual(NODE_RADIUS.bathory, rMd(css("themes/bathory.css")));
+  for (const t of THEMES) {
+    assert.strictEqual(liquidProps("node", t.id, { reducedMotion: false }).cornerRadius, NODE_RADIUS[t.id]);
+  }
+});
+
+test("liquidProps(node): high distortion, clear, no colour split; still yields to reduced motion", () => {
+  for (const t of THEMES) {
+    const p = liquidProps("node", t.id, { reducedMotion: false });
+    assert.strictEqual(p.displacementScale, NODE_DISPLACEMENT);
+    assert.ok(NODE_DISPLACEMENT >= 100, "nodes refract hard by request");
+    assert.strictEqual(p.mode, "prominent");
+    assert.strictEqual(p.aberrationIntensity, 0);
+    assert.strictEqual(p.overLight, false);
+    assert.ok(p.elasticity > 0);
+    assert.strictEqual(liquidProps("node", t.id, { reducedMotion: true }).elasticity, 0);
+  }
+});
+
+test("node glass CSS: liquid card is clear and never its own backdrop root", () => {
+  const glass = css("glass.css");
+  // the liquid card must not carry a backdrop-filter (it would cut its glass off)
+  assert.match(glass, /\.ir-node--liquid \{[^}]*backdrop-filter: none;/);
+  // and the low node tint is a token in both themes
+  assert.match(css("tokens.css"), /--glass-node-alpha:/);
+  assert.match(css("themes/bathory.css"), /--glass-node-alpha:/);
 });

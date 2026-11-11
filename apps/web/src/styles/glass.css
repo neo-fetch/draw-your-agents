@@ -86,6 +86,42 @@
   }
 }
 
+/* ---- liquid nodes (ADR-0063) ---------------------------------------------
+   NodeGlass puts an inset-0 .lg-host behind the card's text; the package's
+   glass is sized to the card by an empty .lg-fill in container units. The
+   card's own background goes clear so the glass shows; its border, type
+   stripe and shadow stay. The card must NOT get a backdrop-filter in the
+   liquid branch — that would make it the backdrop root for its own glass. */
+.lg-host--node {
+  z-index: 0;
+  border-radius: inherit;
+  overflow: hidden;
+}
+.lg-host--node .glass { box-shadow: none !important; } /* the card has its own */
+.lg-fill {
+  width: 100cqw;
+  height: 100cqh;
+  background: color-mix(in srgb, var(--paper-raised) var(--glass-node-alpha), transparent);
+}
+.ir-node > .name,
+.ir-node > .type {
+  position: relative;
+  z-index: 1;
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* CSS fallback (non-Chromium): low-tint frosted card */
+  .ir-node {
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-node-alpha), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+  .ir-node--liquid {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* ---- glass workbench (ADR-0062) -------------------------------------------
    The canvas is mounted full-bleed behind everything (.canvas-backdrop); the
    top bar and the pane row float over it. The row keeps its flex layout, but
@@ -201,6 +237,11 @@
     backdrop-filter: none;
   }
   .pane-rail { background: var(--paper-raised); }
+  .ir-node {
+    background: var(--paper-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   /* back to the captured solid surfaces inside the chrome */
   .pane--side > *,
   .topbar > * {
