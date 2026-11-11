@@ -129,3 +129,55 @@ test("midpointTarget is the zero-size midpoint of two node centers", () => {
   // centers: (50, 20) and (350, 230)
   assert.deepEqual(got, { x: 200, y: 125, w: 0, h: 0 });
 });
+
+// --- glass workbench (ADR-0062): stay inside the visible window ---
+
+test("anchorPopover clamps inside the insets, never under a glass pane", () => {
+  const base = {
+    viewport: { x: 0, y: 0, zoom: 1 },
+    container: { w: 1440, h: 900 },
+    size: { w: 380, h: 300 },
+    offset: { dx: 0, dy: 0 },
+    insets: { top: 100, right: 490, bottom: 0, left: 246 },
+  };
+  // a node tucked under the left pane: the card is pushed right of the pane
+  const left = anchorPopover({ ...base, target: { x: 0, y: 0, w: 100, h: 40 } });
+  assert.ok(left.left >= 246 + ANCHOR_MARGIN, `left ${left.left}`);
+  assert.ok(left.top >= 100 + ANCHOR_MARGIN, `top ${left.top}`);
+  // a node near the right pane: flips left and stays clear of the right inset
+  const right = anchorPopover({ ...base, target: { x: 800, y: 400, w: 100, h: 40 } });
+  assert.strictEqual(right.side, "left");
+  assert.ok(right.left + 380 <= 1440 - 490 - ANCHOR_MARGIN, `right edge ${right.left + 380}`);
+});
+
+test("anchorPopover stacks below (else above) when neither side fits — never on the node", () => {
+  const base = {
+    viewport: { x: 0, y: 0, zoom: 1 },
+    container: { w: 1440, h: 900 },
+    size: { w: 380, h: 300 },
+    offset: { dx: 0, dy: 0 },
+    // a 696px window between glass panes: no room for 380px beside a centred node
+    insets: { top: 100, right: 490, bottom: 0, left: 254 },
+  };
+  const node = { x: 520, y: 200, w: 160, h: 50 };
+  const below = anchorPopover({ ...base, target: node });
+  assert.ok(below.top >= node.y + node.h, `below: top ${below.top} overlaps the node`);
+  // near the bottom of the window it goes above instead
+  const low = { ...node, y: 700 };
+  const above = anchorPopover({ ...base, target: low });
+  assert.ok(above.top + 300 <= low.y, `above: bottom ${above.top + 300} overlaps the node`);
+});
+
+test("a card too tall to stack whole is capped to the room below the node (it scrolls)", () => {
+  const r = anchorPopover({
+    viewport: { x: 0, y: 0, zoom: 1 },
+    container: { w: 1440, h: 900 },
+    size: { w: 380, h: 760 }, // an agent / loop form at its cap
+    offset: { dx: 0, dy: 0 },
+    insets: { top: 100, right: 490, bottom: 0, left: 254 },
+    target: { x: 520, y: 300, w: 160, h: 50 },
+  });
+  assert.ok(r.maxHeight !== undefined && r.maxHeight >= 200, `maxHeight ${r.maxHeight}`);
+  assert.ok(r.top >= 350, `top ${r.top} overlaps the node`);
+  assert.ok(r.top + (r.maxHeight ?? 0) <= 900 - ANCHOR_MARGIN);
+});

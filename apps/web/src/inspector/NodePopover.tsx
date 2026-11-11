@@ -19,6 +19,7 @@ import { useReactFlow, useStore, useViewport } from "@xyflow/react";
 import { useIRStore } from "../store/irStore.ts";
 import { selectActiveGraph } from "../store/subgraph.ts";
 import { useUIStore } from "../layout/uiStore.ts";
+import { useCanvasInsets } from "../layout/canvasInsetsStore.ts";
 import { popIn } from "../anim/presets.ts";
 import { Inspector } from "./Inspector.tsx";
 import { anchorPopover, fitHeight, midpointTarget } from "./popoverAnchor.ts";
@@ -44,6 +45,8 @@ export function NodePopover() {
   const viewport = useViewport();
   const containerW = useStore((s) => s.width);
   const containerH = useStore((s) => s.height);
+  // Glass chrome covers the canvas edges (ADR-0062) — stay in the window.
+  const insets = useCanvasInsets((s) => s.insets);
   const { getInternalNode } = useReactFlow();
 
   const [offset, setOffset] = useState({ dx: 0, dy: 0 });
@@ -123,12 +126,13 @@ export function NodePopover() {
 
   // A selection can briefly outlive the node it points at (sub-graph swap,
   // a delete). Nothing to anchor to, so nothing to show.
-  const { left, top, side } = anchorPopover({
+  const { left, top, side, maxHeight: roomH } = anchorPopover({
     target: target ?? { x: 0, y: 0, w: 0, h: 0 },
     viewport,
     container: { w: containerW, h: containerH },
     size: { w: size.w, h: measuredH },
     offset,
+    insets,
   });
 
   return (
@@ -137,9 +141,9 @@ export function NodePopover() {
       <m.div
         ref={cardRef}
         key="node-popover"
-        className="node-popover nowheel nopan nodrag"
+        className="node-popover glass-surface glass-surface--strong nowheel nopan nodrag"
         data-side={side}
-        style={{ left, top, width: size.w, maxHeight: fitHeight(size.h, containerH) }}
+        style={{ left, top, width: size.w, maxHeight: Math.min(fitHeight(size.h, containerH - insets.top - insets.bottom), roomH ?? Infinity) }}
         variants={popIn}
         initial="hidden"
         animate="show"

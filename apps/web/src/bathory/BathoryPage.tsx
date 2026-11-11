@@ -47,7 +47,7 @@ export function BathoryPage() {
           <h1 className="bathory-page__title">Bathory</h1>
         </m.header>
 
-        <m.section className="bathory-card" variants={paneItem}>
+        <m.section className="bathory-card glass-surface" variants={paneItem}>
           <h2>Free and browser-only, by design</h2>
           <p>
             Everything runs client-side: validation, code generation, the live
@@ -59,7 +59,7 @@ export function BathoryPage() {
           </p>
         </m.section>
 
-        <m.section className="bathory-card" variants={paneItem}>
+        <m.section className="bathory-card glass-surface" variants={paneItem}>
           <h2>The theme — greyscale sleeves, one violent red</h2>
           <p>
             The wallpaper behind this page is a reel of late-1980s extreme-metal
@@ -75,7 +75,7 @@ export function BathoryPage() {
           </p>
         </m.section>
 
-        <m.section className="bathory-card" variants={paneItem}>
+        <m.section className="bathory-card glass-surface" variants={paneItem}>
           <h2>The band</h2>
           <p>
             <a
@@ -96,7 +96,7 @@ export function BathoryPage() {
           </p>
         </m.section>
 
-        <m.section className="bathory-card" variants={paneItem}>
+        <m.section className="bathory-card glass-surface" variants={paneItem}>
           <h2>The principles</h2>
           <p>
             Quorthon stood for staunch individualism and anti-authoritarianism.

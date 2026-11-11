@@ -80,6 +80,19 @@
   /* drafting grid in bone, barely-there */
   --shell-grid-line: rgba(216, 211, 195, 0.03);
 
+  /* glass (ADR-0061): smoked, near-monochrome, no white sheen */
+  --glass-alpha: 3%;
+  --glass-alpha-strong: 6%;
+  --glass-field-alpha: 8%;
+  --glass-blur: 3px;
+  --glass-pane-alpha: 5%;
+  --glass-pane-blur: 3px;
+  --glass-saturate: 1.1;
+  --glass-border: rgba(216, 211, 195, 0.2);
+  --glass-highlight: inset 0 1px 0 rgba(216, 211, 195, 0.18),
+    inset 0 0 0 1px rgba(216, 211, 195, 0.08);
+  --glass-shadow: var(--shadow-pop);
+
   /* landing hover hues lifted to read on near-black */
   --landing-red: #ef5a3c;
   --landing-blue: #7e9fe2;

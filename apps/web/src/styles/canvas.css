@@ -15,14 +15,29 @@
   pointer-events: none;
   z-index: 4;
 }
+/* centring layer for the glass card (it fades/rises; the card is centred) */
+.canvas-empty__layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  container-type: size; /* the card sizes in cqw/cqh in both renderers */
+}
+/* surface (background, blur, shadow) comes from the glass renderer —
+   .glass-surface or <LiquidGlass> (ADR-0061) */
 .canvas-empty__card {
   pointer-events: none;
-  max-width: 380px;
+  box-sizing: border-box;
+  /* container units, not %: inside <LiquidGlass> the parent shrink-wraps, so a
+     percentage would resolve against the card itself */
+  width: min(380px, 100cqw - 32px);
+  max-height: calc(100cqh - 32px);
+  overflow: auto;
   padding: 22px 24px;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--glass-border);
   border-radius: var(--r-lg);
-  background: var(--paper-raised);
-  box-shadow: var(--shadow-pop);
 }
 .canvas-empty__title {
   font-family: var(--font-display);
@@ -285,12 +300,14 @@ button.subgraph-breadcrumb__segment:focus-visible {
   border: 1px solid var(--line-strong);
 }
 .react-flow__controls-button {
-  background: var(--paper-raised);
+  background: transparent; /* the panel is .glass-surface (ADR-0061) */
   border-bottom: 1px solid var(--line);
   color: var(--ink);
   width: 26px; height: 26px;
 }
-.react-flow__controls-button:hover { background: var(--paper-sunken); }
+.react-flow__controls-button:hover {
+  background: color-mix(in srgb, var(--paper-sunken) 60%, transparent);
+}
 .react-flow__controls-button svg { fill: var(--ink-soft); }
 .react-flow__attribution {
   background: transparent;

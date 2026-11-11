@@ -100,8 +100,8 @@
   text-shadow: var(--wordmark-glow, none);
 }
 
+/* surface is .glass-surface over the wallpaper (ADR-0061) */
 .bathory-card {
-  background: rgba(11, 11, 13, 0.66);
   border: 1px solid var(--line);
   border-left: 2px solid var(--accent);
   border-radius: var(--r-md);

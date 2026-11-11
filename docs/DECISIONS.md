@@ -3050,3 +3050,319 @@ enter, hidden on leave; dropping the BRD pipeline IR loads it **valid**; a `.zip
 JSON show the error banner and keep the graph; a well-shaped invalid IR loads with the findings
 banner; a palette Agent drag still adds a node; a file dropped on an open body editor loads the
 IR and leaves the editor text alone; Load IR still works; no console errors.
+
+## ADR-0061 — Liquid glass: `liquid-glass-react` on the centred cards, a CSS glass material elsewhere
+**Context.** We wanted a liquid-glass look in the builder using `liquid-glass-react@1.1.1`. Its built
+source sets the limits:
+- each `<LiquidGlass>` renders five sibling layers, all at `top/left: 50%` with
+  `translate(-50%,-50%)`, so it suits centred floating cards and breaks inline layout;
+- it measures its size only on mount and window resize;
+- it re-renders on every mousemove;
+- it forces `font: 500 20px system-ui` and a text shadow on its content;
+- its light-background ("overLight") tint layers use Tailwind classes, and this repo has none;
+- refraction renders only in Chromium.
+
+Glass also needs busy content behind it, and the toolbar sits on a flat background.
+**Decisions.**
+- **Hybrid scope.**
+  - The real `<LiquidGlass>` goes only on the two centred floating cards, the canvas empty state and the IR
+    drop card (`GlassOverlayCard`).
+  - A CSS `.glass-surface` material goes on the node popover (`--strong`, plus a frosted sticky
+    `.form-head`), the React Flow controls and the Bathory page cards. It is also the fallback for the
+    centred cards.
+  - The toolbar is unchanged.
+- **Chromium only for the package.** `isChromiumBrands(navigator.userAgentData.brands)` decides. Safari may
+  reject the package's `backdrop-filter … url(#…)` declaration whole, and Firefox gets no displacement,
+  so both get the CSS material.
+- **The OS is the off switch, with no UI toggle.**
+  - Under `prefers-reduced-transparency` the cards use the CSS renderer, and `.glass-surface` and
+    `.form-head` go solid.
+  - Under `prefers-reduced-motion`, `elasticity` is 0.
+  - `@supports (backdrop-filter)` gates the material, so the default is the old solid surface.
+- **Centring rule.**
+  - The card's parent is an inset-0 flex layer.
+  - In the liquid branch, an inset-0 `.lg-host` holds `<LiquidGlass style={{position:"absolute",
+    top:"50%", left:"50%"}}>`.
+  - Inside the glass, cards size with `cqw`/`cqh`: the host and layers are `container-type: size`. A
+    percentage would resolve against the shrink-wrapped glass and overflow a narrow canvas.
+- **Remount, don't resize.** The package keeps a stale `glassSize`, so the `key` is
+  `remountKey(theme, fontEpoch)`: theme switches and late web-font loads remount it. A synthetic
+  window `resize` would wake every resize listener in the app.
+- **Taming the package, scoped to `.lg-host`.**
+  - The overLight tint layers (`> .bg-black`) are hidden; tuned for photos, they read as a grey slab
+    on paper even when faint. `overLight` (set for light themes) still gives heavier frosting and
+    gentler displacement.
+  - The inline overLight shadow (`0 16px 70px rgba(0,0,0,.75)`) greyed the whole canvas. It is
+    overridden with `--glass-shadow`, the file's only `!important`.
+  - **The package's two edge-highlight spans are hidden (`.lg-host > span`).** They use
+    `mix-blend-mode`, which makes Chrome isolate the nearest stacking context: `.canvas-empty`
+    (z-index 4) or `.ir-drop` (z-index 1000). That isolated group becomes the glass's backdrop root,
+    so the blur and refraction saw only the overlay and never the canvas, and the card rendered as
+    a flat tint. The package's demo sits on `<body>`, where the group is the whole page.
+    `.lg-content` carries our own rim highlight instead.
+  - `.lg-content` sets our font and colour and `text-shadow: none`, with a light tint
+    (`--glass-alpha − 10%`). The package's ~15px frost keeps text readable; paint doesn't have to.
+- **Tokens hold plain values; mixing happens at the point of use.**
+  - `--glass-alpha/-strong/-blur/-saturate/-border/-highlight/-shadow` are defined per theme.
+  - `color-mix(var(--paper-raised) var(--glass-alpha), transparent)` lives in the rule, because the
+    Bathory page sets its own `data-theme` and would otherwise inherit a pre-mixed Vellum colour.
+- **Corner radius.** `cornerRadius` is a number, so `GLASS_RADIUS` mirrors `--r-lg` per theme (11 / 2),
+  and a test parses the CSS to keep them in sync.
+- **Two accepted trade-offs.**
+  - The `backdrop-filter: blur(2px)` on `.ir-drop` is removed. It made the overlay the backdrop root, so
+    the card could only bend the overlay's tint.
+  - During fades, glass looks flat: an ancestor with opacity below 1 is a backdrop root. Both cards
+    fade in briefly.
+
+**Tests.** `apps/web/test/glassConfig.test.ts`:
+- `GLASS_RADIUS` matches `--r-lg` in both theme files;
+- `overLight` follows `colorScheme`;
+- elasticity is 0 under reduced motion and on the drop card;
+- the `chooseRenderer` matrix;
+- `isChromiumBrands`;
+- `remountKey`;
+- `glass.css` keeps its `@supports` gate, the reduced-transparency block and the hidden tint layers.
+
+**Verification.** Browser (dev server, 1024 and 1440 widths, both themes):
+- **Empty state:**
+  - the card is liquid glass and centred to the pixel;
+  - it wobbles toward the cursor anywhere over the canvas (`mouseContainer` = `.canvas-drop`);
+  - clicks pass through to the pane, and the example buttons work (a real click loaded City time);
+  - a theme switch remounts it with 2px corners.
+- **Drop card:** liquid glass, 520px, with the popover behind it refracted.
+- **Popover, header and controls:** translucent and blurred, and the Bathory popover keeps its accent glow.
+- **Bathory page:** frosted cards over the wallpaper, with the accent left border kept.
+- **OS settings:** with `matchMedia` stubbed, reduced motion means no wobble and reduced transparency
+  means the CSS renderer; liquid returns when the stub is removed.
+- **Console:** no errors.
+
+**Follow-up: the first tuning was invisible.** It used 66–84% tint, and the blend-span backdrop
+root above was not yet fixed. Opened from `file://` in Chrome, the card read as a plain white card.
+- Re-tuned to 40% (Vellum) and 38% (Bathory) tint for `.glass-surface`, and 62% / 60% for the popover.
+- Blur raised to 20 / 18px, saturation to 1.7 (Vellum), with a brighter rim.
+- Liquid displacement raised to 70 (empty state) and 80 (drop card).
+- Re-verified from `file://` in Chrome 157: grid and nodes blur behind the card, popover and controls in
+  both themes.
+
+**Second follow-up: lower opacity, maximum distortion (by request).**
+- **Tint:** `.glass-surface` is now 22% in both themes, the popover 42% / 44%, and `.lg-content` about 10%.
+- **Liquid cards:** `mode: "prominent"` (the strongest stable map; `"shader"` is documented as unstable),
+  with an effective `displacementScale` of 200 (`MAX_DISPLACEMENT`; the package default is 70 and has no
+  hard cap).
+- **overLight compensation:** the package halves displacement when `overLight` is set, so `liquidProps`
+  doubles it for light themes and both themes bend alike. A test pins the effective value.
+- **Chromatic aberration** stays at the package default of 2 (now 0, see below). At 10, the channels are
+  sampled 200–400px apart and a dark node behind the card smears into yellow, magenta and cyan bands,
+  which reads as a rendering glitch.
+- **Known cost:** at this strength a dark node directly behind the card is pulled about 200px into a
+  smeared lens and can obscure a line of the card's copy. Checked from `file://` in Chrome.
+
+**Third follow-up: near-clear glass (by request).**
+- **Tokens:** `--glass-alpha` is 4% (Vellum) / 6% (Bathory), `--glass-alpha-strong` 8% / 12%, and
+  `--glass-blur` 4px.
+- **Fields:** a new `--glass-field-alpha` (22% / 30%) makes the popover's inputs, selects, buttons,
+  signature strip and grip translucent. Solid fields read as a slab over clear glass. They return to
+  solid under reduced transparency.
+- **No frost:** `overLight` is now off in every theme, because it forces at least 12px of frost and
+  halves the displacement, so the light-theme doubling is gone. `blurAmount` is 0, which leaves the
+  package's 4px base blur.
+- **Chromatic aberration is 0.** With the frost gone, even the default 2 showed as a rainbow band at
+  displacement 200. At 0 all channels move together, so the max distortion reads as bent glass.
+- **Known cost:** a dark node directly behind the card is stretched into a lens that can cross a line
+  of copy.
+
+`npm test` (44 + 360 + 185) and `test:web:app` (16) pass. The `vite preview` of the bundle renders the
+liquid card. **Bundle:** `docs/index.html` goes from 405.8 KB to 440.3 KB gzipped (+34.5 KB, mostly the
+package's embedded displacement maps).
+
+## ADR-0062 — Glass workbench: the canvas runs full-bleed under a glass top bar and panes
+**Context.** We wanted the clear-glass look (ADR-0061) on the whole left sidebar, the right sidebar
+and the top bar. Glass only reads when something sits behind it. The workbench (ADR-0044) laid the
+panes *beside* the canvas, over a flat shell background.
+
+We also asked for "no stretching": the max-strength liquid displacement smeared dark nodes across
+the empty-state card's copy.
+
+**Decisions.**
+- **The canvas sits behind everything.** `<Canvas/>` mounts in `.canvas-backdrop`, absolutely
+  positioned at inset 0 and z-index 0, behind `.shell-top` (z 2) and the `.app` row (z 1).
+  - The row keeps its flex layout (ADR-0044 widths, resize and collapse), but only the panes and
+    resize handles take the pointer.
+  - The middle column is `CanvasWindow`, a pointer-transparent hole that the canvas shows and works
+    through.
+  - The "Canvas" header and the breadcrumb stay interactive.
+- **Everything is placed in the visible window.**
+  - `CanvasWindow` measures the hole (ResizeObserver on both boxes, plus `transitionend` for the
+    animated pane widths). It publishes `Insets` to `useCanvasInsets`, which is session-only and
+    never persisted.
+  - `Canvas.tsx` sets `--vis-*` on `.canvas-drop`. CSS then moves the React Flow panels (Controls,
+    attribution) and the empty-state layers inside the hole.
+  - `anchorPopover` takes the insets, so the popover flips and clamps inside the window, and
+    `fitHeight` uses the visible height.
+  - Fit-view uses `fitPadding(insets)`, i.e. per-side px padding (React Flow 12 `Padding`). Focus-on-
+    finding uses `visibleCenterTarget`, so the node lands mid-window, not mid-container.
+  - The popover therefore never goes under a pane, so no portal or z-index juggling is needed.
+- **Chrome glass.**
+  - `.topbar`, `.pane--side`, the canvas header and the breadcrumb get `--glass-pane-alpha` (8% Vellum
+    / 12% Bathory) with a 4px blur, the same blur as the popover. At 8px the grid and node outlines
+    under the panes vanished and the panes read as flat tint.
+  - Sticky pane headers frost what scrolls under them. Collapsed rails are transparent.
+  - Solid under reduced transparency, and solid without `backdrop-filter`.
+- **Everything inside the chrome goes glassy, via token scoping.**
+  - Each glass container captures its solid `--paper`, `--paper-raised`, `--paper-sunken` and
+    `--code-bg` as `--glass-src-*`.
+  - Its children redefine those tokens as `color-mix` translucents (`--glass-field-alpha`; the code
+    slab 62%).
+  - Palette items, schema and tool cards, fields, buttons and the Preview code turn to glass without
+    touching their own rules. It takes two levels because a custom property can't reference
+    itself.
+  - Reduced transparency points the tokens back at the captured solids.
+- **Liquid cards: subtle edge bend only.** `EDGE_DISPLACEMENT` 30 with the `"standard"` map, and
+  chromatic aberration 0. The background bends near the card edges and nothing is stretched across
+  the copy.
+- **A little less tint everywhere.** `--glass-alpha` 4% / 6%, `--glass-alpha-strong` 8% / 10%,
+  `--glass-field-alpha` 12% / 16%.
+
+**Tests.**
+- `test/canvasInsets.test.ts`: `computeInsets` rounding and clamping, `fitPadding`,
+  `visibleCenterTarget`, `sameInsets`.
+- `popoverAnchor.test.ts`: the card is clamped clear of both pane insets and flips left near the
+  right pane.
+- `glassConfig.test.ts`: the edge bend stays at or below 40, with no colour split, on the standard map.
+
+**Verification.**
+- From `file://` in Chrome 157, mid-iteration:
+  - the React Flow canvas renders inside `.canvas-backdrop`;
+  - measured insets were 99 / 490 / 0 / 246 px, and the zoom controls sat inside the window
+    (x 261 > the pane edge at 240);
+  - panes, the top bar and their contents computed translucent with backdrop blur;
+  - nodes panned under the top bar showed through it.
+- The final tint values (this ADR's numbers) were rebuilt but not re-screenshotted.
+
+`npm test` (44 + 360 + 190) and `test:web:app` (16) pass.
+
+**Follow-up (by request): "I can't see the canvas even a little."**
+- **Tints near clear.** Vellum / Bathory values:
+
+  | Token | Vellum | Bathory |
+  |---|---|---|
+  | `--glass-pane-alpha` | 3% | 5% |
+  | `--glass-field-alpha` | 6% | 8% |
+  | `--glass-alpha` | 2% | 3% |
+  | `--glass-alpha-strong` | 5% | 6% |
+
+- **Blur:** both blurs are 3px.
+- **Code slab:** the Preview code slab drops to 55%, its floor. The code is light-on-dark, and below
+  roughly 55% over light paper it stops being readable.
+- **Checked from `file://`:** nodes under the Build pane, under the code slab and under the top bar
+  show as smudges.
+
+## ADR-0063 — Canvas nodes are liquid glass: low tint, high distortion
+**Context.** With the glass workbench in place (ADR-0062), we asked for the liquid effect on the
+canvas nodes as well, with "low opacity but high distortion".
+
+**Decisions.**
+- **A glass layer behind the text, not around the node.**
+  - `NodeGlass` renders as the first child of the `.ir-node` card: an inset-0, pointer-transparent
+    `.lg-host` holding `<LiquidGlass>` centred on the card.
+  - Its only child is an empty `.lg-fill` sized with `100cqw` / `100cqh` (the host is
+    `container-type: size`), so the glass is exactly the card's box.
+  - The name and type lines sit above it (`position: relative; z-index: 1`).
+  - Handles, React Flow's node measurement, drag, selection and connection are untouched. Putting
+    the content *inside* the package's elastic transform would move the handles off their measured
+    positions.
+- **The card itself is clear.**
+  - In the liquid branch `.ir-node--liquid` has a transparent background and **no backdrop-filter**,
+    which would make the card the backdrop root of its own glass.
+  - The tint lives on `.lg-fill` (`--glass-node-alpha`: 10% Vellum / 14% Bathory).
+  - Border, type stripe, shadow and the selected ring stay. The package's `.glass` shadow is off for
+    nodes.
+- **High distortion.** The `node` surface uses `NODE_DISPLACEMENT` 120 with the `"prominent"` map.
+  Aberration is 0 (no rainbow fringe without frost), `overLight` is off and `blurAmount` is 0.
+  Nodes carry only a name and a type, so they can bend hard where the cards could not (ADR-0061).
+- **Wobble from the card.** `mouseContainer` is the `.ir-node` element, because the host ignores the
+  pointer. Elasticity is 0.1, and 0 under reduced motion.
+- **Corners.** `cornerRadius` uses `NODE_RADIUS`, which mirrors `--r-md` (7 / 1). A test parses the
+  CSS to keep it in sync.
+- **Shared renderer decision.** `useGlassEnv()` (renderer, theme, reduced motion, font epoch) is shared
+  by `GlassOverlayCard` and `IRNode`.
+  - Non-Chromium browsers get a CSS fallback: a low-tint, frosted `.ir-node`.
+  - Under reduced transparency the card is solid again.
+- **Cost.** Each node carries its own SVG filter and listens for mousemove only on itself. That is
+  fine at example scale (8 nodes); revisit if graphs grow to hundreds of nodes.
+
+**Tests.** `glassConfig.test.ts`:
+- `NODE_RADIUS` matches `--r-md` in both themes;
+- the node preset is high distortion (≥ 100), prominent, with no colour split and no overLight, and
+  its wobble yields to reduced motion;
+- `.ir-node--liquid` keeps `backdrop-filter: none`, and `--glass-node-alpha` exists in both themes.
+
+**Verification.** From `file://` in Chrome 157, on the Showcase example:
+- all 8 nodes render liquid; `.lg-fill` is 104×36 in a 107×37 card; the card background is clear;
+  the displacement scale is −120;
+- with `classify` dragged half over `refine_loop`, the covered part of `refine_loop` is visibly
+  displaced through `classify`, in both themes;
+- Bathory corners are 1px; no console errors.
+
+`npm test` (44 + 360 + 193) and `test:web:app` (16) pass.
+
+**Follow-up (by request): less tint, less distortion.**
+- `--glass-node-alpha` is now 4% (Vellum) / 6% (Bathory).
+- `NODE_DISPLACEMENT` is 60, still on the prominent map. That is still a visible lens, above the
+  cards' edge bend of 30.
+- The test now bounds the value between 30 and 100.
+- Confirmed from `file://` that the bundle serves scale −60 and a 4% fill.
+
+**Fix: node glass vanished, and went cloudy on click (both reported).**
+- **Vanishing.** The package's filter shifts each pixel by up to ±scale/2 and samples the glass layer's
+  *own* backdrop image there. A node is about 50px tall, so at 60–120 most samples fell outside the
+  layer and came back empty.
+  - The glass showed for a frame, before the displacement map decoded, and then disappeared.
+  - A red-tint probe confirmed it: the warp layer covered the whole card, but only a top strip
+    survived the filter.
+  - Now the node glass bleeds `NODE_GLASS_BLEED` (12px) past the card inside a `.lg-clip` wrapper
+    that clips to the card, and `NODE_DISPLACEMENT` is `2 × bleed` (24), so every sample lands on
+    real backdrop.
+  - Tests tie the CSS `--node-glass-bleed` to the constant, and require `scale/2 ≤ bleed`.
+  - `.lg-host svg` is also pinned to 100% of the glass box. The package sizes it from
+    `getBoundingClientRect`, which is zoom-scaled inside React Flow.
+- **Cloudy on click.** The glass samples everything painted before it, including the card's own
+  border, shadow and selection ring. A selected node (accent ring, `--shadow-pop`) therefore went
+  cloudy and opaque.
+  - On liquid cards the border, shadow and ring are now drawn by `.ir-node--liquid::after`, above
+    the glass (z 2). The card keeps transparent borders, so the layout is unchanged.
+- **Remount on click.** Opening the popover loads the editor font, which bumped the font epoch and
+  remounted every node's glass, so it flashed. `NodeGlass` no longer uses a remount key: its SVG is
+  pinned by CSS and its props update in place.
+- **Popover over its own node.** In a narrow window between glass panes neither side fits, and the
+  clamp parked the card on top of the node.
+  - `anchorPopover` now stacks it below the node, else above, capped to the room there with
+    `maxHeight`, so the form scrolls inside.
+  - The cap is always set when stacked, so the measured height can't oscillate. It overlaps the
+    node only when both sides are under `MIN_STACK_HEIGHT` (200).
+- **Verified from `file://` (Chrome):**
+  - all cards fill completely 3s after load, at zoom 0.72 (red probe);
+  - clicking `refine_loop` keeps its filter id (no remount);
+  - the card computes `box-shadow: none` and transparent borders, with the ring and border on
+    `::after`;
+  - the selected node looks as clear as its neighbours;
+  - the popover sits below the node with no overlap, at a stable 351px height across frames.
+- `npm test` (44 + 360 + 196) and `test:web:app` (16) pass.
+
+## ADR-0063 — reverted: canvas nodes are plain cards again
+**Context.** The liquid-glass node cards from ADR-0063 were removed by restoring `apps/web/src/glass/`
+to its ADR-0062 state (`NodeGlass.tsx` and `useGlassEnv.ts` deleted, `glassConfig.ts` and
+`GlassOverlayCard.tsx` reverted). `IRNode.tsx`, `glass.css`, the tokens and the tests still used the
+removed code, so `vite build` failed (`Could not resolve "../glass/NodeGlass.tsx"`) and
+`glassConfig.test.ts` failed to load (`NODE_DISPLACEMENT` not exported).
+**Decision.** Finish the removal.
+- **Removed:** `IRNode.tsx` back to its ADR-0062 form; the node-glass rules in `glass.css` (the
+  `.lg-host svg` zoom pin, `.lg-clip`/`.lg-host--node`/`.lg-fill`, the `.ir-node--liquid` border
+  layer, the CSS node fallback and its reduced-transparency reset); `--glass-node-alpha` in both
+  themes; the four node tests.
+- **Kept:** the popover's stack below/above placement (from the same commit series). It is a
+  general fix for a narrow visible window between glass panes (ADR-0062), not node glass.
+- **Kept:** the near-clear chrome values from `6127bf2`.
+
+**Verification.** `npm run build:pages` builds. `npm test` (44 + 360 + 192) and `test:web:app` (16)
+pass.

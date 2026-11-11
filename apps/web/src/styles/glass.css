@@ -1,0 +1,212 @@
+/* ------------------------------------------------------------------ glass
+   Liquid glass (ADR-0061). Two renderers, one look:
+     .glass-surface  CSS material — popover, canvas controls, Bathory cards,
+                     and the fallback for the centred cards off Chromium.
+     .lg-host        host for liquid-glass-react's <LiquidGlass> on the
+                     centred floating cards (GlassOverlayCard.tsx).
+   OS is the off switch: solid under prefers-reduced-transparency.
+   Borders stay with each surface (accent edges, dashed drop outline);
+   surfaces that want the glass edge use var(--glass-border) themselves. */
+
+/* Solid by default: browsers without backdrop-filter get the old surface. */
+.glass-surface {
+  background: var(--paper-raised);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-surface {
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-alpha), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    box-shadow: var(--glass-highlight), var(--glass-shadow);
+  }
+  .glass-surface--strong {
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-alpha-strong), transparent);
+  }
+}
+
+/* ---- liquid-glass-react host ------------------------------------------- */
+
+/* <LiquidGlass> centres every layer on top/left 50% of this box. */
+.lg-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* <LiquidGlass> shrink-wraps its content from a 50% offset, so cards can't
+     size against this box with %; they use cqw/cqh against it instead. */
+  container-type: size;
+}
+
+/* Our content box inside the glass. The package sets an inline
+   `font: 500 20px/1 system-ui` + text-shadow on its wrapper; explicit values
+   here win over the inherited ones. A light tint keeps text contrast from
+   depending on what the displacement happens to bend underneath. */
+.lg-content {
+  font: 400 14px/1.45 var(--font-ui);
+  text-shadow: none;
+  color: var(--ink);
+  /* near-clear: the glass bends what's behind; the tint is a whisper */
+  background: color-mix(in srgb, var(--paper-raised) var(--glass-alpha), transparent);
+  box-shadow: var(--glass-highlight);
+}
+
+/* The package's overLight shadow (0 16px 70px rgba(0,0,0,.75)) is inline and
+   tuned for photos; on paper it greys the whole canvas. Our token instead —
+   the one !important in this file, scoped to the host. */
+.lg-host .glass { box-shadow: var(--glass-shadow) !important; }
+.lg-content button { pointer-events: auto; }
+
+/* The package's two "overLight" tint layers (black, flat + overlay-blended)
+   are styled with Tailwind utility classes this repo doesn't have, and are
+   tuned for glass over photos — over warm paper even a faint version reads as
+   a grey slab. Hide them; `overLight` still sets the package's heavier
+   frosting and gentler displacement for light themes. Scoped to the host. */
+.lg-host > .bg-black { display: none; }
+
+/* The package's two edge-highlight spans use mix-blend-mode. Blending makes
+   Chrome isolate the nearest stacking context — here the overlay layer
+   (.canvas-empty z-index 4, .ir-drop z-index 1000) — and that isolated group
+   becomes the glass's backdrop root: the blur/refraction then sees only the
+   overlay itself, never the canvas behind, and the card renders as a flat
+   tint. (The package's demo sits on <body>, where the group is the page.)
+   Hide them; .lg-content carries our own rim highlight instead. */
+.lg-host > span { display: none; }
+
+/* Form chrome inside the glass popover: solid fields would read as a white
+   slab over clear glass, so they take a light tint of their own. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .node-popover.glass-surface input,
+  .node-popover.glass-surface select,
+  .node-popover.glass-surface textarea,
+  .node-popover.glass-surface button {
+    background: color-mix(in srgb, var(--paper) var(--glass-field-alpha), transparent);
+  }
+  .node-popover.glass-surface .body-editor__sig {
+    background: color-mix(in srgb, var(--paper-sunken) var(--glass-field-alpha), transparent);
+  }
+}
+
+/* ---- glass workbench (ADR-0062) -------------------------------------------
+   The canvas is mounted full-bleed behind everything (.canvas-backdrop); the
+   top bar and the pane row float over it. The row keeps its flex layout, but
+   only the panes and resize handles take the pointer — the middle column
+   (.canvas-window) is a hole the canvas shows and works through. */
+
+.canvas-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell-top {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+}
+.app {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.app > * { pointer-events: auto; }
+.app > .pane--canvas { pointer-events: none; }
+.pane--canvas > header,
+.pane--canvas > .subgraph-breadcrumb { pointer-events: auto; }
+.canvas-window {
+  flex: 1 1 auto;
+  min-height: 0;
+  pointer-events: none;
+}
+
+/* Canvas overlays stay inside the visible window (insets set inline on
+   .canvas-drop by Canvas.tsx from the measured CanvasWindow). */
+.canvas-drop .react-flow__panel.left { left: var(--vis-left, 0px); }
+.canvas-drop .react-flow__panel.right { right: var(--vis-right, 0px); }
+.canvas-drop .react-flow__panel.top { top: var(--vis-top, 0px); }
+.canvas-drop .react-flow__panel.bottom { bottom: var(--vis-bottom, 0px); }
+.canvas-drop > .canvas-empty,
+.canvas-drop > .canvas-empty-subgraph {
+  inset: var(--vis-top, 0px) var(--vis-right, 0px) var(--vis-bottom, 0px) var(--vis-left, 0px);
+}
+
+/* Chrome glass. Solid by default (no backdrop-filter → the old surfaces). */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar,
+  .pane--side,
+  .pane--canvas > header,
+  .pane--canvas > .subgraph-breadcrumb {
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-pane-alpha), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-pane-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-pane-blur)) saturate(var(--glass-saturate));
+  }
+  /* Everything inside the chrome goes glassy too. Each glass container
+     captures its theme's solid surface colours, and its children redefine
+     the surface tokens as translucent mixes of them — so palette items,
+     schema cards, fields, buttons and the code slab all turn to glass without
+     touching their own rules. (Two levels because a custom property can't
+     reference itself: --paper-raised: color-mix(var(--paper-raised) …) would
+     be a cycle.) */
+  .pane--side,
+  .topbar {
+    --glass-src-paper: var(--paper);
+    --glass-src-raised: var(--paper-raised);
+    --glass-src-sunken: var(--paper-sunken);
+    --glass-src-code: var(--code-bg);
+  }
+  .pane--side > *,
+  .topbar > * {
+    --paper: color-mix(in srgb, var(--glass-src-paper) var(--glass-field-alpha), transparent);
+    --paper-raised: color-mix(in srgb, var(--glass-src-raised) var(--glass-field-alpha), transparent);
+    --paper-sunken: color-mix(in srgb, var(--glass-src-sunken) calc(var(--glass-field-alpha) + 14%), transparent);
+    /* code stays readable: dark glass, still the densest surface */
+    --code-bg: color-mix(in srgb, var(--glass-src-code) 55%, transparent);
+  }
+
+  /* inside a glass pane: its sticky header frosts what scrolls under it, and
+     the collapsed rail is just the pane's own glass */
+  .pane--side > header {
+    background: color-mix(in srgb, var(--glass-src-raised) var(--glass-alpha), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-pane-blur));
+    backdrop-filter: blur(var(--glass-pane-blur));
+  }
+  .pane-rail { background: transparent; }
+  .pane-rail:hover {
+    background: color-mix(in srgb, var(--paper-sunken) var(--glass-field-alpha), transparent);
+  }
+}
+
+/* ---- OS off switch ------------------------------------------------------ */
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-surface,
+  .glass-surface--strong {
+    background: var(--paper-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--shadow-pop);
+  }
+  .node-popover.glass-surface input,
+  .node-popover.glass-surface select,
+  .node-popover.glass-surface textarea,
+  .node-popover.glass-surface button { background: var(--paper); }
+  .node-popover.glass-surface .body-editor__sig { background: var(--paper-sunken); }
+  .topbar,
+  .pane--side,
+  .pane--side > header,
+  .pane--canvas > header,
+  .pane--canvas > .subgraph-breadcrumb {
+    background: var(--paper-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .pane-rail { background: var(--paper-raised); }
+  /* back to the captured solid surfaces inside the chrome */
+  .pane--side > *,
+  .topbar > * {
+    --paper: var(--glass-src-paper);
+    --paper-raised: var(--glass-src-raised);
+    --paper-sunken: var(--glass-src-sunken);
+    --code-bg: var(--glass-src-code);
+  }
+}

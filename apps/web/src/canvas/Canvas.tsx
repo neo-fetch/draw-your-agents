@@ -21,6 +21,8 @@ import { NODE_DND_MIME } from "../palette/Palette.tsx";
 import type { AddableNodeType } from "../store/addNode.ts";
 import { THEME_BY_ID } from "../theme/themes.ts";
 import { useThemeStore } from "../theme/themeStore.ts";
+import { useCanvasInsets } from "../layout/canvasInsetsStore.ts";
+import { fitPadding, visibleCenterTarget } from "../layout/canvasInsets.ts";
 
 const nodeTypes = { ir: IRNode, "ir-start": StartNode };
 
@@ -59,6 +61,11 @@ export function Canvas() {
   // projection below works unchanged at any depth.
   const graph = useIRStore(selectActiveGraph);
   const subgraphPath = useIRStore((s) => s.subgraphPath);
+  // The canvas sits full-bleed behind the glass panes (ADR-0062); fit/focus
+  // and the overlays work against the visible window inside it.
+  const insets = useCanvasInsets((s) => s.insets);
+  const insetsRef = useRef(insets);
+  insetsRef.current = insets;
   const enterSubgraph = useIRStore((s) => s.enterSubgraph);
   // Grid colors come from the theme registry, not CSS — React Flow's
   // <Background color> lands on SVG presentation attributes, which don't
@@ -103,7 +110,9 @@ export function Canvas() {
       }
       const cx = node.position.x + (node.measured?.width ?? 180) / 2;
       const cy = node.position.y + (node.measured?.height ?? 60) / 2;
-      void inst.setCenter(cx, cy, { duration: 300 });
+      const zoom = inst.getZoom();
+      const t = visibleCenterTarget({ x: cx, y: cy }, insetsRef.current, zoom);
+      void inst.setCenter(t.x, t.y, { duration: 300, zoom });
     };
     center(true);
   }, [focusRequest]);
@@ -114,7 +123,10 @@ export function Canvas() {
   // the *previous* graph. Best-effort, same posture as ADR-0043.
   useEffect(() => {
     requestAnimationFrame(() => {
-      void rfInstance.current?.fitView({ duration: 300 });
+      void rfInstance.current?.fitView({
+        duration: 300,
+        padding: fitPadding(insetsRef.current),
+      });
     });
   }, [subgraphPath]);
 
@@ -254,7 +266,19 @@ export function Canvas() {
   };
 
   return (
-    <div className="canvas-drop" onDragOver={onDragOver} onDrop={onDrop}>
+    <div
+      className="canvas-drop"
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      style={
+        {
+          "--vis-top": `${insets.top}px`,
+          "--vis-right": `${insets.right}px`,
+          "--vis-bottom": `${insets.bottom}px`,
+          "--vis-left": `${insets.left}px`,
+        } as React.CSSProperties
+      }
+    >
     <ReactFlow
       nodes={rfNodes}
       edges={rfEdges}
@@ -292,6 +316,7 @@ export function Canvas() {
       nodesConnectable={true}
       elementsSelectable
       fitView
+      fitViewOptions={{ padding: fitPadding(insets) }}
     >
       <Background
         id="grid-fine"
@@ -308,7 +333,8 @@ export function Canvas() {
         lineWidth={1.2}
         color={grid.coarse}
       />
-      <Controls />
+      {/* glass chrome over the canvas (ADR-0061) */}
+      <Controls className="glass-surface" />
       {/* The node/edge editor rides inside <ReactFlow> so it can read the
           viewport transform and anchor itself beside its target (ADR-0057). */}
       <NodePopover />
