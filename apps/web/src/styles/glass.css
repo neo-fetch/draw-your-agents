@@ -86,6 +86,96 @@
   }
 }
 
+/* ---- glass workbench (ADR-0062) -------------------------------------------
+   The canvas is mounted full-bleed behind everything (.canvas-backdrop); the
+   top bar and the pane row float over it. The row keeps its flex layout, but
+   only the panes and resize handles take the pointer — the middle column
+   (.canvas-window) is a hole the canvas shows and works through. */
+
+.canvas-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+}
+.shell-top {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+}
+.app {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+.app > * { pointer-events: auto; }
+.app > .pane--canvas { pointer-events: none; }
+.pane--canvas > header,
+.pane--canvas > .subgraph-breadcrumb { pointer-events: auto; }
+.canvas-window {
+  flex: 1 1 auto;
+  min-height: 0;
+  pointer-events: none;
+}
+
+/* Canvas overlays stay inside the visible window (insets set inline on
+   .canvas-drop by Canvas.tsx from the measured CanvasWindow). */
+.canvas-drop .react-flow__panel.left { left: var(--vis-left, 0px); }
+.canvas-drop .react-flow__panel.right { right: var(--vis-right, 0px); }
+.canvas-drop .react-flow__panel.top { top: var(--vis-top, 0px); }
+.canvas-drop .react-flow__panel.bottom { bottom: var(--vis-bottom, 0px); }
+.canvas-drop > .canvas-empty,
+.canvas-drop > .canvas-empty-subgraph {
+  inset: var(--vis-top, 0px) var(--vis-right, 0px) var(--vis-bottom, 0px) var(--vis-left, 0px);
+}
+
+/* Chrome glass. Solid by default (no backdrop-filter → the old surfaces). */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .topbar,
+  .pane--side,
+  .pane--canvas > header,
+  .pane--canvas > .subgraph-breadcrumb {
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-pane-alpha), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-pane-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-pane-blur)) saturate(var(--glass-saturate));
+  }
+  /* Everything inside the chrome goes glassy too. Each glass container
+     captures its theme's solid surface colours, and its children redefine
+     the surface tokens as translucent mixes of them — so palette items,
+     schema cards, fields, buttons and the code slab all turn to glass without
+     touching their own rules. (Two levels because a custom property can't
+     reference itself: --paper-raised: color-mix(var(--paper-raised) …) would
+     be a cycle.) */
+  .pane--side,
+  .topbar {
+    --glass-src-paper: var(--paper);
+    --glass-src-raised: var(--paper-raised);
+    --glass-src-sunken: var(--paper-sunken);
+    --glass-src-code: var(--code-bg);
+  }
+  .pane--side > *,
+  .topbar > * {
+    --paper: color-mix(in srgb, var(--glass-src-paper) var(--glass-field-alpha), transparent);
+    --paper-raised: color-mix(in srgb, var(--glass-src-raised) var(--glass-field-alpha), transparent);
+    --paper-sunken: color-mix(in srgb, var(--glass-src-sunken) calc(var(--glass-field-alpha) + 14%), transparent);
+    /* code stays readable: dark glass, still the densest surface */
+    --code-bg: color-mix(in srgb, var(--glass-src-code) 62%, transparent);
+  }
+
+  /* inside a glass pane: its sticky header frosts what scrolls under it, and
+     the collapsed rail is just the pane's own glass */
+  .pane--side > header {
+    background: color-mix(in srgb, var(--glass-src-raised) var(--glass-alpha), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-pane-blur));
+    backdrop-filter: blur(var(--glass-pane-blur));
+  }
+  .pane-rail { background: transparent; }
+  .pane-rail:hover {
+    background: color-mix(in srgb, var(--paper-sunken) var(--glass-field-alpha), transparent);
+  }
+}
+
 /* ---- OS off switch ------------------------------------------------------ */
 
 @media (prefers-reduced-transparency: reduce) {
@@ -101,4 +191,22 @@
   .node-popover.glass-surface textarea,
   .node-popover.glass-surface button { background: var(--paper); }
   .node-popover.glass-surface .body-editor__sig { background: var(--paper-sunken); }
+  .topbar,
+  .pane--side,
+  .pane--side > header,
+  .pane--canvas > header,
+  .pane--canvas > .subgraph-breadcrumb {
+    background: var(--paper-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .pane-rail { background: var(--paper-raised); }
+  /* back to the captured solid surfaces inside the chrome */
+  .pane--side > *,
+  .topbar > * {
+    --paper: var(--glass-src-paper);
+    --paper-raised: var(--glass-src-raised);
+    --paper-sunken: var(--glass-src-sunken);
+    --code-bg: var(--glass-src-code);
+  }
 }

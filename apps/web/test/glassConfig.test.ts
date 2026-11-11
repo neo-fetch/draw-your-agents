@@ -14,7 +14,7 @@ import { THEMES } from "../src/theme/themes.ts";
 import {
   chooseRenderer,
   GLASS_RADIUS,
-  MAX_DISPLACEMENT,
+  EDGE_DISPLACEMENT,
   isChromiumBrands,
   liquidProps,
   remountKey,
@@ -47,12 +47,14 @@ test("liquidProps: clear glass (overLight off, no extra frost) in every theme; r
   }
 });
 
-test("liquidProps: max distortion on both liquid surfaces in every theme", () => {
+test("liquidProps: subtle edge bend on both liquid surfaces, no colour split", () => {
   for (const t of THEMES) {
     for (const surface of ["emptyState", "dropCard"] as const) {
       const p = liquidProps(surface, t.id, { reducedMotion: false });
-      assert.strictEqual(p.displacementScale, MAX_DISPLACEMENT, `${surface}/${t.id}`);
-      assert.strictEqual(p.mode, "prominent");
+      assert.strictEqual(p.displacementScale, EDGE_DISPLACEMENT, `${surface}/${t.id}`);
+      assert.ok(EDGE_DISPLACEMENT <= 40, "edge bend must stay subtle (no stretching)");
+      assert.strictEqual(p.aberrationIntensity, 0);
+      assert.strictEqual(p.mode, "standard");
     }
   }
 });

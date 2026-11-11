@@ -82,9 +82,11 @@
 
   /* glass (ADR-0061): smoked, near-monochrome, no white sheen */
   --glass-alpha: 6%;
-  --glass-alpha-strong: 12%;
-  --glass-field-alpha: 30%;
+  --glass-alpha-strong: 10%;
+  --glass-field-alpha: 16%;
   --glass-blur: 4px;
+  --glass-pane-alpha: 12%;
+  --glass-pane-blur: 4px;
   --glass-saturate: 1.1;
   --glass-border: rgba(216, 211, 195, 0.2);
   --glass-highlight: inset 0 1px 0 rgba(216, 211, 195, 0.18),

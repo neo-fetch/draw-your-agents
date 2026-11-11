@@ -88,8 +88,12 @@
      page) re-resolves them instead of inheriting a pre-mixed color */
   --glass-alpha: 4%;
   --glass-alpha-strong: 8%;
-  --glass-field-alpha: 22%; /* form fields inside glass (popover) */
+  --glass-field-alpha: 12%; /* form fields inside glass (popover, panes) */
   --glass-blur: 4px;
+  /* chrome glass — top bar and side panes over the full-bleed canvas
+     (ADR-0062): a touch more body than the floating cards, dense UI on it */
+  --glass-pane-alpha: 8%;
+  --glass-pane-blur: 4px;
   --glass-saturate: 1.4;
   --glass-border: rgba(255, 255, 255, 0.75);
   /* bright top rim + a faint full rim: the edge is what reads as glass */

@@ -25,6 +25,11 @@ export interface AnchorInput {
   size: { w: number; h: number };
   /** User drag offset in px, applied on top of the anchored position. */
   offset: { dx: number; dy: number };
+  /**
+   * Parts of the container covered by glass chrome (ADR-0062): the popover
+   * flips and clamps within the visible window, never under a pane.
+   */
+  insets?: { top: number; right: number; bottom: number; left: number };
 }
 
 export interface AnchorResult {
@@ -53,28 +58,25 @@ export function anchorPopover({
   container,
   size,
   offset,
+  insets = { top: 0, right: 0, bottom: 0, left: 0 },
 }: AnchorInput): AnchorResult {
   const { zoom } = viewport;
+  const minX = insets.left + ANCHOR_MARGIN;
+  const maxRight = container.w - insets.right - ANCHOR_MARGIN;
+  const minY = insets.top + ANCHOR_MARGIN;
+  const maxBottom = container.h - insets.bottom - ANCHOR_MARGIN;
   const screenLeft = viewport.x + target.x * zoom;
   const screenTop = viewport.y + target.y * zoom;
   const screenRight = screenLeft + target.w * zoom;
 
   const rightLeft = screenRight + ANCHOR_GAP;
-  const fitsRight = rightLeft + size.w <= container.w - ANCHOR_MARGIN;
+  const fitsRight = rightLeft + size.w <= maxRight;
   const side: "right" | "left" = fitsRight ? "right" : "left";
   const left = fitsRight ? rightLeft : screenLeft - ANCHOR_GAP - size.w;
 
   return {
-    left: Math.round(
-      clamp(left + offset.dx, ANCHOR_MARGIN, container.w - size.w - ANCHOR_MARGIN),
-    ),
-    top: Math.round(
-      clamp(
-        screenTop + offset.dy,
-        ANCHOR_MARGIN,
-        container.h - size.h - ANCHOR_MARGIN,
-      ),
-    ),
+    left: Math.round(clamp(left + offset.dx, minX, maxRight - size.w)),
+    top: Math.round(clamp(screenTop + offset.dy, minY, maxBottom - size.h)),
     side,
   };
 }

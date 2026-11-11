@@ -129,3 +129,23 @@ test("midpointTarget is the zero-size midpoint of two node centers", () => {
   // centers: (50, 20) and (350, 230)
   assert.deepEqual(got, { x: 200, y: 125, w: 0, h: 0 });
 });
+
+// --- glass workbench (ADR-0062): stay inside the visible window ---
+
+test("anchorPopover clamps inside the insets, never under a glass pane", () => {
+  const base = {
+    viewport: { x: 0, y: 0, zoom: 1 },
+    container: { w: 1440, h: 900 },
+    size: { w: 380, h: 300 },
+    offset: { dx: 0, dy: 0 },
+    insets: { top: 100, right: 490, bottom: 0, left: 246 },
+  };
+  // a node tucked under the left pane: the card is pushed right of the pane
+  const left = anchorPopover({ ...base, target: { x: 0, y: 0, w: 100, h: 40 } });
+  assert.ok(left.left >= 246 + ANCHOR_MARGIN, `left ${left.left}`);
+  assert.ok(left.top >= 100 + ANCHOR_MARGIN, `top ${left.top}`);
+  // a node near the right pane: flips left and stays clear of the right inset
+  const right = anchorPopover({ ...base, target: { x: 800, y: 400, w: 100, h: 40 } });
+  assert.strictEqual(right.side, "left");
+  assert.ok(right.left + 380 <= 1440 - 490 - ANCHOR_MARGIN, `right edge ${right.left + 380}`);
+});

@@ -11,6 +11,7 @@ import { Toolbar } from "./toolbar/Toolbar.tsx";
 import { IRDropZone } from "./toolbar/IRDropZone.tsx";
 import { PaneResizeHandle } from "./layout/PaneResizeHandle.tsx";
 import { WorkPane } from "./layout/WorkPane.tsx";
+import { CanvasWindow } from "./layout/CanvasWindow.tsx";
 import { pageFade, paneItem, paneStagger } from "./anim/presets.ts";
 import { useTargetStore } from "./target/targetStore.ts";
 
@@ -26,6 +27,12 @@ import { useTargetStore } from "./target/targetStore.ts";
  * which always flexes to fill and never collapses. Node editing is not a
  * pane — it pops open on the canvas beside the selected node (ADR-0057).
  * A saved IR file can be dropped anywhere on it to load (ADR-0060).
+ *
+ * Glass workbench (ADR-0062): the canvas is mounted full-bleed *behind* the
+ * top bar and both panes (`.canvas-backdrop`), which float over it as glass.
+ * The flex row still lays the panes out; its middle column is a
+ * pointer-transparent `CanvasWindow` that measures the visible hole so the
+ * popover, controls, empty state and fit/focus stay inside it.
  */
 function Workbench() {
   return (
@@ -36,7 +43,12 @@ function Workbench() {
       animate="show"
       exit="exit"
     >
-      <Toolbar />
+      <div className="canvas-backdrop">
+        <Canvas />
+      </div>
+      <div className="shell-top">
+        <Toolbar />
+      </div>
       <IRDropZone />
       <m.div
         className="app"
@@ -64,7 +76,7 @@ function Workbench() {
         <m.section className="pane pane--canvas" variants={paneItem}>
           <header>Canvas</header>
           <SubgraphBreadcrumb />
-          <Canvas />
+          <CanvasWindow />
         </m.section>
         <PaneResizeHandle pane="preview" edge="start" />
         <WorkPane pane="preview" title="Preview" edge="end">

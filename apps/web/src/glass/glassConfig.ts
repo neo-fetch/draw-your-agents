@@ -58,23 +58,24 @@ export interface LiquidPropsOut {
 
 /**
  * Refraction strength. The package has no cap on `displacementScale` (it
- * scales the SVG displacement map directly; its default is 70).
+ * scales the SVG displacement map directly; its default is 70). Kept low with
+ * the "standard" map so only the edges bend — at full strength a dark node
+ * behind a card was stretched across its copy.
  */
-export const MAX_DISPLACEMENT = 200;
+export const EDGE_DISPLACEMENT = 30;
 
 type Preset = Pick<
   LiquidPropsOut,
   "displacementScale" | "blurAmount" | "saturation" | "aberrationIntensity" | "elasticity" | "mode"
 >;
 
-// Distortion at max: "prominent" is the package's strongest stable map
-// ("shader" is documented as unstable), full displacement, and a strong
-// chromatic split at the edges.
+// Subtle edge bend: the "standard" map at low strength, no chromatic split
+// (with no frost, any split shows as a rainbow fringe).
 const PRESETS: Readonly<Record<GlassSurface, Preset>> = {
   // Wobbles toward the cursor over the canvas.
-  emptyState: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.15, mode: "prominent" },
+  emptyState: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.15, mode: "standard" },
   // Static: no mousemove fires during an HTML5 drag, so elasticity is moot.
-  dropCard: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0, mode: "prominent" },
+  dropCard: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0, mode: "standard" },
 };
 
 export function liquidProps(

@@ -3174,3 +3174,69 @@ root above was not yet fixed. Opened from `file://` in Chrome, the card read as 
 `npm test` (44 + 360 + 185) and `test:web:app` (16) pass. The `vite preview` of the bundle renders the
 liquid card. **Bundle:** `docs/index.html` goes from 405.8 KB to 440.3 KB gzipped (+34.5 KB, mostly the
 package's embedded displacement maps).
+
+## ADR-0062 — Glass workbench: the canvas runs full-bleed under a glass top bar and panes
+**Context.** We wanted the clear-glass look (ADR-0061) on the whole left sidebar, the right sidebar
+and the top bar. Glass only reads when something sits behind it. The workbench (ADR-0044) laid the
+panes *beside* the canvas, over a flat shell background.
+
+We also asked for "no stretching": the max-strength liquid displacement smeared dark nodes across
+the empty-state card's copy.
+
+**Decisions.**
+- **The canvas sits behind everything.** `<Canvas/>` mounts in `.canvas-backdrop`, absolutely
+  positioned at inset 0 and z-index 0, behind `.shell-top` (z 2) and the `.app` row (z 1).
+  - The row keeps its flex layout (ADR-0044 widths, resize and collapse), but only the panes and
+    resize handles take the pointer.
+  - The middle column is `CanvasWindow`, a pointer-transparent hole that the canvas shows and works
+    through.
+  - The "Canvas" header and the breadcrumb stay interactive.
+- **Everything is placed in the visible window.**
+  - `CanvasWindow` measures the hole (ResizeObserver on both boxes, plus `transitionend` for the
+    animated pane widths). It publishes `Insets` to `useCanvasInsets`, which is session-only and
+    never persisted.
+  - `Canvas.tsx` sets `--vis-*` on `.canvas-drop`. CSS then moves the React Flow panels (Controls,
+    attribution) and the empty-state layers inside the hole.
+  - `anchorPopover` takes the insets, so the popover flips and clamps inside the window, and
+    `fitHeight` uses the visible height.
+  - Fit-view uses `fitPadding(insets)`, i.e. per-side px padding (React Flow 12 `Padding`). Focus-on-
+    finding uses `visibleCenterTarget`, so the node lands mid-window, not mid-container.
+  - The popover therefore never goes under a pane, so no portal or z-index juggling is needed.
+- **Chrome glass.**
+  - `.topbar`, `.pane--side`, the canvas header and the breadcrumb get `--glass-pane-alpha` (8% Vellum
+    / 12% Bathory) with a 4px blur, the same blur as the popover. At 8px the grid and node outlines
+    under the panes vanished and the panes read as flat tint.
+  - Sticky pane headers frost what scrolls under them. Collapsed rails are transparent.
+  - Solid under reduced transparency, and solid without `backdrop-filter`.
+- **Everything inside the chrome goes glassy, via token scoping.**
+  - Each glass container captures its solid `--paper`, `--paper-raised`, `--paper-sunken` and
+    `--code-bg` as `--glass-src-*`.
+  - Its children redefine those tokens as `color-mix` translucents (`--glass-field-alpha`; the code
+    slab 62%).
+  - Palette items, schema and tool cards, fields, buttons and the Preview code turn to glass without
+    touching their own rules. It takes two levels because a custom property can't reference
+    itself.
+  - Reduced transparency points the tokens back at the captured solids.
+- **Liquid cards: subtle edge bend only.** `EDGE_DISPLACEMENT` 30 with the `"standard"` map, and
+  chromatic aberration 0. The background bends near the card edges and nothing is stretched across
+  the copy.
+- **A little less tint everywhere.** `--glass-alpha` 4% / 6%, `--glass-alpha-strong` 8% / 10%,
+  `--glass-field-alpha` 12% / 16%.
+
+**Tests.**
+- `test/canvasInsets.test.ts`: `computeInsets` rounding and clamping, `fitPadding`,
+  `visibleCenterTarget`, `sameInsets`.
+- `popoverAnchor.test.ts`: the card is clamped clear of both pane insets and flips left near the
+  right pane.
+- `glassConfig.test.ts`: the edge bend stays at or below 40, with no colour split, on the standard map.
+
+**Verification.**
+- From `file://` in Chrome 157, mid-iteration:
+  - the React Flow canvas renders inside `.canvas-backdrop`;
+  - measured insets were 99 / 490 / 0 / 246 px, and the zoom controls sat inside the window
+    (x 261 > the pane edge at 240);
+  - panes, the top bar and their contents computed translucent with backdrop blur;
+  - nodes panned under the top bar showed through it.
+- The final tint values (this ADR's numbers) were rebuilt but not re-screenshotted.
+
+`npm test` (44 + 360 + 190) and `test:web:app` (16) pass.
