@@ -92,3 +92,7 @@ html.theme-switching *::after {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* FadeContent wrapper (ADR-0064) that adds no box: its children lay out as
+   the parent's own, and are what the mist reveal targets one by one. */
+.fade-contents { display: contents; }

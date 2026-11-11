@@ -12,8 +12,10 @@ import { IRDropZone } from "./toolbar/IRDropZone.tsx";
 import { PaneResizeHandle } from "./layout/PaneResizeHandle.tsx";
 import { WorkPane } from "./layout/WorkPane.tsx";
 import { CanvasWindow } from "./layout/CanvasWindow.tsx";
-import { pageFade, paneItem, paneStagger } from "./anim/presets.ts";
+import FadeContent from "./anim/FadeContent.tsx";
+import { MIST_REVEAL, pageFade } from "./anim/presets.ts";
 import { useTargetStore } from "./target/targetStore.ts";
+import { useThemeStore } from "./theme/themeStore.ts";
 
 /**
  * LazyMotion + `m.` components keep the motion runtime out of the main
@@ -21,6 +23,12 @@ import { useTargetStore } from "./target/targetStore.ts";
  * domMax (not domAnimation) because the theme switcher indicator and the
  * findings list use layout animations. `reducedMotion="user"` honors the
  * OS setting for every transform globally (ADR-0044).
+ *
+ * Entrance (ADR-0064): the canvas, the top bar and the panes mist in one
+ * after another through `FadeContent` (GSAP), the same reveal as the
+ * landing page; `.fade-contents` adds no box, so the layout is unchanged.
+ * Switching theme replays it (`replayKey`) without remounting anything.
+ * motion only runs the exit fade.
  *
  * Workbench layout (ADR-0044): flex row of side panes (resizable via
  * PaneResizeHandle, collapsible to rails via WorkPane) around the canvas,
@@ -35,56 +43,55 @@ import { useTargetStore } from "./target/targetStore.ts";
  * popover, controls, empty state and fit/focus stay inside it.
  */
 function Workbench() {
+  // A theme switch replays the mist reveal over the new theme (ADR-0064).
+  const theme = useThemeStore((s) => s.theme);
   return (
     <m.div
       className="app-shell"
       variants={pageFade}
-      initial="hidden"
+      initial={false}
       animate="show"
       exit="exit"
     >
-      <div className="canvas-backdrop">
-        <Canvas />
-      </div>
-      <div className="shell-top">
-        <Toolbar />
-      </div>
-      <IRDropZone />
-      <m.div
-        className="app"
-        variants={paneStagger}
-        initial="hidden"
-        animate="show"
-      >
-        <WorkPane pane="left" title="Build" edge="start">
-          <header className="pane__subhead pane__subhead--first">
-            Add Node
-          </header>
-          <div className="body palette">
-            <Palette />
-          </div>
-          <header className="pane__subhead">Schemas</header>
-          <div className="body schemas">
-            <SchemaPanel />
-          </div>
-          <header className="pane__subhead">Tools</header>
-          <div className="body schemas">
-            <ToolPanel />
-          </div>
-        </WorkPane>
-        <PaneResizeHandle pane="left" edge="end" />
-        <m.section className="pane pane--canvas" variants={paneItem}>
-          <header>Canvas</header>
-          <SubgraphBreadcrumb />
-          <CanvasWindow />
-        </m.section>
-        <PaneResizeHandle pane="preview" edge="start" />
-        <WorkPane pane="preview" title="Preview" edge="end">
-          <div className="body preview">
-            <Preview />
-          </div>
-        </WorkPane>
-      </m.div>
+      <FadeContent className="fade-contents" {...MIST_REVEAL} replayKey={theme}>
+        <div className="canvas-backdrop">
+          <Canvas />
+        </div>
+        <div className="shell-top">
+          <Toolbar />
+        </div>
+        <IRDropZone />
+        <div className="app">
+          <WorkPane pane="left" title="Build" edge="start">
+            <header className="pane__subhead pane__subhead--first">
+              Add Node
+            </header>
+            <div className="body palette">
+              <Palette />
+            </div>
+            <header className="pane__subhead">Schemas</header>
+            <div className="body schemas">
+              <SchemaPanel />
+            </div>
+            <header className="pane__subhead">Tools</header>
+            <div className="body schemas">
+              <ToolPanel />
+            </div>
+          </WorkPane>
+          <PaneResizeHandle pane="left" edge="end" />
+          <section className="pane pane--canvas">
+            <header>Canvas</header>
+            <SubgraphBreadcrumb />
+            <CanvasWindow />
+          </section>
+          <PaneResizeHandle pane="preview" edge="start" />
+          <WorkPane pane="preview" title="Preview" edge="end">
+            <div className="body preview">
+              <Preview />
+            </div>
+          </WorkPane>
+        </div>
+      </FadeContent>
     </m.div>
   );
 }

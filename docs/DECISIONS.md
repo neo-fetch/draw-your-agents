@@ -3366,3 +3366,42 @@ removed code, so `vite build` failed (`Could not resolve "../glass/NodeGlass.tsx
 
 **Verification.** `npm run build:pages` builds. `npm test` (44 + 360 + 192) and `test:web:app` (16)
 pass.
+
+## ADR-0064 — Pages mist in with GSAP `FadeContent`; no loading screen
+**Context.** The user wanted a more refined entrance than motion's pane stagger. A 2 s liquid-glass loading
+screen was tried first and turned down as too amateurish; it stays only on the unmerged local branch
+`feat/glass-loader`. Instead, the user asked for the landing page to fade in with the `FadeContent` "mist"
+effect they supplied, with the same reveal used when a target is picked.
+**Decision.** `apps/web/src/anim/FadeContent.tsx` is the user's component, vendored with the `'use client'`
+line dropped. `gsap` is a new dependency of `apps/web`. Both pages use one shared setting, `MIST_REVEAL`
+in `anim/presets.ts`: `effect: "mist"`, 1.8 s, `power2.out`, a 0.1 s stagger, and `trigger: "mount"`.
+- **Landing page:** `.landing__inner` is the `FadeContent`. Its children mist in one after another:
+  the head, the two target halves, then the footer.
+- **Workbench:** a `.fade-contents` wrapper with `display: contents` adds no box, so the
+  layout from ADR-0062 is unchanged. Its children are the targets: the full-bleed canvas, then the
+  top bar, then the panes.
+- **motion's role:** it now only runs the 0.12 s exit fade (`initial={false}`), so `AnimatePresence`
+  still waits for the old page to leave. The `paneStagger`/`paneItem` entrance is removed from both
+  pages; the Bathory page keeps it.
+- **While the mist runs:** each target carries an SVG noise filter plus a blur. A filtered pane or
+  top bar is its own glass's backdrop root, so for about 2 s the chrome glass shows no frost over the
+  canvas. `FadeContent` removes every filter and mask element when it settles, which restores the glass.
+- **Reduced motion:** `FadeContent` shows the content at once.
+- **Theme switch:** the reveal replays when the theme changes (Vellum ↔ Bathory). This uses one
+  local addition to the vendored component, `replayKey`: when it changes, the reveal re-runs on the
+  same children, which stay mounted. The workbench passes the theme, so the canvas viewport,
+  the Preview file selection and open panels survive the switch. A key-based remount would have
+  lost them. The existing 250 ms `.theme-switching` colour crossfade still runs on the shell
+  background behind the mist. The landing page has no theme switch, so it passes no key.
+- **Bundle:** `ScrollTrigger` is registered as in the supplied code even though only `mount` is used.
+  `docs/index.html` grows by about 46 KB gzipped (443 → 490 KB).
+
+**Verification.** `npm test` (44 + 360 + 192) and `test:web:app` (16) pass, and `npm run build:pages`
+builds. Checked in Chrome over `file://` with the page clock slowed to catch frames mid-reveal:
+- both pages mist in, staggered;
+- after about 2.5 s every target has no filter and no mask SVG remains;
+- a landing round-trip replays the reveal;
+- a theme switch replays the reveal on the same `.react-flow` element (no remount); the
+  Preview file selection is kept, and no filters or masks remain after about 2.6 s;
+- emulated reduced motion shows everything at once with no filters;
+- no console errors.

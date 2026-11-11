@@ -5,10 +5,14 @@
  *
  * Each half is a real <button> (keyboard + focus-visible for free) that
  * dispatches `chooseTarget`, flipping the target store's phase to "builder".
- * Must use `m.` components — App.tsx mounts `LazyMotion strict`.
+ * Entrance (ADR-0064): the head, the two halves and the footer mist in one
+ * after another through `FadeContent` (GSAP). motion only runs the exit
+ * fade, so the landing → builder swap still waits for it. Must use `m.`
+ * components — App.tsx mounts `LazyMotion strict`.
  */
 import { m } from "motion/react";
-import { pageFade, paneItem, paneStagger } from "../anim/presets.ts";
+import FadeContent from "../anim/FadeContent.tsx";
+import { MIST_REVEAL, pageFade } from "../anim/presets.ts";
 import { TARGET_BY_ID } from "../target/targets.ts";
 import { useTargetStore } from "../target/targetStore.ts";
 import { GoogleLogo } from "./logos/GoogleLogo.tsx";
@@ -24,11 +28,11 @@ export function Landing() {
     <m.div
       className="landing"
       variants={pageFade}
-      initial="hidden"
+      initial={false}
       animate="show"
       exit="exit"
     >
-      <m.div className="landing__inner" variants={paneStagger} initial="hidden" animate="show">
+      <FadeContent className="landing__inner" {...MIST_REVEAL}>
         <header className="landing__head">
           <span className="landing__mark">
             graphical<span className="dot">·</span>agents
@@ -36,35 +40,33 @@ export function Landing() {
           <span className="landing__sub">draw the graph — pick where it runs</span>
         </header>
         <div className="landing__halves">
-          <m.button
+          <button
             type="button"
             className="landing-half landing-half--langgraph"
-            variants={paneItem}
             onClick={() => chooseTarget("langgraph")}
           >
             <LangGraphLogo className="landing-half__logo" />
             <span className="landing-half__label">{langgraph.label}</span>
             <span className="landing-half__blurb">{langgraph.blurb}</span>
-          </m.button>
-          <m.button
+          </button>
+          <button
             type="button"
             className="landing-half landing-half--adk"
-            variants={paneItem}
             onClick={() => chooseTarget("adk")}
           >
             <GoogleLogo className="landing-half__logo" />
             <span className="landing-half__label">{adk.label}</span>
             <span className="landing-half__blurb">{adk.blurb}</span>
-          </m.button>
+          </button>
         </div>
-        <m.footer className="landing__foot" variants={paneItem}>
+        <footer className="landing__foot">
           runs in your browser · free for individuals &amp; non-profits · in memory of
           Quorthon — the dark theme is a{" "}
           <button type="button" className="landing__link" onClick={showBathory}>
             tribute to Bathory
           </button>
-        </m.footer>
-      </m.div>
+        </footer>
+      </FadeContent>
     </m.div>
   );
 }

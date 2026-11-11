@@ -7,7 +7,6 @@
  */
 import type { ReactNode } from "react";
 import { m } from "motion/react";
-import { paneItem } from "../anim/presets.ts";
 import { RAIL_WIDTH, type SidePane } from "./paneLayout.ts";
 import { useUIStore } from "./uiStore.ts";
 
@@ -38,7 +37,6 @@ export function WorkPane({ pane, title, edge, children }: Props) {
   return (
     <m.section
       className={cls}
-      variants={paneItem}
       style={{ width: collapsed ? RAIL_WIDTH : width }}
     >
       {collapsed ? (

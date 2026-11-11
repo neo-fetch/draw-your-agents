@@ -67,3 +67,16 @@ export const reveal: Variants = {
   },
   exit: { height: 0, opacity: 0, transition: { duration: 0.12, ease: "easeIn" } },
 };
+
+/**
+ * Page reveal (ADR-0064): the landing page and the workbench both mist in
+ * through `FadeContent` (GSAP), children one after another. Shared so the
+ * two entrances read as one gesture.
+ */
+export const MIST_REVEAL = {
+  effect: "mist",
+  duration: 1.8,
+  ease: "power2.out",
+  stagger: 0.1,
+  trigger: "mount",
+} as const;
