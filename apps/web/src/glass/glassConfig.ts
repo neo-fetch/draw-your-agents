@@ -52,17 +52,31 @@ export interface LiquidPropsOut {
   saturation: number;
   aberrationIntensity: number;
   elasticity: number;
-  mode: "standard";
+  mode: "standard" | "polar" | "prominent";
   padding: string;
 }
 
-const PRESETS: Readonly<
-  Record<GlassSurface, Pick<LiquidPropsOut, "displacementScale" | "blurAmount" | "saturation" | "aberrationIntensity" | "elasticity">>
-> = {
-  // Gentle: the card sits over the canvas grid and wobbles toward the cursor.
-  emptyState: { displacementScale: 70, blurAmount: 0.1, saturation: 160, aberrationIntensity: 2, elasticity: 0.15 },
+/**
+ * Effective refraction strength: what the user sees. The package has no cap
+ * on `displacementScale` (it scales the SVG displacement map directly; its
+ * default is 70) and silently halves it when `overLight` is set, so
+ * `liquidProps` doubles it back for light themes — both themes bend alike.
+ */
+export const MAX_DISPLACEMENT = 200;
+
+type Preset = Pick<
+  LiquidPropsOut,
+  "displacementScale" | "blurAmount" | "saturation" | "aberrationIntensity" | "elasticity" | "mode"
+>;
+
+// Distortion at max: "prominent" is the package's strongest stable map
+// ("shader" is documented as unstable), full displacement, and a strong
+// chromatic split at the edges.
+const PRESETS: Readonly<Record<GlassSurface, Preset>> = {
+  // Wobbles toward the cursor over the canvas.
+  emptyState: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0.05, saturation: 170, aberrationIntensity: 2, elasticity: 0.15, mode: "prominent" },
   // Static: no mousemove fires during an HTML5 drag, so elasticity is moot.
-  dropCard: { displacementScale: 80, blurAmount: 0.1, saturation: 160, aberrationIntensity: 2, elasticity: 0 },
+  dropCard: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0.05, saturation: 170, aberrationIntensity: 2, elasticity: 0, mode: "prominent" },
 };
 
 export function liquidProps(
@@ -71,12 +85,14 @@ export function liquidProps(
   opts: { reducedMotion: boolean },
 ): LiquidPropsOut {
   const preset = PRESETS[surface];
+  const overLight = THEME_BY_ID.get(theme)?.colorScheme === "light";
   return {
     ...preset,
+    // the package halves displacement when overLight — undo that
+    displacementScale: preset.displacementScale * (overLight ? 2 : 1),
     elasticity: opts.reducedMotion ? 0 : preset.elasticity,
-    overLight: THEME_BY_ID.get(theme)?.colorScheme === "light",
+    overLight,
     cornerRadius: GLASS_RADIUS[theme],
-    mode: "standard",
     // Padding lives on our own content box so it follows the theme's CSS.
     padding: "0",
   };

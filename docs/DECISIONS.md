@@ -3144,6 +3144,19 @@ root above was not yet fixed. Opened from `file://` in Chrome, the card read as 
 - Re-verified from `file://` in Chrome 157: grid and nodes blur behind the card, popover and controls in
   both themes.
 
-`npm test` (44 + 360 + 184) and `test:web:app` (16) pass. The `vite preview` of the bundle renders the
+**Second follow-up: lower opacity, maximum distortion (by request).**
+- **Tint:** `.glass-surface` is now 22% in both themes, the popover 42% / 44%, and `.lg-content` about 10%.
+- **Liquid cards:** `mode: "prominent"` (the strongest stable map; `"shader"` is documented as unstable),
+  with an effective `displacementScale` of 200 (`MAX_DISPLACEMENT`; the package default is 70 and has no
+  hard cap).
+- **overLight compensation:** the package halves displacement when `overLight` is set, so `liquidProps`
+  doubles it for light themes and both themes bend alike. A test pins the effective value.
+- **Chromatic aberration** stays at the package default of 2. At 10, the channels are sampled 200–400px
+  apart and a dark node behind the card smears into yellow, magenta and cyan bands, which reads as a
+  rendering glitch.
+- **Known cost:** at this strength a dark node directly behind the card is pulled about 200px into a
+  smeared lens and can obscure a line of the card's copy. Checked from `file://` in Chrome.
+
+`npm test` (44 + 360 + 185) and `test:web:app` (16) pass. The `vite preview` of the bundle renders the
 liquid card. **Bundle:** `docs/index.html` goes from 405.8 KB to 440.3 KB gzipped (+34.5 KB, mostly the
 package's embedded displacement maps).

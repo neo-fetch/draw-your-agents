@@ -45,11 +45,11 @@
   font: 400 14px/1.45 var(--font-ui);
   text-shadow: none;
   color: var(--ink);
-  /* light tint only: the package already frosts (blur ≈ 15px) and bends
-     what's behind, so readability comes from the blur, not from paint */
+  /* barely-there tint (~10%): the package frosts and bends what's behind, so
+     readability comes from the blur, not from paint */
   background: color-mix(
     in srgb,
-    var(--paper-raised) calc(var(--glass-alpha) - 10%),
+    var(--paper-raised) calc(var(--glass-alpha) - 12%),
     transparent
   );
   box-shadow: var(--glass-highlight);

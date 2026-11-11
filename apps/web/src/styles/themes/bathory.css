@@ -81,8 +81,8 @@
   --shell-grid-line: rgba(216, 211, 195, 0.03);
 
   /* glass (ADR-0061): smoked, near-monochrome, no white sheen */
-  --glass-alpha: 38%;
-  --glass-alpha-strong: 60%;
+  --glass-alpha: 22%;
+  --glass-alpha-strong: 44%;
   --glass-blur: 18px;
   --glass-saturate: 1.1;
   --glass-border: rgba(216, 211, 195, 0.2);

@@ -14,6 +14,7 @@ import { THEMES } from "../src/theme/themes.ts";
 import {
   chooseRenderer,
   GLASS_RADIUS,
+  MAX_DISPLACEMENT,
   isChromiumBrands,
   liquidProps,
   remountKey,
@@ -42,6 +43,17 @@ test("liquidProps: overLight follows the theme's color scheme, radius the theme"
     assert.strictEqual(p.overLight, t.colorScheme === "light", t.id);
     assert.strictEqual(p.cornerRadius, GLASS_RADIUS[t.id]);
     assert.strictEqual(p.padding, "0");
+  }
+});
+
+test("liquidProps: max distortion in every theme (package halves it when overLight)", () => {
+  for (const t of THEMES) {
+    for (const surface of ["emptyState", "dropCard"] as const) {
+      const p = liquidProps(surface, t.id, { reducedMotion: false });
+      const effective = p.overLight ? p.displacementScale / 2 : p.displacementScale;
+      assert.strictEqual(effective, MAX_DISPLACEMENT, `${surface}/${t.id}`);
+      assert.strictEqual(p.mode, "prominent");
+    }
   }
 });
 

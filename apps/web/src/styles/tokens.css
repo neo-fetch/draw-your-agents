@@ -86,8 +86,8 @@
   /* glass material (ADR-0061) — plain values; `glass.css` mixes them with the
      surface color at the point of use, so a nested [data-theme] (the Bathory
      page) re-resolves them instead of inheriting a pre-mixed color */
-  --glass-alpha: 40%;
-  --glass-alpha-strong: 62%;
+  --glass-alpha: 22%;
+  --glass-alpha-strong: 42%;
   --glass-blur: 20px;
   --glass-saturate: 1.7;
   --glass-border: rgba(255, 255, 255, 0.75);
