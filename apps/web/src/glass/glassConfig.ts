@@ -71,11 +71,20 @@ export interface LiquidPropsOut {
 export const EDGE_DISPLACEMENT = 30;
 
 /**
- * Canvas nodes (ADR-0063): a noticeable lens — stronger than the cards'
- * edge bend, since a node carries only a name and a type, but toned down
- * from the first 120 by request.
+ * How far a node's glass extends past the card on every side (CSS px; the
+ * same value is `--node-glass-bleed` in glass.css, test-synced). The clip
+ * wrapper hides it — it exists so the filter has real backdrop to sample.
  */
-export const NODE_DISPLACEMENT = 60;
+export const NODE_GLASS_BLEED = 12;
+
+/**
+ * Canvas nodes (ADR-0063). The package's filter shifts each pixel by up to
+ * ±displacementScale/2 and samples its *own* (backdrop) image there; a node
+ * is only ~50px tall, so at 60–120 most samples fell outside the glass and
+ * came back empty — the glass showed for a frame (before the map decoded)
+ * and then vanished. Keep the shift within the bleed.
+ */
+export const NODE_DISPLACEMENT = NODE_GLASS_BLEED * 2;
 
 type Preset = Pick<
   LiquidPropsOut,

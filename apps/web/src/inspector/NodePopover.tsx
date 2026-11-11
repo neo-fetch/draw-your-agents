@@ -126,7 +126,7 @@ export function NodePopover() {
 
   // A selection can briefly outlive the node it points at (sub-graph swap,
   // a delete). Nothing to anchor to, so nothing to show.
-  const { left, top, side } = anchorPopover({
+  const { left, top, side, maxHeight: roomH } = anchorPopover({
     target: target ?? { x: 0, y: 0, w: 0, h: 0 },
     viewport,
     container: { w: containerW, h: containerH },
@@ -143,7 +143,7 @@ export function NodePopover() {
         key="node-popover"
         className="node-popover glass-surface glass-surface--strong nowheel nopan nodrag"
         data-side={side}
-        style={{ left, top, width: size.w, maxHeight: fitHeight(size.h, containerH - insets.top - insets.bottom) }}
+        style={{ left, top, width: size.w, maxHeight: Math.min(fitHeight(size.h, containerH - insets.top - insets.bottom), roomH ?? Infinity) }}
         variants={popIn}
         initial="hidden"
         animate="show"

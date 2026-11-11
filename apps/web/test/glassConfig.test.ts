@@ -15,6 +15,7 @@ import {
   chooseRenderer,
   GLASS_RADIUS,
   NODE_DISPLACEMENT,
+  NODE_GLASS_BLEED,
   NODE_RADIUS,
   EDGE_DISPLACEMENT,
   isChromiumBrands,
@@ -127,7 +128,9 @@ test("liquidProps(node): moderate lens, clear, no colour split; still yields to 
   for (const t of THEMES) {
     const p = liquidProps("node", t.id, { reducedMotion: false });
     assert.strictEqual(p.displacementScale, NODE_DISPLACEMENT);
-    assert.ok(NODE_DISPLACEMENT > 30 && NODE_DISPLACEMENT < 100, "a lens: above the cards' edge bend, below the first 120");
+    // the filter shifts samples by up to ±scale/2 — they must land in the bleed
+    assert.ok(NODE_DISPLACEMENT / 2 <= NODE_GLASS_BLEED, "node shift exceeds the glass bleed");
+    assert.ok(NODE_DISPLACEMENT > 0);
     assert.strictEqual(p.mode, "prominent");
     assert.strictEqual(p.aberrationIntensity, 0);
     assert.strictEqual(p.overLight, false);
@@ -143,4 +146,12 @@ test("node glass CSS: liquid card is clear and never its own backdrop root", () 
   // and the low node tint is a token in both themes
   assert.match(css("tokens.css"), /--glass-node-alpha:/);
   assert.match(css("themes/bathory.css"), /--glass-node-alpha:/);
+});
+
+test("node glass bleed: CSS matches NODE_GLASS_BLEED, and the clip hides it", () => {
+  const glass = css("glass.css");
+  const m = /--node-glass-bleed:\s*(\d+)px/.exec(glass);
+  assert.ok(m, "no --node-glass-bleed in glass.css");
+  assert.strictEqual(Number(m[1]), NODE_GLASS_BLEED);
+  assert.match(glass, /\.lg-clip \{[^}]*overflow: hidden;/);
 });

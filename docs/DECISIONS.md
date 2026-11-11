@@ -3296,3 +3296,39 @@ canvas nodes as well, with "low opacity but high distortion".
   cards' edge bend of 30.
 - The test now bounds the value between 30 and 100.
 - Confirmed from `file://` that the bundle serves scale −60 and a 4% fill.
+
+**Fix: node glass vanished, and went cloudy on click (both reported).**
+- **Vanishing.** The package's filter shifts each pixel by up to ±scale/2 and samples the glass layer's
+  *own* backdrop image there. A node is about 50px tall, so at 60–120 most samples fell outside the
+  layer and came back empty.
+  - The glass showed for a frame, before the displacement map decoded, and then disappeared.
+  - A red-tint probe confirmed it: the warp layer covered the whole card, but only a top strip
+    survived the filter.
+  - Now the node glass bleeds `NODE_GLASS_BLEED` (12px) past the card inside a `.lg-clip` wrapper
+    that clips to the card, and `NODE_DISPLACEMENT` is `2 × bleed` (24), so every sample lands on
+    real backdrop.
+  - Tests tie the CSS `--node-glass-bleed` to the constant, and require `scale/2 ≤ bleed`.
+  - `.lg-host svg` is also pinned to 100% of the glass box. The package sizes it from
+    `getBoundingClientRect`, which is zoom-scaled inside React Flow.
+- **Cloudy on click.** The glass samples everything painted before it, including the card's own
+  border, shadow and selection ring. A selected node (accent ring, `--shadow-pop`) therefore went
+  cloudy and opaque.
+  - On liquid cards the border, shadow and ring are now drawn by `.ir-node--liquid::after`, above
+    the glass (z 2). The card keeps transparent borders, so the layout is unchanged.
+- **Remount on click.** Opening the popover loads the editor font, which bumped the font epoch and
+  remounted every node's glass, so it flashed. `NodeGlass` no longer uses a remount key: its SVG is
+  pinned by CSS and its props update in place.
+- **Popover over its own node.** In a narrow window between glass panes neither side fits, and the
+  clamp parked the card on top of the node.
+  - `anchorPopover` now stacks it below the node, else above, capped to the room there with
+    `maxHeight`, so the form scrolls inside.
+  - The cap is always set when stacked, so the measured height can't oscillate. It overlaps the
+    node only when both sides are under `MIN_STACK_HEIGHT` (200).
+- **Verified from `file://` (Chrome):**
+  - all cards fill completely 3s after load, at zoom 0.72 (red probe);
+  - clicking `refine_loop` keeps its filter id (no remount);
+  - the card computes `box-shadow: none` and transparent borders, with the ring and border on
+    `::after`;
+  - the selected node looks as clear as its neighbours;
+  - the popover sits below the node with no overlap, at a stable 351px height across frames.
+- `npm test` (44 + 360 + 196) and `test:web:app` (16) pass.

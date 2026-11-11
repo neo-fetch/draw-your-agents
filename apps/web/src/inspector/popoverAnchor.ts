@@ -37,7 +37,17 @@ export interface AnchorResult {
   top: number;
   /** Which side of the target the popover landed on before clamping. */
   side: "right" | "left";
+  /**
+   * Set when the card is stacked below/above the target: the room there.
+   * The card scrolls within it. Always set for a stacked card (not only when
+   * it would overflow) so the measured height can't oscillate between
+   * "fits uncapped" and "capped".
+   */
+  maxHeight?: number;
 }
+
+/** A stacked card shorter than this is useless — overlap the node instead. */
+export const MIN_STACK_HEIGHT = 200;
 
 function clamp(value: number, min: number, max: number): number {
   // A popover taller/wider than its container makes max < min; pinning to the
@@ -48,9 +58,12 @@ function clamp(value: number, min: number, max: number): number {
 
 /**
  * Place the popover beside the target: to its right by default, flipped to
- * the left when the right side would overrun the container. The drag offset
- * is applied *before* clamping, so a card dragged too far still snaps back
- * inside the viewport instead of disappearing.
+ * the left when the right side would overrun the container. When neither
+ * side fits (a narrow visible window between glass panes, ADR-0062), it goes
+ * below the target, else above — clamping a side placement would otherwise
+ * park the card on top of the very node it edits. The drag offset is applied
+ * *before* clamping, so a card dragged too far still snaps back inside the
+ * viewport instead of disappearing.
  */
 export function anchorPopover({
   target,
@@ -68,17 +81,46 @@ export function anchorPopover({
   const screenLeft = viewport.x + target.x * zoom;
   const screenTop = viewport.y + target.y * zoom;
   const screenRight = screenLeft + target.w * zoom;
+  const screenBottom = screenTop + target.h * zoom;
+
+  const place = (
+    left: number,
+    top: number,
+    side: "right" | "left",
+    h: number = size.h,
+  ): AnchorResult => ({
+    left: Math.round(clamp(left + offset.dx, minX, maxRight - size.w)),
+    top: Math.round(clamp(top + offset.dy, minY, maxBottom - h)),
+    side,
+  });
 
   const rightLeft = screenRight + ANCHOR_GAP;
-  const fitsRight = rightLeft + size.w <= maxRight;
-  const side: "right" | "left" = fitsRight ? "right" : "left";
-  const left = fitsRight ? rightLeft : screenLeft - ANCHOR_GAP - size.w;
+  if (rightLeft + size.w <= maxRight) return place(rightLeft, screenTop, "right");
+  const leftLeft = screenLeft - ANCHOR_GAP - size.w;
+  if (leftLeft >= minX) return place(leftLeft, screenTop, "left");
 
-  return {
-    left: Math.round(clamp(left + offset.dx, minX, maxRight - size.w)),
-    top: Math.round(clamp(screenTop + offset.dy, minY, maxBottom - size.h)),
-    side,
-  };
+  // Neither side fits: stack vertically, left-aligned with the target, in
+  // whichever of below/above has room (below preferred), height capped to it.
+  const belowTop = screenBottom + ANCHOR_GAP;
+  const roomBelow = maxBottom - belowTop;
+  const roomAbove = screenTop - ANCHOR_GAP - minY;
+  const need = Math.min(size.h, MIN_STACK_HEIGHT);
+  const useBelow = roomBelow >= size.h || (roomBelow >= need && roomBelow >= roomAbove);
+  const useAbove = !useBelow && roomAbove >= need;
+  if (useBelow) {
+    const h = Math.min(size.h, roomBelow);
+    return { ...place(screenLeft, belowTop, "right", h), maxHeight: Math.floor(roomBelow) };
+  }
+  if (useAbove) {
+    const h = Math.min(size.h, roomAbove);
+    return {
+      ...place(screenLeft, screenTop - ANCHOR_GAP - h, "right", h),
+      maxHeight: Math.floor(roomAbove),
+    };
+  }
+
+  // Nowhere clean (tall card, small window): the old left-flip + clamp.
+  return place(leftLeft, screenTop, "left");
 }
 
 /**
