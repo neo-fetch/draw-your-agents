@@ -3387,6 +3387,12 @@ in `anim/presets.ts`: `effect: "mist"`, 1.8 s, `power2.out`, a 0.1 s stagger, an
   top bar is its own glass's backdrop root, so for about 2 s the chrome glass shows no frost over the
   canvas. `FadeContent` removes every filter and mask element when it settles, which restores the glass.
 - **Reduced motion:** `FadeContent` shows the content at once.
+- **Theme switch:** the reveal replays when the theme changes (Vellum ↔ Bathory). This uses one
+  local addition to the vendored component, `replayKey`: when it changes, the reveal re-runs on the
+  same children, which stay mounted. The workbench passes the theme, so the canvas viewport,
+  the Preview file selection and open panels survive the switch. A key-based remount would have
+  lost them. The existing 250 ms `.theme-switching` colour crossfade still runs on the shell
+  background behind the mist. The landing page has no theme switch, so it passes no key.
 - **Bundle:** `ScrollTrigger` is registered as in the supplied code even though only `mount` is used.
   `docs/index.html` grows by about 46 KB gzipped (443 → 490 KB).
 
@@ -3395,5 +3401,7 @@ builds. Checked in Chrome over `file://` with the page clock slowed to catch fra
 - both pages mist in, staggered;
 - after about 2.5 s every target has no filter and no mask SVG remains;
 - a landing round-trip replays the reveal;
+- a theme switch replays the reveal on the same `.react-flow` element (no remount); the
+  Preview file selection is kept, and no filters or masks remain after about 2.6 s;
 - emulated reduced motion shows everything at once with no filters;
 - no console errors.

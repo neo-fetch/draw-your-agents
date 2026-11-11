@@ -8,6 +8,10 @@
  * children without adding a box. The noise effects ('mist', …) put an SVG
  * filter on each target while they run and remove it when they settle.
  * Honors prefers-reduced-motion itself (shows at once).
+ *
+ * Local addition: `replayKey`. Changing it re-runs the reveal on the same,
+ * still-mounted children (no remount, so component state survives) — the
+ * workbench passes the theme so a theme switch mists the page back in.
  */
 import { useEffect, useLayoutEffect, useRef, type CSSProperties, type HTMLAttributes, type ReactNode } from 'react';
 import { gsap } from 'gsap';
@@ -40,6 +44,8 @@ export interface FadeContentProps extends HTMLAttributes<HTMLDivElement> {
   onStart?: () => void;
   onComplete?: () => void;
   onDisappearanceComplete?: () => void;
+  /** Change to replay the reveal without remounting the children. */
+  replayKey?: string | number;
   className?: string;
   style?: CSSProperties;
 }
@@ -216,6 +222,7 @@ const FadeContent = ({
   onStart,
   onComplete,
   onDisappearanceComplete,
+  replayKey,
   className = '',
   style,
   ...props
@@ -411,7 +418,8 @@ const FadeContent = ({
     scrub,
     disappearAfter,
     disappearDuration,
-    disappearEase
+    disappearEase,
+    replayKey
   ]);
 
   return (

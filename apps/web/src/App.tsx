@@ -15,6 +15,7 @@ import { CanvasWindow } from "./layout/CanvasWindow.tsx";
 import FadeContent from "./anim/FadeContent.tsx";
 import { MIST_REVEAL, pageFade } from "./anim/presets.ts";
 import { useTargetStore } from "./target/targetStore.ts";
+import { useThemeStore } from "./theme/themeStore.ts";
 
 /**
  * LazyMotion + `m.` components keep the motion runtime out of the main
@@ -26,6 +27,7 @@ import { useTargetStore } from "./target/targetStore.ts";
  * Entrance (ADR-0064): the canvas, the top bar and the panes mist in one
  * after another through `FadeContent` (GSAP), the same reveal as the
  * landing page; `.fade-contents` adds no box, so the layout is unchanged.
+ * Switching theme replays it (`replayKey`) without remounting anything.
  * motion only runs the exit fade.
  *
  * Workbench layout (ADR-0044): flex row of side panes (resizable via
@@ -41,6 +43,8 @@ import { useTargetStore } from "./target/targetStore.ts";
  * popover, controls, empty state and fit/focus stay inside it.
  */
 function Workbench() {
+  // A theme switch replays the mist reveal over the new theme (ADR-0064).
+  const theme = useThemeStore((s) => s.theme);
   return (
     <m.div
       className="app-shell"
@@ -49,7 +53,7 @@ function Workbench() {
       animate="show"
       exit="exit"
     >
-      <FadeContent className="fade-contents" {...MIST_REVEAL}>
+      <FadeContent className="fade-contents" {...MIST_REVEAL} replayKey={theme}>
         <div className="canvas-backdrop">
           <Canvas />
         </div>
