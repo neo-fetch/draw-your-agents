@@ -90,9 +90,9 @@
 }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .form-head {
-    background: color-mix(in srgb, var(--paper-raised) 62%, transparent);
-    -webkit-backdrop-filter: blur(10px) saturate(var(--glass-saturate));
-    backdrop-filter: blur(10px) saturate(var(--glass-saturate));
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-alpha-strong), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   }
 }
 @media (prefers-reduced-transparency: reduce) {

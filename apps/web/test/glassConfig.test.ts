@@ -37,21 +37,21 @@ test("GLASS_RADIUS mirrors each theme's --r-lg (cornerRadius can't read CSS vars
   }
 });
 
-test("liquidProps: overLight follows the theme's color scheme, radius the theme", () => {
+test("liquidProps: clear glass (overLight off, no extra frost) in every theme; radius per theme", () => {
   for (const t of THEMES) {
     const p = liquidProps("emptyState", t.id, { reducedMotion: false });
-    assert.strictEqual(p.overLight, t.colorScheme === "light", t.id);
+    assert.strictEqual(p.overLight, false, t.id); // overLight forces ≥12px frost
+    assert.strictEqual(p.blurAmount, 0, t.id);
     assert.strictEqual(p.cornerRadius, GLASS_RADIUS[t.id]);
     assert.strictEqual(p.padding, "0");
   }
 });
 
-test("liquidProps: max distortion in every theme (package halves it when overLight)", () => {
+test("liquidProps: max distortion on both liquid surfaces in every theme", () => {
   for (const t of THEMES) {
     for (const surface of ["emptyState", "dropCard"] as const) {
       const p = liquidProps(surface, t.id, { reducedMotion: false });
-      const effective = p.overLight ? p.displacementScale / 2 : p.displacementScale;
-      assert.strictEqual(effective, MAX_DISPLACEMENT, `${surface}/${t.id}`);
+      assert.strictEqual(p.displacementScale, MAX_DISPLACEMENT, `${surface}/${t.id}`);
       assert.strictEqual(p.mode, "prominent");
     }
   }

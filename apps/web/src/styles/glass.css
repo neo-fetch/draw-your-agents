@@ -45,13 +45,8 @@
   font: 400 14px/1.45 var(--font-ui);
   text-shadow: none;
   color: var(--ink);
-  /* barely-there tint (~10%): the package frosts and bends what's behind, so
-     readability comes from the blur, not from paint */
-  background: color-mix(
-    in srgb,
-    var(--paper-raised) calc(var(--glass-alpha) - 12%),
-    transparent
-  );
+  /* near-clear: the glass bends what's behind; the tint is a whisper */
+  background: color-mix(in srgb, var(--paper-raised) var(--glass-alpha), transparent);
   box-shadow: var(--glass-highlight);
 }
 
@@ -77,6 +72,20 @@
    Hide them; .lg-content carries our own rim highlight instead. */
 .lg-host > span { display: none; }
 
+/* Form chrome inside the glass popover: solid fields would read as a white
+   slab over clear glass, so they take a light tint of their own. */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .node-popover.glass-surface input,
+  .node-popover.glass-surface select,
+  .node-popover.glass-surface textarea,
+  .node-popover.glass-surface button {
+    background: color-mix(in srgb, var(--paper) var(--glass-field-alpha), transparent);
+  }
+  .node-popover.glass-surface .body-editor__sig {
+    background: color-mix(in srgb, var(--paper-sunken) var(--glass-field-alpha), transparent);
+  }
+}
+
 /* ---- OS off switch ------------------------------------------------------ */
 
 @media (prefers-reduced-transparency: reduce) {
@@ -87,4 +96,9 @@
     backdrop-filter: none;
     box-shadow: var(--shadow-pop);
   }
+  .node-popover.glass-surface input,
+  .node-popover.glass-surface select,
+  .node-popover.glass-surface textarea,
+  .node-popover.glass-surface button { background: var(--paper); }
+  .node-popover.glass-surface .body-editor__sig { background: var(--paper-sunken); }
 }

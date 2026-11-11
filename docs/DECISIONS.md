@@ -3151,11 +3151,25 @@ root above was not yet fixed. Opened from `file://` in Chrome, the card read as 
   hard cap).
 - **overLight compensation:** the package halves displacement when `overLight` is set, so `liquidProps`
   doubles it for light themes and both themes bend alike. A test pins the effective value.
-- **Chromatic aberration** stays at the package default of 2. At 10, the channels are sampled 200–400px
-  apart and a dark node behind the card smears into yellow, magenta and cyan bands, which reads as a
-  rendering glitch.
+- **Chromatic aberration** stays at the package default of 2 (now 0, see below). At 10, the channels are
+  sampled 200–400px apart and a dark node behind the card smears into yellow, magenta and cyan bands,
+  which reads as a rendering glitch.
 - **Known cost:** at this strength a dark node directly behind the card is pulled about 200px into a
   smeared lens and can obscure a line of the card's copy. Checked from `file://` in Chrome.
+
+**Third follow-up: near-clear glass (by request).**
+- **Tokens:** `--glass-alpha` is 4% (Vellum) / 6% (Bathory), `--glass-alpha-strong` 8% / 12%, and
+  `--glass-blur` 4px.
+- **Fields:** a new `--glass-field-alpha` (22% / 30%) makes the popover's inputs, selects, buttons,
+  signature strip and grip translucent. Solid fields read as a slab over clear glass. They return to
+  solid under reduced transparency.
+- **No frost:** `overLight` is now off in every theme, because it forces at least 12px of frost and
+  halves the displacement, so the light-theme doubling is gone. `blurAmount` is 0, which leaves the
+  package's 4px base blur.
+- **Chromatic aberration is 0.** With the frost gone, even the default 2 showed as a rainbow band at
+  displacement 200. At 0 all channels move together, so the max distortion reads as bent glass.
+- **Known cost:** a dark node directly behind the card is stretched into a lens that can cross a line
+  of copy.
 
 `npm test` (44 + 360 + 185) and `test:web:app` (16) pass. The `vite preview` of the bundle renders the
 liquid card. **Bundle:** `docs/index.html` goes from 405.8 KB to 440.3 KB gzipped (+34.5 KB, mostly the

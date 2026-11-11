@@ -86,10 +86,11 @@
   /* glass material (ADR-0061) — plain values; `glass.css` mixes them with the
      surface color at the point of use, so a nested [data-theme] (the Bathory
      page) re-resolves them instead of inheriting a pre-mixed color */
-  --glass-alpha: 22%;
-  --glass-alpha-strong: 42%;
-  --glass-blur: 20px;
-  --glass-saturate: 1.7;
+  --glass-alpha: 4%;
+  --glass-alpha-strong: 8%;
+  --glass-field-alpha: 22%; /* form fields inside glass (popover) */
+  --glass-blur: 4px;
+  --glass-saturate: 1.4;
   --glass-border: rgba(255, 255, 255, 0.75);
   /* bright top rim + a faint full rim: the edge is what reads as glass */
   --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9),

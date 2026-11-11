@@ -34,7 +34,7 @@
   gap: 8px;
   height: 20px;
   padding: 0 6px 0 9px;
-  background: color-mix(in srgb, var(--paper-sunken) 55%, transparent);
+  background: color-mix(in srgb, var(--paper-sunken) var(--glass-field-alpha), transparent);
   border-bottom: 1px solid var(--line);
   cursor: grab;
   touch-action: none;

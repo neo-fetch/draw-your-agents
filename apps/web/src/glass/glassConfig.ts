@@ -13,7 +13,7 @@
  * The OS is the off switch: reduced transparency → CSS (which itself goes
  * solid); reduced motion → no elastic wobble.
  */
-import { THEME_BY_ID, type ThemeId } from "../theme/themes.ts";
+import { type ThemeId } from "../theme/themes.ts";
 
 /**
  * `cornerRadius` is a number prop, so it can't read `var(--r-lg)`. These
@@ -57,10 +57,8 @@ export interface LiquidPropsOut {
 }
 
 /**
- * Effective refraction strength: what the user sees. The package has no cap
- * on `displacementScale` (it scales the SVG displacement map directly; its
- * default is 70) and silently halves it when `overLight` is set, so
- * `liquidProps` doubles it back for light themes — both themes bend alike.
+ * Refraction strength. The package has no cap on `displacementScale` (it
+ * scales the SVG displacement map directly; its default is 70).
  */
 export const MAX_DISPLACEMENT = 200;
 
@@ -74,9 +72,9 @@ type Preset = Pick<
 // chromatic split at the edges.
 const PRESETS: Readonly<Record<GlassSurface, Preset>> = {
   // Wobbles toward the cursor over the canvas.
-  emptyState: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0.05, saturation: 170, aberrationIntensity: 2, elasticity: 0.15, mode: "prominent" },
+  emptyState: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.15, mode: "prominent" },
   // Static: no mousemove fires during an HTML5 drag, so elasticity is moot.
-  dropCard: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0.05, saturation: 170, aberrationIntensity: 2, elasticity: 0, mode: "prominent" },
+  dropCard: { displacementScale: MAX_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0, mode: "prominent" },
 };
 
 export function liquidProps(
@@ -85,13 +83,12 @@ export function liquidProps(
   opts: { reducedMotion: boolean },
 ): LiquidPropsOut {
   const preset = PRESETS[surface];
-  const overLight = THEME_BY_ID.get(theme)?.colorScheme === "light";
   return {
     ...preset,
-    // the package halves displacement when overLight — undo that
-    displacementScale: preset.displacementScale * (overLight ? 2 : 1),
     elasticity: opts.reducedMotion ? 0 : preset.elasticity,
-    overLight,
+    // Clear glass in every theme: `overLight` would force ≥12px of frost
+    // (and halve the displacement); off, the package's blur is 4px + 0.
+    overLight: false,
     cornerRadius: GLASS_RADIUS[theme],
     // Padding lives on our own content box so it follows the theme's CSS.
     padding: "0",
