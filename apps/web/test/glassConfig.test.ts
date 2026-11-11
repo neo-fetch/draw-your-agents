@@ -83,6 +83,9 @@ test("glass.css keeps its fallbacks: @supports gate and reduced-transparency off
   assert.match(glass, /@media \(prefers-reduced-transparency: reduce\)/);
   // the package's photo-tuned tint layers stay hidden, scoped to the host
   assert.match(glass, /\.lg-host > \.bg-black \{ display: none; \}/);
+  // …and its mix-blend edge spans, which would make the overlay layer the
+  // backdrop root and kill the refraction
+  assert.match(glass, /\.lg-host > span \{ display: none; \}/);
   // every theme defines the glass tokens it overrides from :root
   assert.match(css("tokens.css"), /--glass-alpha:/);
   assert.match(css("themes/bathory.css"), /--glass-alpha:/);

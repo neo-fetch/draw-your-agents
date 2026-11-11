@@ -45,11 +45,11 @@
   font: 400 14px/1.45 var(--font-ui);
   text-shadow: none;
   color: var(--ink);
-  /* a notch more tint than the CSS material: the refraction is strongest
-     under the text, and a bright node behind it would fight the copy */
+  /* light tint only: the package already frosts (blur ≈ 15px) and bends
+     what's behind, so readability comes from the blur, not from paint */
   background: color-mix(
     in srgb,
-    var(--paper-raised) calc(var(--glass-alpha) + 12%),
+    var(--paper-raised) calc(var(--glass-alpha) - 10%),
     transparent
   );
   box-shadow: var(--glass-highlight);
@@ -67,6 +67,15 @@
    a grey slab. Hide them; `overLight` still sets the package's heavier
    frosting and gentler displacement for light themes. Scoped to the host. */
 .lg-host > .bg-black { display: none; }
+
+/* The package's two edge-highlight spans use mix-blend-mode. Blending makes
+   Chrome isolate the nearest stacking context — here the overlay layer
+   (.canvas-empty z-index 4, .ir-drop z-index 1000) — and that isolated group
+   becomes the glass's backdrop root: the blur/refraction then sees only the
+   overlay itself, never the canvas behind, and the card renders as a flat
+   tint. (The package's demo sits on <body>, where the group is the page.)
+   Hide them; .lg-content carries our own rim highlight instead. */
+.lg-host > span { display: none; }
 
 /* ---- OS off switch ------------------------------------------------------ */
 

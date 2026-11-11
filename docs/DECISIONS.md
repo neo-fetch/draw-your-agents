@@ -3094,8 +3094,14 @@ Glass also needs busy content behind it, and the toolbar sits on a flat backgrou
     gentler displacement.
   - The inline overLight shadow (`0 16px 70px rgba(0,0,0,.75)`) greyed the whole canvas. It is
     overridden with `--glass-shadow`, the file's only `!important`.
-  - `.lg-content` sets our font and colour and `text-shadow: none`, with a tint of `--glass-alpha +
-    12%` so copy stays readable over bright nodes refracted underneath.
+  - **The package's two edge-highlight spans are hidden (`.lg-host > span`).** They use
+    `mix-blend-mode`, which makes Chrome isolate the nearest stacking context: `.canvas-empty`
+    (z-index 4) or `.ir-drop` (z-index 1000). That isolated group becomes the glass's backdrop root,
+    so the blur and refraction saw only the overlay and never the canvas, and the card rendered as
+    a flat tint. The package's demo sits on `<body>`, where the group is the whole page.
+    `.lg-content` carries our own rim highlight instead.
+  - `.lg-content` sets our font and colour and `text-shadow: none`, with a light tint
+    (`--glass-alpha − 10%`). The package's ~15px frost keeps text readable; paint doesn't have to.
 - **Tokens hold plain values; mixing happens at the point of use.**
   - `--glass-alpha/-strong/-blur/-saturate/-border/-highlight/-shadow` are defined per theme.
   - `color-mix(var(--paper-raised) var(--glass-alpha), transparent)` lives in the rule, because the
@@ -3129,6 +3135,14 @@ Glass also needs busy content behind it, and the toolbar sits on a flat backgrou
 - **OS settings:** with `matchMedia` stubbed, reduced motion means no wobble and reduced transparency
   means the CSS renderer; liquid returns when the stub is removed.
 - **Console:** no errors.
+
+**Follow-up: the first tuning was invisible.** It used 66–84% tint, and the blend-span backdrop
+root above was not yet fixed. Opened from `file://` in Chrome, the card read as a plain white card.
+- Re-tuned to 40% (Vellum) and 38% (Bathory) tint for `.glass-surface`, and 62% / 60% for the popover.
+- Blur raised to 20 / 18px, saturation to 1.7 (Vellum), with a brighter rim.
+- Liquid displacement raised to 70 (empty state) and 80 (drop card).
+- Re-verified from `file://` in Chrome 157: grid and nodes blur behind the card, popover and controls in
+  both themes.
 
 `npm test` (44 + 360 + 184) and `test:web:app` (16) pass. The `vite preview` of the bundle renders the
 liquid card. **Bundle:** `docs/index.html` goes from 405.8 KB to 440.3 KB gzipped (+34.5 KB, mostly the

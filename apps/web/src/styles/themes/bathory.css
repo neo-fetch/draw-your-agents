@@ -81,12 +81,13 @@
   --shell-grid-line: rgba(216, 211, 195, 0.03);
 
   /* glass (ADR-0061): smoked, near-monochrome, no white sheen */
-  --glass-alpha: 56%;
-  --glass-alpha-strong: 80%;
-  --glass-blur: 12px;
-  --glass-saturate: 1.05;
-  --glass-border: rgba(216, 211, 195, 0.12);
-  --glass-highlight: inset 0 1px 0 rgba(216, 211, 195, 0.07);
+  --glass-alpha: 38%;
+  --glass-alpha-strong: 60%;
+  --glass-blur: 18px;
+  --glass-saturate: 1.1;
+  --glass-border: rgba(216, 211, 195, 0.2);
+  --glass-highlight: inset 0 1px 0 rgba(216, 211, 195, 0.18),
+    inset 0 0 0 1px rgba(216, 211, 195, 0.08);
   --glass-shadow: var(--shadow-pop);
 
   /* landing hover hues lifted to read on near-black */

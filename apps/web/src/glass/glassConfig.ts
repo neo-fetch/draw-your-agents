@@ -60,9 +60,9 @@ const PRESETS: Readonly<
   Record<GlassSurface, Pick<LiquidPropsOut, "displacementScale" | "blurAmount" | "saturation" | "aberrationIntensity" | "elasticity">>
 > = {
   // Gentle: the card sits over the canvas grid and wobbles toward the cursor.
-  emptyState: { displacementScale: 40, blurAmount: 0.05, saturation: 140, aberrationIntensity: 1.5, elasticity: 0.12 },
+  emptyState: { displacementScale: 70, blurAmount: 0.1, saturation: 160, aberrationIntensity: 2, elasticity: 0.15 },
   // Static: no mousemove fires during an HTML5 drag, so elasticity is moot.
-  dropCard: { displacementScale: 48, blurAmount: 0.06, saturation: 140, aberrationIntensity: 1.5, elasticity: 0 },
+  dropCard: { displacementScale: 80, blurAmount: 0.1, saturation: 160, aberrationIntensity: 2, elasticity: 0 },
 };
 
 export function liquidProps(
