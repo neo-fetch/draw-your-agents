@@ -71,11 +71,11 @@ export interface LiquidPropsOut {
 export const EDGE_DISPLACEMENT = 30;
 
 /**
- * Canvas nodes: high distortion (ADR-0063). Nodes carry no long copy over
- * the bend — just a name and a type — so they can refract hard: the grid and
- * edges behind a node warp through it like a thick lens.
+ * Canvas nodes (ADR-0063): a noticeable lens — stronger than the cards'
+ * edge bend, since a node carries only a name and a type, but toned down
+ * from the first 120 by request.
  */
-export const NODE_DISPLACEMENT = 120;
+export const NODE_DISPLACEMENT = 60;
 
 type Preset = Pick<
   LiquidPropsOut,
@@ -89,7 +89,7 @@ const PRESETS: Readonly<Record<GlassSurface, Preset>> = {
   emptyState: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.15, mode: "standard" },
   // Static: no mousemove fires during an HTML5 drag, so elasticity is moot.
   dropCard: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0, mode: "standard" },
-  // Thick lens: the strong "prominent" map, still no colour split. A light
+  // Lens: the "prominent" map at moderate strength, no colour split. A light
   // wobble when hovered (the node card drives it).
   node: { displacementScale: NODE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.1, mode: "prominent" },
 };

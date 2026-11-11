@@ -3289,3 +3289,10 @@ canvas nodes as well, with "low opacity but high distortion".
 - Bathory corners are 1px; no console errors.
 
 `npm test` (44 + 360 + 193) and `test:web:app` (16) pass.
+
+**Follow-up (by request): less tint, less distortion.**
+- `--glass-node-alpha` is now 4% (Vellum) / 6% (Bathory).
+- `NODE_DISPLACEMENT` is 60, still on the prominent map. That is still a visible lens, above the
+  cards' edge bend of 30.
+- The test now bounds the value between 30 and 100.
+- Confirmed from `file://` that the bundle serves scale −60 and a 4% fill.

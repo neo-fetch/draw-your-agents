@@ -123,11 +123,11 @@ test("NODE_RADIUS mirrors each theme's --r-md (the node card's corner)", () => {
   }
 });
 
-test("liquidProps(node): high distortion, clear, no colour split; still yields to reduced motion", () => {
+test("liquidProps(node): moderate lens, clear, no colour split; still yields to reduced motion", () => {
   for (const t of THEMES) {
     const p = liquidProps("node", t.id, { reducedMotion: false });
     assert.strictEqual(p.displacementScale, NODE_DISPLACEMENT);
-    assert.ok(NODE_DISPLACEMENT >= 100, "nodes refract hard by request");
+    assert.ok(NODE_DISPLACEMENT > 30 && NODE_DISPLACEMENT < 100, "a lens: above the cards' edge bend, below the first 120");
     assert.strictEqual(p.mode, "prominent");
     assert.strictEqual(p.aberrationIntensity, 0);
     assert.strictEqual(p.overLight, false);
