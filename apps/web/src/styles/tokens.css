@@ -93,7 +93,6 @@
   /* chrome glass — top bar and side panes over the full-bleed canvas
      (ADR-0062): a touch more body than the floating cards, dense UI on it */
   --glass-pane-alpha: 3%;
-  --glass-node-alpha: 4%; /* canvas node cards (ADR-0063) */
   --glass-pane-blur: 3px;
   --glass-saturate: 1.4;
   --glass-border: rgba(255, 255, 255, 0.75);

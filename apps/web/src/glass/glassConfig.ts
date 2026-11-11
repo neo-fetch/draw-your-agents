@@ -24,14 +24,8 @@ export const GLASS_RADIUS: Readonly<Record<ThemeId, number>> = {
   bathory: 2,
 };
 
-/** Canvas nodes use the smaller `--r-md` corner (ADR-0063); test-synced too. */
-export const NODE_RADIUS: Readonly<Record<ThemeId, number>> = {
-  vellum: 7,
-  bathory: 1,
-};
-
 /** Surfaces that host a real <LiquidGlass>. */
-export type GlassSurface = "emptyState" | "dropCard" | "node";
+export type GlassSurface = "emptyState" | "dropCard";
 
 export type GlassRenderer = "liquid" | "css";
 
@@ -70,22 +64,6 @@ export interface LiquidPropsOut {
  */
 export const EDGE_DISPLACEMENT = 30;
 
-/**
- * How far a node's glass extends past the card on every side (CSS px; the
- * same value is `--node-glass-bleed` in glass.css, test-synced). The clip
- * wrapper hides it — it exists so the filter has real backdrop to sample.
- */
-export const NODE_GLASS_BLEED = 12;
-
-/**
- * Canvas nodes (ADR-0063). The package's filter shifts each pixel by up to
- * ±displacementScale/2 and samples its *own* (backdrop) image there; a node
- * is only ~50px tall, so at 60–120 most samples fell outside the glass and
- * came back empty — the glass showed for a frame (before the map decoded)
- * and then vanished. Keep the shift within the bleed.
- */
-export const NODE_DISPLACEMENT = NODE_GLASS_BLEED * 2;
-
 type Preset = Pick<
   LiquidPropsOut,
   "displacementScale" | "blurAmount" | "saturation" | "aberrationIntensity" | "elasticity" | "mode"
@@ -98,9 +76,6 @@ const PRESETS: Readonly<Record<GlassSurface, Preset>> = {
   emptyState: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.15, mode: "standard" },
   // Static: no mousemove fires during an HTML5 drag, so elasticity is moot.
   dropCard: { displacementScale: EDGE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0, mode: "standard" },
-  // Lens: the "prominent" map at moderate strength, no colour split. A light
-  // wobble when hovered (the node card drives it).
-  node: { displacementScale: NODE_DISPLACEMENT, blurAmount: 0, saturation: 170, aberrationIntensity: 0, elasticity: 0.1, mode: "prominent" },
 };
 
 export function liquidProps(
@@ -115,7 +90,7 @@ export function liquidProps(
     // Clear glass in every theme: `overLight` would force ≥12px of frost
     // (and halve the displacement); off, the package's blur is 4px + 0.
     overLight: false,
-    cornerRadius: surface === "node" ? NODE_RADIUS[theme] : GLASS_RADIUS[theme],
+    cornerRadius: GLASS_RADIUS[theme],
     // Padding lives on our own content box so it follows the theme's CSS.
     padding: "0",
   };

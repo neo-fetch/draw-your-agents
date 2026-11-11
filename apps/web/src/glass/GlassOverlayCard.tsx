@@ -12,8 +12,21 @@
  */
 import { useLayoutEffect, useRef, type ReactNode } from "react";
 import LiquidGlass from "liquid-glass-react";
-import { liquidProps, remountKey, type GlassSurface } from "./glassConfig.ts";
-import { useGlassEnv } from "./useGlassEnv.ts";
+import { useThemeStore } from "../theme/themeStore.ts";
+import {
+  chooseRenderer,
+  isChromiumBrands,
+  liquidProps,
+  remountKey,
+  type GlassSurface,
+} from "./glassConfig.ts";
+import { useReducedMotionPref, useReducedTransparency } from "./useMediaQuery.ts";
+import { useFontEpoch } from "./useFontEpoch.ts";
+
+const IS_CHROMIUM = isChromiumBrands(
+  (navigator as Navigator & { userAgentData?: { brands?: { brand: string }[] } })
+    .userAgentData?.brands,
+);
 
 interface Props {
   surface: GlassSurface;
@@ -25,7 +38,10 @@ interface Props {
 }
 
 export function GlassOverlayCard({ surface, className, trackSelector, children }: Props) {
-  const { renderer, theme, reducedMotion, fontEpoch } = useGlassEnv();
+  const theme = useThemeStore((s) => s.theme);
+  const reducedTransparency = useReducedTransparency();
+  const reducedMotion = useReducedMotionPref();
+  const fontEpoch = useFontEpoch();
   const hostRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLElement | null>(null);
 
@@ -39,6 +55,7 @@ export function GlassOverlayCard({ surface, className, trackSelector, children }
       : null;
   });
 
+  const renderer = chooseRenderer({ reducedTransparency, isChromium: IS_CHROMIUM });
   if (renderer === "css") {
     return <div className={`glass-surface ${className}`}>{children}</div>;
   }

@@ -72,17 +72,6 @@
    Hide them; .lg-content carries our own rim highlight instead. */
 .lg-host > span { display: none; }
 
-/* The package sizes its filter <svg> from getBoundingClientRect() — screen
-   pixels. Inside a zoomed React Flow viewport that is not the glass's CSS
-   size, and the displacement map (feImage 100% × 100%, resolved against that
-   svg) then covers only part of a node: the glass shows for a frame at the
-   default 270×69, then drops out once the package measures (ADR-0063). Pin
-   the svg to the glass box in CSS units instead, so it is right at any zoom. */
-.lg-host svg {
-  width: 100% !important;
-  height: 100% !important;
-}
-
 /* Form chrome inside the glass popover: solid fields would read as a white
    slab over clear glass, so they take a light tint of their own. */
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -94,79 +83,6 @@
   }
   .node-popover.glass-surface .body-editor__sig {
     background: color-mix(in srgb, var(--paper-sunken) var(--glass-field-alpha), transparent);
-  }
-}
-
-/* ---- liquid nodes (ADR-0063) ---------------------------------------------
-   NodeGlass puts a clipped, bleeding .lg-host behind the card's text; the
-   package's glass is sized to the host by an empty .lg-fill in container
-   units, and the filter samples the bleed instead of empty space. The
-   card's own background goes clear so the glass shows; its border, type
-   stripe and shadow stay. The card must NOT get a backdrop-filter in the
-   liquid branch — that would make it the backdrop root for its own glass. */
-/* clip = the card's box; host = card + bleed (see NODE_GLASS_BLEED) */
-.lg-clip {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.lg-host--node {
-  --node-glass-bleed: 12px;
-  inset: calc(-1 * var(--node-glass-bleed));
-}
-.lg-host--node .glass { box-shadow: none !important; } /* the card has its own */
-.lg-fill {
-  width: 100cqw;
-  height: 100cqh;
-  background: color-mix(in srgb, var(--paper-raised) var(--glass-node-alpha), transparent);
-}
-.ir-node > .name,
-.ir-node > .type {
-  position: relative;
-  z-index: 1;
-}
-/* The card's border, shadow and selection ring move to a layer painted
-   *above* the glass. Painted by the card itself they sit in the glass's
-   backdrop, and the bleed + displacement pull them into the card — a hovered
-   or selected node (bigger shadow, accent ring and border) went cloudy and
-   opaque. */
-.ir-node--liquid,
-.ir-node--liquid:hover,
-.ir-node--liquid.selected {
-  box-shadow: none;
-  border-color: transparent; /* drawn by ::after — same reason; widths keep layout */
-}
-.ir-node--liquid::after {
-  content: "";
-  position: absolute;
-  inset: -1px -1px -1px -3px; /* over the 1px border / 3px type stripe */
-  z-index: 2;
-  border-radius: inherit;
-  pointer-events: none;
-  border: 1px solid var(--line-strong);
-  border-left: 3px solid var(--type);
-  box-shadow: var(--shadow-card);
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
-}
-.ir-node--liquid:hover::after { box-shadow: var(--shadow-pop); }
-.ir-node--liquid.selected::after {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-wash), var(--shadow-pop), var(--glow-accent);
-}
-@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  /* CSS fallback (non-Chromium): low-tint frosted card */
-  .ir-node {
-    background: color-mix(in srgb, var(--paper-raised) var(--glass-node-alpha), transparent);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  }
-  .ir-node--liquid {
-    background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
 }
 
@@ -285,11 +201,6 @@
     backdrop-filter: none;
   }
   .pane-rail { background: var(--paper-raised); }
-  .ir-node {
-    background: var(--paper-raised);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
   /* back to the captured solid surfaces inside the chrome */
   .pane--side > *,
   .topbar > * {

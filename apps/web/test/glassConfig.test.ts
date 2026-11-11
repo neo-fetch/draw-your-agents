@@ -14,9 +14,6 @@ import { THEMES } from "../src/theme/themes.ts";
 import {
   chooseRenderer,
   GLASS_RADIUS,
-  NODE_DISPLACEMENT,
-  NODE_GLASS_BLEED,
-  NODE_RADIUS,
   EDGE_DISPLACEMENT,
   isChromiumBrands,
   liquidProps,
@@ -108,50 +105,3 @@ test("glass.css keeps its fallbacks: @supports gate and reduced-transparency off
   assert.match(css("themes/bathory.css"), /--glass-alpha:/);
 });
 
-// --- liquid nodes (ADR-0063) ---
-
-function rMd(source: string): number {
-  const m = /--r-md:\s*(\d+)px/.exec(source);
-  assert.ok(m, "no --r-md declaration found");
-  return Number(m[1]);
-}
-
-test("NODE_RADIUS mirrors each theme's --r-md (the node card's corner)", () => {
-  assert.strictEqual(NODE_RADIUS.vellum, rMd(css("tokens.css")));
-  assert.strictEqual(NODE_RADIUS.bathory, rMd(css("themes/bathory.css")));
-  for (const t of THEMES) {
-    assert.strictEqual(liquidProps("node", t.id, { reducedMotion: false }).cornerRadius, NODE_RADIUS[t.id]);
-  }
-});
-
-test("liquidProps(node): moderate lens, clear, no colour split; still yields to reduced motion", () => {
-  for (const t of THEMES) {
-    const p = liquidProps("node", t.id, { reducedMotion: false });
-    assert.strictEqual(p.displacementScale, NODE_DISPLACEMENT);
-    // the filter shifts samples by up to ±scale/2 — they must land in the bleed
-    assert.ok(NODE_DISPLACEMENT / 2 <= NODE_GLASS_BLEED, "node shift exceeds the glass bleed");
-    assert.ok(NODE_DISPLACEMENT > 0);
-    assert.strictEqual(p.mode, "prominent");
-    assert.strictEqual(p.aberrationIntensity, 0);
-    assert.strictEqual(p.overLight, false);
-    assert.ok(p.elasticity > 0);
-    assert.strictEqual(liquidProps("node", t.id, { reducedMotion: true }).elasticity, 0);
-  }
-});
-
-test("node glass CSS: liquid card is clear and never its own backdrop root", () => {
-  const glass = css("glass.css");
-  // the liquid card must not carry a backdrop-filter (it would cut its glass off)
-  assert.match(glass, /\.ir-node--liquid \{[^}]*backdrop-filter: none;/);
-  // and the low node tint is a token in both themes
-  assert.match(css("tokens.css"), /--glass-node-alpha:/);
-  assert.match(css("themes/bathory.css"), /--glass-node-alpha:/);
-});
-
-test("node glass bleed: CSS matches NODE_GLASS_BLEED, and the clip hides it", () => {
-  const glass = css("glass.css");
-  const m = /--node-glass-bleed:\s*(\d+)px/.exec(glass);
-  assert.ok(m, "no --node-glass-bleed in glass.css");
-  assert.strictEqual(Number(m[1]), NODE_GLASS_BLEED);
-  assert.match(glass, /\.lg-clip \{[^}]*overflow: hidden;/);
-});

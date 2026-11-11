@@ -3348,3 +3348,21 @@ canvas nodes as well, with "low opacity but high distortion".
   - the selected node looks as clear as its neighbours;
   - the popover sits below the node with no overlap, at a stable 351px height across frames.
 - `npm test` (44 + 360 + 196) and `test:web:app` (16) pass.
+
+## ADR-0063 — reverted: canvas nodes are plain cards again
+**Context.** The liquid-glass node cards from ADR-0063 were removed by restoring `apps/web/src/glass/`
+to its ADR-0062 state (`NodeGlass.tsx` and `useGlassEnv.ts` deleted, `glassConfig.ts` and
+`GlassOverlayCard.tsx` reverted). `IRNode.tsx`, `glass.css`, the tokens and the tests still used the
+removed code, so `vite build` failed (`Could not resolve "../glass/NodeGlass.tsx"`) and
+`glassConfig.test.ts` failed to load (`NODE_DISPLACEMENT` not exported).
+**Decision.** Finish the removal.
+- **Removed:** `IRNode.tsx` back to its ADR-0062 form; the node-glass rules in `glass.css` (the
+  `.lg-host svg` zoom pin, `.lg-clip`/`.lg-host--node`/`.lg-fill`, the `.ir-node--liquid` border
+  layer, the CSS node fallback and its reduced-transparency reset); `--glass-node-alpha` in both
+  themes; the four node tests.
+- **Kept:** the popover's stack below/above placement (from the same commit series). It is a
+  general fix for a narrow visible window between glass panes (ADR-0062), not node glass.
+- **Kept:** the near-clear chrome values from `6127bf2`.
+
+**Verification.** `npm run build:pages` builds. `npm test` (44 + 360 + 192) and `test:web:app` (16)
+pass.
