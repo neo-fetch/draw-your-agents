@@ -82,4 +82,15 @@
 
   /* canvas drafting grid behind the whole shell */
   --shell-grid-line: rgba(33, 29, 24, 0.035);
+
+  /* glass material (ADR-0061) — plain values; `glass.css` mixes them with the
+     surface color at the point of use, so a nested [data-theme] (the Bathory
+     page) re-resolves them instead of inheriting a pre-mixed color */
+  --glass-alpha: 66%;
+  --glass-alpha-strong: 84%;
+  --glass-blur: 14px;
+  --glass-saturate: 1.35;
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --glass-shadow: 0 12px 32px -14px rgba(33, 29, 24, 0.45);
 }

@@ -22,6 +22,7 @@
     "@xyflow/react": "^12.3.5",
     "codemirror": "^6.0.2",
     "lexical": "^0.45.0",
+    "liquid-glass-react": "^1.1.1",
     "motion": "^12.40.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

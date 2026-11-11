@@ -137,7 +137,7 @@ export function NodePopover() {
       <m.div
         ref={cardRef}
         key="node-popover"
-        className="node-popover nowheel nopan nodrag"
+        className="node-popover glass-surface glass-surface--strong nowheel nopan nodrag"
         data-side={side}
         style={{ left, top, width: size.w, maxHeight: fitHeight(size.h, containerH) }}
         variants={popIn}

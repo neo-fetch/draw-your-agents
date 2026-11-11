@@ -2,12 +2,13 @@
  * CanvasEmptyState — guided first-run overlay (ADR-0044), shown when the IR
  * has no nodes (after "New", or loading an empty document). Pure overlay:
  * the wrapper ignores pointer events so canvas pan/drop still works; only
- * the example buttons are interactive.
+ * the example buttons are interactive. The card is liquid glass (ADR-0061).
  */
 import { m } from "motion/react";
 import { EASE_OUT } from "../anim/presets.ts";
 import { EXAMPLES, loadExample } from "../store/examples.ts";
 import { useIRStore } from "../store/irStore.ts";
+import { GlassOverlayCard } from "../glass/GlassOverlayCard.tsx";
 
 const STEPS: ReadonlyArray<{ title: string; detail: string }> = [
   { title: "Drag a node from the palette", detail: "agents, routers, tools — drop them anywhere" },
@@ -20,12 +21,20 @@ export function CanvasEmptyState() {
 
   return (
     <div className="canvas-empty" aria-hidden={false}>
+      {/* The motion layer only fades/rises; the card is liquid glass
+          (ADR-0061), centred inside it, wobbling toward the cursor anywhere
+          over the canvas. */}
       <m.div
-        className="canvas-empty__card"
+        className="canvas-empty__layer"
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: EASE_OUT, delay: 0.15 }}
       >
+        <GlassOverlayCard
+          surface="emptyState"
+          className="canvas-empty__card"
+          trackSelector=".canvas-drop"
+        >
         <div className="canvas-empty__title">Plan → working agents</div>
         <ol className="canvas-empty__steps">
           {STEPS.map((s, i) => (
@@ -55,6 +64,7 @@ export function CanvasEmptyState() {
             or drop a saved .agentgraph.json anywhere to open it
           </span>
         </div>
+        </GlassOverlayCard>
       </m.div>
     </div>
   );

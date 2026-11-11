@@ -14,11 +14,14 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--paper-raised);
+  /* surface is .glass-surface--strong (ADR-0061) */
   border: 1px solid var(--line-strong);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-pop), var(--glow-accent);
   overflow: hidden;
+}
+.node-popover.glass-surface {
+  box-shadow: var(--glass-highlight), var(--glass-shadow), var(--glow-accent);
 }
 
 /* drag strip — the card's title bar, deliberately slim so the form's own
@@ -31,7 +34,7 @@
   gap: 8px;
   height: 20px;
   padding: 0 6px 0 9px;
-  background: var(--paper-sunken);
+  background: color-mix(in srgb, var(--paper-sunken) 55%, transparent);
   border-bottom: 1px solid var(--line);
   cursor: grab;
   touch-action: none;

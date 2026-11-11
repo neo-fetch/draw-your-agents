@@ -1,0 +1,81 @@
+/* ------------------------------------------------------------------ glass
+   Liquid glass (ADR-0061). Two renderers, one look:
+     .glass-surface  CSS material — popover, canvas controls, Bathory cards,
+                     and the fallback for the centred cards off Chromium.
+     .lg-host        host for liquid-glass-react's <LiquidGlass> on the
+                     centred floating cards (GlassOverlayCard.tsx).
+   OS is the off switch: solid under prefers-reduced-transparency.
+   Borders stay with each surface (accent edges, dashed drop outline);
+   surfaces that want the glass edge use var(--glass-border) themselves. */
+
+/* Solid by default: browsers without backdrop-filter get the old surface. */
+.glass-surface {
+  background: var(--paper-raised);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-surface {
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-alpha), transparent);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    box-shadow: var(--glass-highlight), var(--glass-shadow);
+  }
+  .glass-surface--strong {
+    background: color-mix(in srgb, var(--paper-raised) var(--glass-alpha-strong), transparent);
+  }
+}
+
+/* ---- liquid-glass-react host ------------------------------------------- */
+
+/* <LiquidGlass> centres every layer on top/left 50% of this box. */
+.lg-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* <LiquidGlass> shrink-wraps its content from a 50% offset, so cards can't
+     size against this box with %; they use cqw/cqh against it instead. */
+  container-type: size;
+}
+
+/* Our content box inside the glass. The package sets an inline
+   `font: 500 20px/1 system-ui` + text-shadow on its wrapper; explicit values
+   here win over the inherited ones. A light tint keeps text contrast from
+   depending on what the displacement happens to bend underneath. */
+.lg-content {
+  font: 400 14px/1.45 var(--font-ui);
+  text-shadow: none;
+  color: var(--ink);
+  /* a notch more tint than the CSS material: the refraction is strongest
+     under the text, and a bright node behind it would fight the copy */
+  background: color-mix(
+    in srgb,
+    var(--paper-raised) calc(var(--glass-alpha) + 12%),
+    transparent
+  );
+  box-shadow: var(--glass-highlight);
+}
+
+/* The package's overLight shadow (0 16px 70px rgba(0,0,0,.75)) is inline and
+   tuned for photos; on paper it greys the whole canvas. Our token instead —
+   the one !important in this file, scoped to the host. */
+.lg-host .glass { box-shadow: var(--glass-shadow) !important; }
+.lg-content button { pointer-events: auto; }
+
+/* The package's two "overLight" tint layers (black, flat + overlay-blended)
+   are styled with Tailwind utility classes this repo doesn't have, and are
+   tuned for glass over photos — over warm paper even a faint version reads as
+   a grey slab. Hide them; `overLight` still sets the package's heavier
+   frosting and gentler displacement for light themes. Scoped to the host. */
+.lg-host > .bg-black { display: none; }
+
+/* ---- OS off switch ------------------------------------------------------ */
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-surface,
+  .glass-surface--strong {
+    background: var(--paper-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--shadow-pop);
+  }
+}

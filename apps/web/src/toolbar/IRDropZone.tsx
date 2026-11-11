@@ -13,13 +13,15 @@
  *   - a file dropped anywhere no longer makes the browser navigate away to
  *     the raw JSON (losing the graph).
  *
- * The overlay is `pointer-events: none` and purely visual. Mounted only in
- * the builder (Workbench), so the landing page keeps default behavior.
+ * The overlay is `pointer-events: none` and purely visual; its card is
+ * liquid glass (ADR-0061). Mounted only in the builder (Workbench), so the
+ * landing page keeps default behavior.
  */
 import { useEffect, useState } from "react";
 import { AnimatePresence, m } from "motion/react";
 import { isFileDrag, loadIRFromFile, pickIRFile } from "../store/irIO.ts";
 import { applyLoadResult, useLoadBanner } from "./loadBanner.ts";
+import { GlassOverlayCard } from "../glass/GlassOverlayCard.tsx";
 
 export function IRDropZone() {
   const [active, setActive] = useState(false);
@@ -83,12 +85,12 @@ export function IRDropZone() {
           transition={{ duration: 0.12 }}
           aria-hidden
         >
-          <div className="ir-drop__card">
+          <GlassOverlayCard surface="dropCard" className="ir-drop__card">
             <span className="ir-drop__title">Drop to load IR</span>
             <span className="ir-drop__detail">
               .agentgraph.json / .json · replaces the current graph
             </span>
-          </div>
+          </GlassOverlayCard>
         </m.div>
       )}
     </AnimatePresence>

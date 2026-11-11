@@ -3050,3 +3050,86 @@ enter, hidden on leave; dropping the BRD pipeline IR loads it **valid**; a `.zip
 JSON show the error banner and keep the graph; a well-shaped invalid IR loads with the findings
 banner; a palette Agent drag still adds a node; a file dropped on an open body editor loads the
 IR and leaves the editor text alone; Load IR still works; no console errors.
+
+## ADR-0061 — Liquid glass: `liquid-glass-react` on the centred cards, a CSS glass material elsewhere
+**Context.** We wanted a liquid-glass look in the builder using `liquid-glass-react@1.1.1`. Its built
+source sets the limits:
+- each `<LiquidGlass>` renders five sibling layers, all at `top/left: 50%` with
+  `translate(-50%,-50%)`, so it suits centred floating cards and breaks inline layout;
+- it measures its size only on mount and window resize;
+- it re-renders on every mousemove;
+- it forces `font: 500 20px system-ui` and a text shadow on its content;
+- its light-background ("overLight") tint layers use Tailwind classes, and this repo has none;
+- refraction renders only in Chromium.
+
+Glass also needs busy content behind it, and the toolbar sits on a flat background.
+**Decisions.**
+- **Hybrid scope.**
+  - The real `<LiquidGlass>` goes only on the two centred floating cards, the canvas empty state and the IR
+    drop card (`GlassOverlayCard`).
+  - A CSS `.glass-surface` material goes on the node popover (`--strong`, plus a frosted sticky
+    `.form-head`), the React Flow controls and the Bathory page cards. It is also the fallback for the
+    centred cards.
+  - The toolbar is unchanged.
+- **Chromium only for the package.** `isChromiumBrands(navigator.userAgentData.brands)` decides. Safari may
+  reject the package's `backdrop-filter … url(#…)` declaration whole, and Firefox gets no displacement,
+  so both get the CSS material.
+- **The OS is the off switch, with no UI toggle.**
+  - Under `prefers-reduced-transparency` the cards use the CSS renderer, and `.glass-surface` and
+    `.form-head` go solid.
+  - Under `prefers-reduced-motion`, `elasticity` is 0.
+  - `@supports (backdrop-filter)` gates the material, so the default is the old solid surface.
+- **Centring rule.**
+  - The card's parent is an inset-0 flex layer.
+  - In the liquid branch, an inset-0 `.lg-host` holds `<LiquidGlass style={{position:"absolute",
+    top:"50%", left:"50%"}}>`.
+  - Inside the glass, cards size with `cqw`/`cqh`: the host and layers are `container-type: size`. A
+    percentage would resolve against the shrink-wrapped glass and overflow a narrow canvas.
+- **Remount, don't resize.** The package keeps a stale `glassSize`, so the `key` is
+  `remountKey(theme, fontEpoch)`: theme switches and late web-font loads remount it. A synthetic
+  window `resize` would wake every resize listener in the app.
+- **Taming the package, scoped to `.lg-host`.**
+  - The overLight tint layers (`> .bg-black`) are hidden; tuned for photos, they read as a grey slab
+    on paper even when faint. `overLight` (set for light themes) still gives heavier frosting and
+    gentler displacement.
+  - The inline overLight shadow (`0 16px 70px rgba(0,0,0,.75)`) greyed the whole canvas. It is
+    overridden with `--glass-shadow`, the file's only `!important`.
+  - `.lg-content` sets our font and colour and `text-shadow: none`, with a tint of `--glass-alpha +
+    12%` so copy stays readable over bright nodes refracted underneath.
+- **Tokens hold plain values; mixing happens at the point of use.**
+  - `--glass-alpha/-strong/-blur/-saturate/-border/-highlight/-shadow` are defined per theme.
+  - `color-mix(var(--paper-raised) var(--glass-alpha), transparent)` lives in the rule, because the
+    Bathory page sets its own `data-theme` and would otherwise inherit a pre-mixed Vellum colour.
+- **Corner radius.** `cornerRadius` is a number, so `GLASS_RADIUS` mirrors `--r-lg` per theme (11 / 2),
+  and a test parses the CSS to keep them in sync.
+- **Two accepted trade-offs.**
+  - The `backdrop-filter: blur(2px)` on `.ir-drop` is removed. It made the overlay the backdrop root, so
+    the card could only bend the overlay's tint.
+  - During fades, glass looks flat: an ancestor with opacity below 1 is a backdrop root. Both cards
+    fade in briefly.
+
+**Tests.** `apps/web/test/glassConfig.test.ts`:
+- `GLASS_RADIUS` matches `--r-lg` in both theme files;
+- `overLight` follows `colorScheme`;
+- elasticity is 0 under reduced motion and on the drop card;
+- the `chooseRenderer` matrix;
+- `isChromiumBrands`;
+- `remountKey`;
+- `glass.css` keeps its `@supports` gate, the reduced-transparency block and the hidden tint layers.
+
+**Verification.** Browser (dev server, 1024 and 1440 widths, both themes):
+- **Empty state:**
+  - the card is liquid glass and centred to the pixel;
+  - it wobbles toward the cursor anywhere over the canvas (`mouseContainer` = `.canvas-drop`);
+  - clicks pass through to the pane, and the example buttons work (a real click loaded City time);
+  - a theme switch remounts it with 2px corners.
+- **Drop card:** liquid glass, 520px, with the popover behind it refracted.
+- **Popover, header and controls:** translucent and blurred, and the Bathory popover keeps its accent glow.
+- **Bathory page:** frosted cards over the wallpaper, with the accent left border kept.
+- **OS settings:** with `matchMedia` stubbed, reduced motion means no wobble and reduced transparency
+  means the CSS renderer; liquid returns when the stub is removed.
+- **Console:** no errors.
+
+`npm test` (44 + 360 + 184) and `test:web:app` (16) pass. The `vite preview` of the bundle renders the
+liquid card. **Bundle:** `docs/index.html` goes from 405.8 KB to 440.3 KB gzipped (+34.5 KB, mostly the
+package's embedded displacement maps).

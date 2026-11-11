@@ -308,7 +308,8 @@ export function Canvas() {
         lineWidth={1.2}
         color={grid.coarse}
       />
-      <Controls />
+      {/* glass chrome over the canvas (ADR-0061) */}
+      <Controls className="glass-surface" />
       {/* The node/edge editor rides inside <ReactFlow> so it can read the
           viewport transform and anchor itself beside its target (ADR-0057). */}
       <NodePopover />

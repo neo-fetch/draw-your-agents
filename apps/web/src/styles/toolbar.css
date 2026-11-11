@@ -287,20 +287,21 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
+  /* No backdrop-filter here: it would make this layer the backdrop root, and
+     the glass card could only bend this tint, not the app (ADR-0061). */
   background: color-mix(in srgb, var(--paper) 72%, transparent);
-  backdrop-filter: blur(2px);
+  container-type: size;
 }
 .ir-drop__card {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  width: min(520px, 100%);
+  box-sizing: border-box;
+  width: min(520px, 100cqw - 32px); /* cqw: see .canvas-empty__card */
   padding: 40px 24px;
   border: 2px dashed var(--accent);
-  border-radius: 14px;
-  background: var(--paper-raised);
-  box-shadow: var(--glow-accent);
+  border-radius: var(--r-lg); /* matches the glass radius (GLASS_RADIUS) */
   text-align: center;
 }
 .ir-drop__title {

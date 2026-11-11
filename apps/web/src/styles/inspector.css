@@ -82,9 +82,25 @@
   z-index: 1;
   margin: -14px -14px 14px;
   padding: 11px 14px 9px;
+  /* frosted over the scrolled form (ADR-0061); solid without blur support
+     or under reduced transparency */
   background: var(--paper-raised);
   border-bottom: 1px solid var(--line);
   box-shadow: 0 4px 10px -8px rgba(0, 0, 0, 0.25);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .form-head {
+    background: color-mix(in srgb, var(--paper-raised) 62%, transparent);
+    -webkit-backdrop-filter: blur(10px) saturate(var(--glass-saturate));
+    backdrop-filter: blur(10px) saturate(var(--glass-saturate));
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .form-head {
+    background: var(--paper-raised);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 .form-head__meta {
   display: flex;
